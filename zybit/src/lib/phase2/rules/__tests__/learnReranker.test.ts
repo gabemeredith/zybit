@@ -27,6 +27,7 @@ function makeFinding(overrides: Partial<AuditFinding> = {}): AuditFinding {
 function makeOutcome(overrides: Partial<ExperimentOutcomeRow> = {}): ExperimentOutcomeRow {
   return {
     id: `outcome-${Math.random().toString(36).slice(2)}`,
+    experimentId: 'experiment-test',
     ruleId: 'form-abandonment',
     pathRef: '/signup',
     modificationType: 'text-replace',

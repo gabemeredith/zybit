@@ -14,6 +14,7 @@ import { zybitExperimentOutcomes } from '@/lib/db/schema';
  */
 export interface ExperimentOutcomeRow {
   id: string;
+  experimentId: string;
   ruleId: string | null;
   pathRef: string | null;
   modificationType: string | null;
@@ -36,6 +37,7 @@ export function createOutcomesRepository(): OutcomesRepository {
       const rows = await db
         .select({
           id: zybitExperimentOutcomes.id,
+          experimentId: zybitExperimentOutcomes.experimentId,
           ruleId: zybitExperimentOutcomes.ruleId,
           pathRef: zybitExperimentOutcomes.pathRef,
           modificationType: zybitExperimentOutcomes.modificationType,
