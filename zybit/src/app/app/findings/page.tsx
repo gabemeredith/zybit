@@ -213,6 +213,20 @@ export default async function FindingsPage({
                               {impactLabel}
                             </span>
                           )}
+                          {finding.learnAdjustment?.visible && (
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${
+                                finding.learnAdjustment.direction === 'boost'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200'
+                              }`}
+                              title={finding.learnAdjustment.reason}
+                            >
+                              {finding.learnAdjustment.direction === 'boost' ? '↑' : '↓'}{' '}
+                              {finding.learnAdjustment.delta >= 0 ? '+' : '−'}
+                              {Math.abs(finding.learnAdjustment.delta).toFixed(2)} from past tests
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm font-semibold text-[#111] leading-snug mb-1 truncate">
                           {finding.title}
