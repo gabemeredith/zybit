@@ -381,24 +381,21 @@ See Priority 1 (Guardrail Metrics). The proxy side: when `experiment.status = 's
 
 ---
 
-### Step 6: Learn — Outcome Feedback Loop (after Priority 1-4)
+### Step 6: Learn — Outcome Feedback Loop
 
-When an experiment completes, its outcome informs future rule runs for the same site.
+**Layer 1 (per-site re-ranking) shipped.** When an experiment completes, its outcome adjusts the `priorityScore` of future findings on the same site via a cascade match + D-with-guardrails formula. Rules stay pure; the reranker is a separate pass.
 
-**New table:** `zybit_experiment_outcomes` — see Priority 1 schema above.
+**Architecture:**
+- `src/lib/phase2/outcomes/repository.ts` — read-only `createOutcomesRepository().listForSite(siteId)` over `zybit_experiment_outcomes`.
+- `src/lib/phase2/rules/learnReranker.ts` — pure fn `applyLearnRerank(findings, outcomes)`. Cascade: Tier 1 `(ruleId, pathRef, modType)` → Tier 2 `(ruleId, pathRef)` → Tier 3 `(ruleId, modType)` → Tier 4 `(ruleId)`. Strongest non-empty tier wins. Per-outcome contribution = `clamp(liftPct, ±20) × confidence × tierStrength × 0.01`; guardrail breach stacks `−0.10 × tierStrength`. Total delta clamped to ±0.30.
+- Inconclusives use no special case — low confidence × small lift naturally drives contribution toward zero.
+- `LearnAdjustment` metadata persisted on `forge_findings.learn_adjustment` (drizzle/0013); written by `src/lib/phase2/jobs/insightsTrigger.ts:upsertFindings`. Visibility threshold `|delta| ≥ 0.05` gates the UI surfaces.
+- UI surfaces: backlog pill (`src/app/app/findings/page.tsx`), "Past tests on your site" panel on finding detail (`src/app/app/findings/[id]/page.tsx`), LEARNED timeline entry on `/app/loop` (`src/app/app/loop/page.tsx`).
+- 16 unit tests in `src/lib/phase2/rules/__tests__/learnReranker.test.ts`.
 
-**Rule integration:** Add `previousOutcomes: ExperimentOutcome[]` to `AuditRuleContext`. Rules:
-- **Boost priority** on findings similar to past wins (same ruleId + same pathRef pattern)
-- **Raise threshold** on findings similar to past nulls (require stronger signal to re-fire)
-- **Surface "already tested"** context in the finding summary if prior outcome exists
-
-**Implementation scope:**
-- `src/lib/phase2/rules/types.ts` — Add `previousOutcomes` to `AuditRuleContext`
-- `src/lib/experiments/outcomes.ts` — Query outcomes for site, pass to rule context
-- Start with 3 rules: `form-abandonment`, `bounce-on-key-page`, `hero-hierarchy-inversion`
-- New migration: outcome table already defined in Priority 1 — same table, same schema
-
-**Cross-site learning:** Deferred. Not until 50+ customers have outcome rows. The global prior means nothing at smaller sample sizes. Do not build this early.
+**Not yet built (Layer 2 and 3):**
+- **Layer 2** — per-site mutation of rule thresholds (effectively per-site `ruleTuning.ts`-equivalent). Today only `priorityScore` is adjusted; the rules themselves remain functionally identical across sites.
+- **Layer 3** — cross-site priors. Deferred until 50+ customers have outcome rows. The global prior means nothing at smaller sample sizes. Do not build this early.
 
 ---
 

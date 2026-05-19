@@ -161,7 +161,7 @@ The analysis engine is built. This epic builds the product surface that lets a P
 | **Zybit-090** | Loop timeline page — `/app/loop` (or `/app/activity`): top-level page showing full cycle per site. Not buried in finding detail. | Shows entries for: detection, experiment deployed, result, learning (suppressed / boosted). | P0 |
 | **Zybit-091** | Detection entry — "Zybit detected [finding title] on [page] — [one-line evidence summary]" with timestamp. Links to finding detail. | Populated from `zybit_findings.createdAt` + evidence. **Shipped — detection/deployment/result entries render in `loop/page.tsx`; guardrail breach is a scannable amber badge in the result header + stopped-early reason.** | P0 |
 | **Zybit-092** | Experiment result entry — "Variant [X]% vs Control [Y]% — +[N]pp ([Z]% relative), [p=confidence]" with stop/completion timestamp. Shows guardrail status if breached. Multi-site selector. | Populated from `zybit_experiment_outcomes`. **Shipped — result entry + multi-site pill selector (`?site=<id>`, active highlighted) in `loop/page.tsx`.** | P0 |
-| **Zybit-093** | Learning entry — "Signal raised: you tested [rule] on [page], result was [outcome]. Threshold now requires stronger signal." with timestamp. | Populated when rule calibration runs. Requires per-site outcome feedback (after Epic J). | P1 |
+| **Zybit-093** | Learning entry — "Signal raised: you tested [rule] on [page], result was [outcome]. Threshold now requires stronger signal." with timestamp. | Populated when rule calibration runs. Requires per-site outcome feedback (after Epic J). **Shipped — Layer 1 re-ranking (`src/lib/phase2/rules/learnReranker.ts`) drives win/loss/inconclusive/guardrail-breach LEARNED entries in `loop/page.tsx`, one minute after each result entry. Reason text uses ruleId + pathRef + lift; consequence text describes the ranking shift. Layer 2 (per-site threshold mutation) tracked as separate future work.** | P1 |
 | **Zybit-094** | Experiment lift widget — confidence bar showing current confidence vs 95% threshold; control vs variant rate as live numbers; updated on each cron run. | Visible on experiment detail page. | P1 |
 
 ---
@@ -204,7 +204,8 @@ The analysis engine is built. This epic builds the product surface that lets a P
 | **Done** | Visible loop view | Zybit-090 through Zybit-092 (Epic K) — shipped in `loop/page.tsx` (timeline, guardrail badge, multi-site selector). |
 | **Done** | GA4 connector + integration health | Zybit-110, Zybit-111 (Epic M) — shipped. |
 | **Now** | Live Stripe round-trip verification | Zybit-040 — code fixed; stripe-cli verification with test keys remains. |
-| **Next** | Per-site outcome feedback into rules | Zybit-060 (Epic G), updated rules in `src/lib/phase2/rules/` — unblocks the loop view's LEARNED entry |
+| **Done** | Per-site outcome feedback (Layer 1 re-ranking) | Reranker + repository + UI surfaces + LEARNED timeline entry shipped (Zybit-093). |
+| **Next** | Layer 2 — per-site rule-threshold calibration | Would mutate `ruleTuning.ts`-equivalent constants per-site based on outcome history. New epic. |
 | **Polish** | Visible loop enrichment + activation polish | Zybit-093, Zybit-094, Zybit-113 |
 | **Later** | Amplitude / Mixpanel connectors | Same pattern as GA4 — one at a time |
 | **50+ customers** | Cross-site global priors | Zybit from Epic (deferred) |

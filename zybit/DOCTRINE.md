@@ -44,7 +44,7 @@ Concrete improvement briefs. Each suggestion includes: what to change, why it wo
 One-click A/B deployment to production. PM approves the variant; Zybit manages the test. No engineering ticket required. The change goes live against real traffic.
 
 ### 6. Learn
-Test outcomes — what moved the metric, what didn't — feed back into the model. Every result makes future suggestions sharper. This is what compounds over time, and it is currently the most underbuilt part of the product.
+Test outcomes — what moved the metric, what didn't — feed back into the model. Every result makes future suggestions sharper. This is what compounds over time. Layer 1 (per-site re-ranking) is shipped: past outcomes adjust the priority of new findings via a cascade match + D-with-guardrails formula, surfaced in the backlog pill, finding-detail "Past tests" panel, and the LEARNED timeline entry on `/app/loop`. Layer 2 (per-site rule-threshold calibration) and Layer 3 (cross-site priors) remain as future work — the latter explicitly deferred until 50+ customers.
 
 ---
 
@@ -150,7 +150,7 @@ The analysis engine and PM dashboard are complete. Zybit can:
 **What is not yet complete (immediate priorities, in order):**
 
 1. **Live Stripe round-trip verification** — The checkout → webhook → plan-write → enforcement code path is implemented and its round-trip bugs fixed (redirect target, cross-instance plan-cache staleness), but it has not been exercised end-to-end with stripe-cli + test keys.
-2. **Learn — rule calibration** — Outcome rows are persisted but no rule weighting consumes them yet. This is what closes the loop (and unblocks the loop view's LEARNED entry).
+2. **Learn — Layer 2 calibration** — Layer 1 (re-ranking) shipped: past outcomes adjust new findings' priorityScore and surface as backlog pills, finding-detail "Past tests" panels, and LEARNED timeline entries. Layer 2 would mutate per-site rule thresholds based on outcome history; Layer 3 (cross-site priors) deferred until 50+ customers.
 3. **Proxy SPA handling** — JS-rendered targets are detected and logged but modifications won't apply; `browserFetcher.ts` fallback is unimplemented.
 4. **Observability** — Axiom drain not yet connected.
 
