@@ -66,12 +66,14 @@ export async function serveStatic(
   if (!full.startsWith(resolved.root + path.sep) && full !== resolved.root) {
     return false;
   }
-  let body: Buffer;
+  // Try the literal path first, then for extension-less requests like
+  // /fake-sites/acmebank/pricing fall back to `<rel>.html` and
+  // `<rel>/index.html`. `body` stays undefined if no candidate exists;
+  // a single post-try/catch check returns false in that case.
+  let body: Buffer | undefined;
   try {
     body = await readFile(full);
   } catch {
-    // For requests like /fake-sites/acmebank/pricing (no extension), try
-    // both `<rel>.html` and `<rel>/index.html` before giving up.
     const htmlAttempt = `${full}.html`;
     const indexAttempt = path.join(full, 'index.html');
     for (const candidate of [htmlAttempt, indexAttempt]) {
@@ -84,9 +86,8 @@ export async function serveStatic(
         /* try next */
       }
     }
-    // @ts-expect-error `body` may still be unassigned if both fallbacks failed.
-    if (!body) return false;
   }
+  if (!body) return false;
   const ext = path.extname(full).toLowerCase();
   res.writeHead(200, {
     'content-type': MIME[ext] ?? 'application/octet-stream',

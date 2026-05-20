@@ -12,32 +12,7 @@ import {
   checkPassword,
   isAuthenticated,
 } from '../auth';
-
-async function readJsonBody(req: IncomingMessage, maxBytes = 16 * 1024): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on('data', (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > maxBytes) {
-        req.destroy();
-        reject(new Error('body too large'));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8');
-      if (!raw) return resolve({});
-      try {
-        resolve(JSON.parse(raw));
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on('error', reject);
-  });
-}
+import { readJsonBody } from '../http';
 
 export async function postAuth(req: IncomingMessage, res: ServerResponse): Promise<void> {
   let body: unknown;

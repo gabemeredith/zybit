@@ -3,6 +3,7 @@ import { getScenario } from '../../lib/scenarios';
 import { runScenario } from '../../lib/runner/runScenario';
 import type { EventSinkMode } from '../../lib/types';
 import { requireAuth } from '../auth';
+import { readJsonBody } from '../http';
 import {
   appendProgress,
   completeRun,
@@ -10,32 +11,6 @@ import {
   failRun,
   getRun,
 } from '../runs';
-
-async function readJsonBody(req: IncomingMessage, maxBytes = 16 * 1024): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on('data', (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > maxBytes) {
-        req.destroy();
-        reject(new Error('body too large'));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8');
-      if (!raw) return resolve({});
-      try {
-        resolve(JSON.parse(raw));
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on('error', reject);
-  });
-}
 
 function badRequest(res: ServerResponse, error: string, detail?: string): void {
   res.writeHead(400, { 'content-type': 'application/json' });

@@ -22,34 +22,9 @@ import { appUsers } from '@/lib/db/schema';
 import { createSession, SESSION_COOKIE, SESSION_DAYS } from '@/lib/auth/session';
 import { lighthouseUserIdFor } from '../../lib/seeder/orgSite';
 import { requireAuth } from '../auth';
+import { readJsonBody } from '../http';
 
 const LIGHTHOUSE_SITE_PREFIX = 'lighthouse_site_';
-
-async function readJsonBody(req: IncomingMessage, maxBytes = 16 * 1024): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on('data', (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > maxBytes) {
-        req.destroy();
-        reject(new Error('body too large'));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8');
-      if (!raw) return resolve({});
-      try {
-        resolve(JSON.parse(raw));
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on('error', reject);
-  });
-}
 
 function jsonError(res: ServerResponse, status: number, error: string, detail?: string): void {
   res.writeHead(status, { 'content-type': 'application/json' });
