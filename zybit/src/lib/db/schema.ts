@@ -61,6 +61,18 @@ export const authSessions = pgTable(
   })
 );
 
+export const authRateLimits = pgTable(
+  'auth_rate_limits',
+  {
+    key: text('key').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    count: integer('count').notNull().default(1),
+  },
+  (table) => ({
+    pk: uniqueIndex('auth_rate_limits_pk').on(table.key, table.windowStart),
+  })
+);
+
 // ---------------------------------------------------------------------------
 // Phase 1 (capture): headless page captures + blob assets + run tracking
 // ---------------------------------------------------------------------------
