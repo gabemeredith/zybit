@@ -15,6 +15,7 @@
 
 import { getDb } from '@/lib/db/client';
 import {
+  appUsers,
   organizations,
   phase1Sites,
   phase2Integrations,
@@ -62,6 +63,12 @@ export function orgIdFor(slug: string): string {
 export function siteIdFor(slug: string): string {
   return `lighthouse_site_${slug}`;
 }
+export function lighthouseUserIdFor(slug: string): string {
+  return `lighthouse_user_${slug}`;
+}
+export function lighthouseUserEmailFor(slug: string): string {
+  return `pm@lighthouse-${slug}.invalid`;
+}
 
 export async function provisionLighthouseSite(
   input: LighthouseSiteInput,
@@ -88,6 +95,18 @@ export async function provisionLighthouseSite(
       domain: input.domain,
     })
     .onConflictDoNothing({ target: phase1Sites.id });
+
+  // Synthetic PM user — exists only so the embedded /app/* surface has
+  // a session to attach to. The email is RFC2606-reserved (.invalid),
+  // so no real mail or magic-link can ever reach it.
+  await db
+    .insert(appUsers)
+    .values({
+      id: lighthouseUserIdFor(input.slug),
+      email: lighthouseUserEmailFor(input.slug),
+      organizationId,
+    })
+    .onConflictDoNothing({ target: appUsers.id });
 
   const cfg = input.config ?? {};
   await db
