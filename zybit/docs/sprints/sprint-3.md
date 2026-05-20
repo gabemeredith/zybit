@@ -49,7 +49,7 @@ phase2_site_design_snapshot (
 ## Zybit-142 — Full-fidelity DesignCapture via Browserless
 **Estimate:** 3d | **Owner:** —
 
-**What:** New capture module that uses Browserless to take a full-page screenshot and extract computed styles for key elements, storing results in `phase2_site_design_snapshot`.
+**What:** New capture module that uses Browserless to take a full-page screenshot and extract computed styles for key elements, storing results in `phase2_site_design_snapshot`. Screenshots stored in Vercel Blob — free tier includes 5 GB storage and 10 GB bandwidth/month; at ~200 KB per screenshot this supports ~25,000 pages before needing a paid plan.
 
 **Data to extract per page:**
 - Full-page screenshot → Vercel Blob (`@vercel/blob`)
@@ -115,7 +115,7 @@ Store as `designTokens` jsonb. Format example:
 2. Load structural snapshot (selectors, headings, CTAs)
 3. Load design capture for this pathRef (`captureMethod`, `designTokens`, `computedStyles`, `screenshotUrl`)
 4. Build prompt (see below)
-5. Call Claude API (`claude-sonnet-4-6` — fast and cheap; this is a non-critical creative assist)
+5. Call Gemini API (`gemini-2.0-flash` — fast and cheap; this is a non-critical creative assist). Use `@google/generative-ai` SDK.
 6. Parse response as `VariantModification[][]` (3 arrays of modifications, one per option)
 7. Validate each modification against the schema; drop invalid ones
 8. Validate each selector exists in the snapshot's element list; drop or flag unknown selectors
@@ -156,7 +156,7 @@ Return JSON only — no explanation, no markdown.
 **Files:**
 - `src/app/api/dashboard/experiments/ai-suggest/route.ts` (new)
 - `src/lib/experiments/aiAdvisor.ts` (new — prompt builder + response parser + validator)
-- Add `anthropic` SDK to `package.json`
+- Add `@google/generative-ai` to `package.json`; env var: `GEMINI_API_KEY`
 
 ---
 

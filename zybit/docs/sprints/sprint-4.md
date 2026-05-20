@@ -42,7 +42,7 @@
 3. Surface paused state in `CockpitView.tsx`: red banner "PostHog sync paused after repeated failures — [Resume]" with the Resume button calling the route
 4. Manual resume clears the failure count and immediately triggers a sync attempt
 
-**Files:** `src/lib/phase2/connectors/posthog/sync.ts`, `src/lib/phase2/connectors/ga4/sync.ts`, `src/lib/email/integrationPausedEmail.ts` (new), `src/app/api/phase2/integrations/[id]/resume/route.ts` (new), `src/components/app/CockpitView.tsx`
+**Files:** `src/lib/phase2/connectors/posthog/sync.ts`, `src/lib/phase2/connectors/ga4/sync.ts`, `src/lib/email/integrationPausedEmail.ts` (new — sent to `asad@getzybit.com`), `src/app/api/phase2/integrations/[id]/resume/route.ts` (new), `src/components/app/CockpitView.tsx`
 
 ---
 
@@ -54,7 +54,7 @@
 **Steps:**
 1. Wrap all cron handlers with a `withCronAlert` higher-order function:
    - On catch: log structured error + call `sendCronFailureAlert({ cronName, error, orgId? })`
-   - `sendCronFailureAlert` sends Resend email to `ops@zybit.run` (internal only)
+   - `sendCronFailureAlert` sends Resend email to `asad@getzybit.com` (internal only)
 2. Apply to: `compute-outcomes`, `sync-posthog`, `sync-ga4`, `health-alert`, `check-selector-staleness`
 
 **Files:** `src/lib/observability/withCronAlert.ts` (new), `src/lib/email/cronFailureEmail.ts` (new), each cron route handler

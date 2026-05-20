@@ -45,8 +45,8 @@ Start Sprint 0. Suggested split:
 ### Open questions (not blocking Sprint 0)
 
 - Vercel Blob plan tier — needed for Sprint 3 (screenshot storage). Check if current plan includes Blob or if it needs to be added.
-- Anthropic API key — needed for Sprint 3 Zybit-144 (AI Variant Advisor). Add to Vercel env vars before Sprint 3 starts.
-- `ops@zybit.run` email address — needed for Sprint 4 cron failure alerts. Verify Resend is configured to send from this address.
+- Gemini API key (`GEMINI_API_KEY`) — needed for Sprint 3 Zybit-144 (AI Variant Advisor). Using `@google/generative-ai` SDK with `gemini-2.0-flash`. Add to Vercel env vars before Sprint 3 starts.
+- Ops alerts go to `asad@getzybit.com` via Resend — verify this address is confirmed in the Resend sender domain before Sprint 4.
 
 ---
 
