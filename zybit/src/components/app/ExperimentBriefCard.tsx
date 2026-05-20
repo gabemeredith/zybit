@@ -59,11 +59,24 @@ export default function ExperimentBriefCard({
 }) {
   const [copied, setCopied] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [overlaps, setOverlaps] = useState<Array<{ id: string; name: string }> | null>(null);
 
   function handleCopy() {
     navigator.clipboard.writeText(toBriefText(brief));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function handleLaunch(acknowledge = false) {
+    setLaunching(true);
+    try {
+      const result = await launchExperimentAction(findingId, acknowledge);
+      if (result?.type === "overlap_warning") {
+        setOverlaps(result.overlaps);
+      }
+    } finally {
+      setLaunching(false);
+    }
   }
 
   return (
@@ -103,6 +116,53 @@ export default function ExperimentBriefCard({
         )}
       </div>
 
+      {/* Overlap warning — shown before the user acknowledges */}
+      {overlaps && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <p className="text-sm font-bold text-amber-900 mb-1">
+            {overlaps.length === 1
+              ? "1 experiment is already running on this site."
+              : `${overlaps.length} experiments are already running on this site.`}
+          </p>
+          <ul className="text-sm text-amber-800 space-y-0.5 mb-3">
+            {overlaps.map((o) => (
+              <li key={o.id} className="flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-amber-400 shrink-0" />
+                <Link
+                  href={`/app/experiments/${o.id}`}
+                  className="underline underline-offset-2 hover:text-amber-900 transition-colors"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {o.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-amber-700 mb-3">
+            Concurrent experiments split traffic and can confound results. Launch only if you
+            intentionally want to run them in parallel.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={launching}
+              onClick={() => handleLaunch(true)}
+              className="bg-amber-800 text-white px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity rounded"
+            >
+              {launching ? "Launching…" : "Launch anyway"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOverlaps(null)}
+              className="text-sm text-amber-700 hover:text-amber-900 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-3 pt-4 border-t border-black/[0.04]">
         <button
           type="button"
@@ -121,17 +181,16 @@ export default function ExperimentBriefCard({
         >
           Edit
         </Link>
-        <button
-          type="button"
-          disabled={launching}
-          onClick={async () => {
-            setLaunching(true);
-            await launchExperimentAction(findingId);
-          }}
-          className="ml-auto bg-[#111] text-[#FAFAF8] px-5 py-2.5 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
-        >
-          {launching ? "Launching…" : "Launch experiment"}
-        </button>
+        {!overlaps && (
+          <button
+            type="button"
+            disabled={launching}
+            onClick={() => handleLaunch(false)}
+            className="ml-auto bg-[#111] text-[#FAFAF8] px-5 py-2.5 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
+          >
+            {launching ? "Launching…" : "Launch experiment"}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -427,6 +427,7 @@ export const zybitExperiments = pgTable(
     targetPath: text('target_path'),
     guardrails: jsonb('guardrails').$type<string[]>(),
     notes: text('notes'),
+    overlappingExperimentIds: jsonb('overlapping_experiment_ids').$type<string[]>(),
     // Results snapshot (optional — updated manually or via future webhook)
     resultControlRate: real('result_control_rate'),   // 0..1 conversion rate
     resultVariantRate: real('result_variant_rate'),   // 0..1 conversion rate

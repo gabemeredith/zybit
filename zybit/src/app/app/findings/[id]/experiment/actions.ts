@@ -2,7 +2,7 @@
 
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { getServerAuth } from "@/lib/auth/serverAuth";
 import { getDb } from "@/lib/db/client";
 import { zybitExperiments, zybitFindings } from "@/lib/db/schema";
@@ -74,7 +74,15 @@ function briefToModifications(
   return [{ type: "css-inject", selector, css: newValue }];
 }
 
-export async function launchExperimentAction(findingId: string): Promise<void> {
+export type OverlapWarning = {
+  type: "overlap_warning";
+  overlaps: Array<{ id: string; name: string }>;
+};
+
+export async function launchExperimentAction(
+  findingId: string,
+  acknowledgeOverlap = false,
+): Promise<OverlapWarning | void> {
   const auth = await getServerAuth();
   if (!auth.ok) redirect("/sign-in");
 
@@ -95,6 +103,35 @@ export async function launchExperimentAction(findingId: string): Promise<void> {
   const finding = rows[0];
   if (!finding || !finding.experimentBrief) return;
 
+  // Check for running experiments on the same site (overlap detection).
+  // Policy: overlap-allowed with mandatory acknowledgment (DOCTRINE.md).
+  const runningOnSite = await db
+    .select({
+      id: zybitExperiments.id,
+      notes: zybitExperiments.notes,
+      hypothesis: zybitExperiments.hypothesis,
+    })
+    .from(zybitExperiments)
+    .where(
+      and(
+        eq(zybitExperiments.siteId, finding.siteId),
+        eq(zybitExperiments.organizationId, auth.orgId),
+        eq(zybitExperiments.status, "running"),
+      )
+    );
+
+  if (runningOnSite.length > 0 && !acknowledgeOverlap) {
+    return {
+      type: "overlap_warning",
+      overlaps: runningOnSite.map((e) => {
+        const name = e.notes
+          ? (JSON.parse(e.notes) as { name?: string }).name ?? e.hypothesis
+          : e.hypothesis;
+        return { id: e.id, name };
+      }),
+    };
+  }
+
   const brief = finding.experimentBrief;
   const now = new Date();
   const experimentId = randomUUID();
@@ -112,6 +149,7 @@ export async function launchExperimentAction(findingId: string): Promise<void> {
     status: "running",
     targetPath: finding.pathRef ?? null,
     modifications: briefToModifications(brief.changeType, brief.selector, brief.newValue),
+    overlappingExperimentIds: runningOnSite.length > 0 ? runningOnSite.map((e) => e.id) : null,
     // Store original brief fields so the client-side manifest can serve them directly
     notes: JSON.stringify({
       name: brief.experimentName,
