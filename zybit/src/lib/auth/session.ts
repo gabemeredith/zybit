@@ -3,6 +3,7 @@ import { and, eq, gt, isNull } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import { appUsers, authMagicLinks, authSessions } from '@/lib/db/schema';
 
+
 export const SESSION_COOKIE = 'zb_session';
 export const SESSION_DAYS = 30;
 export const MAGIC_LINK_MINUTES = 15;
@@ -31,6 +32,18 @@ export async function createMagicLink(email: string): Promise<string | null> {
     .where(and(eq(appUsers.email, normalized), eq(appUsers.status, 'approved')))
     .limit(1);
   if (!user) return null;
+
+  // Invalidate any existing valid tokens for this email before issuing a new one.
+  // Ensures only one active magic link exists per email at a time.
+  await db
+    .delete(authMagicLinks)
+    .where(
+      and(
+        eq(authMagicLinks.email, normalized),
+        gt(authMagicLinks.expiresAt, new Date()),
+        isNull(authMagicLinks.consumedAt)
+      )
+    );
 
   const token = generateToken();
   const expiresAt = new Date(Date.now() + MAGIC_LINK_MINUTES * 60 * 1000);

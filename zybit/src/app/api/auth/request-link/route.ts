@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createMagicLink } from '@/lib/auth/session';
+import { checkAuthRateLimit } from '@/lib/auth/rateLimit';
 
 function getBaseUrl(): string {
   return (process.env.APP_BASE_URL ?? '').replace(/\/$/, '');
+}
+
+function extractIp(request: Request): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return request.headers.get('x-real-ip') ?? 'unknown';
 }
 
 const GENERIC_OK = { message: "If that email is approved, a sign-in link is on its way." };
@@ -18,6 +25,18 @@ export async function POST(request: Request) {
     email = body.email.trim().toLowerCase();
   } catch {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
+  }
+
+  const ip = extractIp(request);
+  const rateLimit = await checkAuthRateLimit(email, ip);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait before trying again.' },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) },
+      }
+    );
   }
 
   const token = await createMagicLink(email);

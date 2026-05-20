@@ -4,6 +4,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -58,6 +59,18 @@ export const authSessions = pgTable(
   (table) => ({
     tokenHashIdx: uniqueIndex('auth_sessions_token_hash_idx').on(table.tokenHash),
     userIdx: index('auth_sessions_user_idx').on(table.userId),
+  })
+);
+
+export const authRateLimits = pgTable(
+  'auth_rate_limits',
+  {
+    key: text('key').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    count: integer('count').notNull().default(1),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.key, table.windowStart] }),
   })
 );
 
@@ -415,6 +428,7 @@ export const zybitExperiments = pgTable(
     targetPath: text('target_path'),
     guardrails: jsonb('guardrails').$type<string[]>(),
     notes: text('notes'),
+    overlappingExperimentIds: jsonb('overlapping_experiment_ids').$type<string[]>(),
     // Results snapshot (optional — updated manually or via future webhook)
     resultControlRate: real('result_control_rate'),   // 0..1 conversion rate
     resultVariantRate: real('result_variant_rate'),   // 0..1 conversion rate

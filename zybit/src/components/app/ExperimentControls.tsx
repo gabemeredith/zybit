@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { updateExperimentStatusAction, recordResultsAction } from "@/app/app/experiments/[id]/actions";
 
 type Status = "draft" | "running" | "completed" | "stopped";
@@ -32,6 +33,7 @@ export default function ExperimentControls({
   defaultResults,
 }: Props) {
   const [statusLoading, setStatusLoading] = useState<string | null>(null);
+  const [overlaps, setOverlaps] = useState<Array<{ id: string; name: string }> | null>(null);
   const [showResultsForm, setShowResultsForm] = useState(!hasResults && currentStatus === "completed");
   const [controlRate, setControlRate] = useState(
     defaultResults.controlRate !== undefined ? (defaultResults.controlRate * 100).toFixed(1) : ""
@@ -48,10 +50,17 @@ export default function ExperimentControls({
   const [savingResults, setSavingResults] = useState(false);
   const router = useRouter();
 
-  async function changeStatus(status: "completed" | "stopped") {
+  async function changeStatus(
+    status: "running" | "completed" | "stopped",
+    acknowledgeOverlap = false,
+  ) {
     setStatusLoading(status);
     try {
-      await updateExperimentStatusAction(experimentId, status);
+      const result = await updateExperimentStatusAction(experimentId, status, acknowledgeOverlap);
+      if (result?.type === "overlap_warning") {
+        setOverlaps(result.overlaps);
+        return;
+      }
       if (status === "completed") setShowResultsForm(true);
       router.refresh();
     } finally {
@@ -94,8 +103,77 @@ export default function ExperimentControls({
     );
   }
 
+  const isDraft = currentStatus === "draft";
+
   return (
     <div className="space-y-4">
+      {/* Overlap warning — shown when launching (draft or running path) */}
+      {overlaps && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+          <p className="text-sm font-bold text-amber-900 mb-1">
+            {overlaps.length === 1
+              ? "1 experiment is already running on this site."
+              : `${overlaps.length} experiments are already running on this site.`}
+          </p>
+          <ul className="text-sm text-amber-800 space-y-0.5 mb-3">
+            {overlaps.map((o) => (
+              <li key={o.id} className="flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-amber-400 shrink-0" />
+                <Link
+                  href={`/app/experiments/${o.id}`}
+                  className="underline underline-offset-2 hover:text-amber-900 transition-colors"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {o.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-amber-700 mb-3">
+            Concurrent experiments split traffic and can confound results. Launch only if you
+            intentionally want to run them in parallel.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={statusLoading !== null}
+              onClick={() => changeStatus("running", true)}
+              className="bg-amber-800 text-white px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity rounded"
+            >
+              {statusLoading === "running" ? "Launching…" : "Launch anyway"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOverlaps(null)}
+              className="text-sm text-amber-700 hover:text-amber-900 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Draft launch */}
+      {isDraft && !overlaps && (
+        <div className="bg-white border border-black/[0.05] rounded-2xl px-6 py-5 flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1">
+              Ready to launch
+            </div>
+            <p className="text-sm text-[#6B6B6B]">Start serving variant traffic to real visitors.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => changeStatus("running")}
+            disabled={statusLoading !== null}
+            className="ml-4 shrink-0 bg-[#111] text-[#FAFAF8] px-5 py-2.5 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
+          >
+            {statusLoading === "running" ? "Launching…" : "Launch experiment"}
+          </button>
+        </div>
+      )}
+
       {/* Status controls */}
       {isActive && (
         <div className="bg-white border border-black/[0.05] rounded-2xl px-6 py-5 flex items-center justify-between">
