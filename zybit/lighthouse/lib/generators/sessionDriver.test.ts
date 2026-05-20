@@ -32,7 +32,7 @@ describe('runSession', () => {
       rng: seededRng('test|casual|0'),
       sink,
     });
-    const pageviews = sink.emitted.filter((e) => e.type === 'pageview').length;
+    const pageviews = sink.emitted.filter((e) => e.type === 'page_view').length;
     expect(pageviews).toBe(result.pagesVisited);
     expect(pageviews).toBeGreaterThan(0);
   });

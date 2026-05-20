@@ -132,7 +132,7 @@ export async function runSession(
     await sink.emit({
       siteId,
       sessionId,
-      type: 'pageview',
+      type: 'page_view',
       path,
       anonymousId: distinctId,
       sourceEventId: `${prefix}_${seq++}`,

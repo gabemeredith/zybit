@@ -13,11 +13,7 @@
 
 import { eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
-import {
-  zybitFindings,
-  phase1Events,
-  phase2PageSnapshots,
-} from '@/lib/db/schema';
+import { phase1Events, phase2PageSnapshots } from '@/lib/db/schema';
 import { createPhase1Repository } from '@/lib/phase1';
 import { runPhase2InsightsPipeline } from '@/lib/phase2/runInsightsPipeline';
 import {
@@ -177,12 +173,31 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     },
     maxFindings: 50,
   });
+  if (insights.warnings.length > 0 || !insights.trustworthy) {
+    progress(
+      onProgress,
+      'insights',
+      `gate: trustworthy=${insights.trustworthy} warnings=${insights.warnings
+        .map((w) => `${w.code}`)
+        .join(',')}`,
+    );
+  }
+  progress(
+    onProgress,
+    'insights',
+    `auditReport: ${insights.auditReport.findings.length} findings (legacy ${insights.findings.length})`,
+  );
 
-  // 5) Sample rows for the inspector. Narrow column lists keep us
-  // resilient to schema drift on dev DBs missing recent migrations
-  // (e.g. forge_findings.learn_adjustment from drizzle/0013).
+  // 5) Sample rows for the inspector.
+  //
+  // Events + snapshots come from the DB so we see the real persisted
+  // shape. Findings come from the in-memory auditReport because
+  // runPhase2InsightsPipeline doesn't persist them — that's the cron's
+  // job (insightsTrigger.ts → upsertFindings). Doing it that way also
+  // sidesteps `forge_findings.learn_adjustment` on dev DBs that haven't
+  // applied drizzle/0013 yet.
   const db = getDb();
-  const [eventSample, snapshotSample, findingsSample] = await Promise.all([
+  const [eventSample, snapshotSample] = await Promise.all([
     db
       .select({
         id: phase1Events.id,
@@ -204,17 +219,16 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
       .from(phase2PageSnapshots)
       .where(eq(phase2PageSnapshots.siteId, siteId))
       .limit(5),
-    db
-      .select({
-        ruleId: zybitFindings.ruleId,
-        pathRef: zybitFindings.pathRef,
-        title: zybitFindings.title,
-        priorityScore: zybitFindings.priorityScore,
-      })
-      .from(zybitFindings)
-      .where(eq(zybitFindings.siteId, siteId))
-      .limit(10),
   ]);
+  const findingsSample = insights.auditReport.findings.slice(0, 10).map((f) => ({
+    ruleId: f.ruleId,
+    pathRef: f.pathRef,
+    title: f.title,
+    priorityScore: f.priorityScore,
+    severity: f.severity,
+    category: f.category,
+    summary: f.summary,
+  }));
 
   progress(onProgress, 'done', 'scenario complete');
   return {
@@ -226,7 +240,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
       sessions,
       events: written,
       snapshots: snapshotsTaken,
-      findings: insights.findings.length,
+      findings: insights.auditReport.findings.length,
     },
     sample: {
       events: eventSample,

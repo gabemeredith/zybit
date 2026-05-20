@@ -9,7 +9,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { getMe, postAuth, postLogout } from './routes/auth';
 import { getRunById, postGenerate } from './routes/generate';
 import { getScenarios } from './routes/scenarios';
-import { isStaticRequest, serveStatic } from './static';
+import { resolveStaticPath, serveStatic } from './static';
+// Side-effect imports: each scenario file calls registerScenario at module load.
+import '../lib/scenarios/acmebank';
 
 const PORT = Number.parseInt(process.env.LIGHTHOUSE_PORT ?? '3001', 10);
 
@@ -49,7 +51,7 @@ const server = createServer(async (req, res) => {
       getRunById(runMatch[1], req, res);
       return;
     }
-    const staticPath = isStaticRequest(method, url.pathname);
+    const staticPath = resolveStaticPath(method, url.pathname);
     if (staticPath !== null && (await serveStatic(staticPath, res))) {
       return;
     }
