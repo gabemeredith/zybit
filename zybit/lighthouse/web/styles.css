@@ -1,0 +1,108 @@
+:root {
+  color-scheme: light dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 2.5rem 1.5rem;
+  background: canvas;
+  color: canvastext;
+}
+
+#root {
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 1rem;
+}
+
+.loading {
+  opacity: 0.6;
+}
+
+.login {
+  max-width: 22rem;
+  margin: 4rem auto;
+  padding: 1.5rem;
+  border: 1px solid color-mix(in srgb, canvastext 20%, transparent);
+  border-radius: 0.6rem;
+}
+
+.login form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+input[type="password"],
+input[type="text"],
+input[type="number"],
+select {
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid color-mix(in srgb, canvastext 25%, transparent);
+  border-radius: 0.4rem;
+  background: canvas;
+  color: canvastext;
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid color-mix(in srgb, canvastext 35%, transparent);
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, canvastext 8%, canvas);
+  color: canvastext;
+  cursor: pointer;
+}
+
+button:hover {
+  background: color-mix(in srgb, canvastext 14%, canvas);
+}
+
+button.primary {
+  border-color: transparent;
+  background: canvastext;
+  color: canvas;
+}
+
+button.primary:hover {
+  opacity: 0.9;
+}
+
+.error {
+  color: #c44;
+  margin: 0.4rem 0 0;
+  font-size: 0.85em;
+}
+
+header.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid color-mix(in srgb, canvastext 15%, transparent);
+  padding-bottom: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+header.app-header .right {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+.empty {
+  margin: 3rem 0;
+  text-align: center;
+  opacity: 0.6;
+}
