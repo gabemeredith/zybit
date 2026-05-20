@@ -15,7 +15,9 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import { phase1Events, phase2PageSnapshots } from '@/lib/db/schema';
 import { createPhase1Repository } from '@/lib/phase1';
+import { upsertFindings } from '@/lib/phase2/jobs/insightsTrigger';
 import { runPhase2InsightsPipeline } from '@/lib/phase2/runInsightsPipeline';
+import type { AuditFinding } from '@/lib/phase2/rules/types';
 import {
   normalizePathRef,
   runSnapshot,
@@ -188,14 +190,41 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     `auditReport: ${insights.auditReport.findings.length} findings (legacy ${insights.findings.length})`,
   );
 
+  // Persist findings to forge_findings so /app/loop (and the embedded
+  // PM view) has something to render. Reuses the cron's upsert helper
+  // verbatim — same deterministic id, same dedup, same shape.
+  // Persistence failure is non-fatal: a run is still useful even if the
+  // PM view ends up empty.
+  const auditFindings = (insights.auditReport?.findings ?? []) as AuditFinding[];
+  if (auditFindings.length > 0) {
+    try {
+      const writtenFindings = await upsertFindings(
+        organizationId,
+        siteId,
+        auditFindings,
+        sessionStart.getTime() - padMs,
+        sessionEnd.getTime() + padMs,
+      );
+      progress(
+        onProgress,
+        'insights',
+        `persisted ${writtenFindings} findings to forge_findings`,
+      );
+    } catch (err) {
+      progress(
+        onProgress,
+        'insights',
+        `persist failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   // 5) Sample rows for the inspector.
   //
   // Events + snapshots come from the DB so we see the real persisted
-  // shape. Findings come from the in-memory auditReport because
-  // runPhase2InsightsPipeline doesn't persist them — that's the cron's
-  // job (insightsTrigger.ts → upsertFindings). Doing it that way also
-  // sidesteps `forge_findings.learn_adjustment` on dev DBs that haven't
-  // applied drizzle/0013 yet.
+  // shape. Findings come from the in-memory auditReport (rather than
+  // re-reading forge_findings) so the inspector reflects this run only,
+  // not whatever was previously persisted for this site.
   const db = getDb();
   const [eventSample, snapshotSample] = await Promise.all([
     db
