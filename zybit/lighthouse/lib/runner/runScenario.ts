@@ -1,0 +1,239 @@
+/**
+ * Scenario runner — orchestrates one full generation pass.
+ *
+ *   provision org/site/config
+ *      → emit N persona-weighted sessions into the sink
+ *      → take snapshots of every visited path
+ *      → run Zybit's Phase 2 insights pipeline
+ *      → read back counts + samples for the inspector
+ *
+ * Imports Zybit's pipeline (runPhase2InsightsPipeline, runSnapshot,
+ * createPhase1Repository) and DB schema directly — no code duplicated.
+ */
+
+import { eq } from 'drizzle-orm';
+import { getDb } from '@/lib/db/client';
+import {
+  zybitFindings,
+  phase1Events,
+  phase2PageSnapshots,
+} from '@/lib/db/schema';
+import { createPhase1Repository } from '@/lib/phase1';
+import { runPhase2InsightsPipeline } from '@/lib/phase2/runInsightsPipeline';
+import {
+  normalizePathRef,
+  runSnapshot,
+  SnapshotError,
+} from '@/lib/phase2/snapshots';
+import { runSession } from '../generators/sessionDriver';
+import { seededRng } from '../generators/rng';
+import { weightedSample } from '../generators/distributions';
+import { personaById } from '../personas';
+import { provisionLighthouseSite } from '../seeder/orgSite';
+import { DirectEventSink } from '../sinks/direct';
+import type { EventSinkMode, GenerateProgressEvent, GenerateResult, Scenario } from '../types';
+
+export interface RunScenarioOpts {
+  scenario: Scenario;
+  sessions: number;
+  mode: EventSinkMode;
+  /** Override the manifest baseUrl (e.g. tunneled URL from Step 10). */
+  baseUrl?: string;
+  onProgress?: (event: GenerateProgressEvent) => void;
+}
+
+function now(): string {
+  return new Date().toISOString();
+}
+
+function progress(
+  cb: ((e: GenerateProgressEvent) => void) | undefined,
+  step: GenerateProgressEvent['step'],
+  message: string,
+): void {
+  cb?.({ step, message, at: now() });
+}
+
+function buildPersonaMix(scenario: Scenario): Array<{ item: string; weight: number }> {
+  return scenario.personaMix.map((m) => ({
+    item: m.personaId,
+    weight: m.weight,
+  }));
+}
+
+function urlForPath(baseUrl: string, path: string): string {
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  const tail = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${tail}`;
+}
+
+export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult> {
+  if (opts.mode === 'posthog') {
+    throw new Error("--mode posthog is not implemented yet (Step 11)");
+  }
+
+  const startedAt = now();
+  const runId = `lh_run_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const { scenario, sessions, onProgress } = opts;
+  const baseUrl = opts.baseUrl ?? scenario.siteManifest.baseUrl;
+
+  // 1) Provision
+  progress(onProgress, 'provisioning', 'creating lighthouse_* org/site/config');
+  const { organizationId, siteId } = await provisionLighthouseSite({
+    slug: scenario.siteManifest.slug,
+    displayName: scenario.siteManifest.displayName,
+    domain:
+      scenario.siteManifest.localHostname ??
+      new URL(baseUrl).host,
+    config: {
+      ctas: scenario.siteManifest.primaryCtaSelector
+        ? [
+            {
+              pageRef: '/',
+              ctaId: 'primary',
+              label: 'Primary CTA',
+              visualWeight: 0.8,
+              match: { kind: 'event-type', type: 'cta_click' },
+            },
+          ]
+        : [],
+    },
+  });
+
+  // 2) Sessions
+  progress(onProgress, 'sessions', `running ${sessions} sessions`);
+  const sink = new DirectEventSink({ organizationId });
+  const personaMix = buildPersonaMix(scenario);
+  const visitedPaths = new Set<string>();
+  const sessionStart = new Date();
+
+  for (let i = 0; i < sessions; i++) {
+    const rng = seededRng(`${scenario.id}|${i}`);
+    const personaId = weightedSample(personaMix, rng);
+    const persona = personaById(personaId);
+    const sessionId = `lh_sess_${scenario.siteManifest.slug}_${i}`;
+    const distinctId = `lh_visitor_${scenario.siteManifest.slug}_${i % 200}`;
+    const result = await runSession({
+      persona,
+      rng,
+      siteId,
+      paths: scenario.siteManifest.primaryFunnelPaths,
+      primaryCta: scenario.siteManifest.primaryCtaSelector
+        ? { ctaId: 'primary', selector: scenario.siteManifest.primaryCtaSelector }
+        : undefined,
+      sink,
+      sessionId,
+      distinctId,
+      sourceEventPrefix: `${scenario.id}|${i}`,
+    });
+    visitedPaths.add(result.finalPath);
+    for (const p of scenario.siteManifest.primaryFunnelPaths) visitedPaths.add(p);
+  }
+  const { written } = await sink.flush();
+  const sessionEnd = new Date();
+
+  // 3) Snapshots
+  progress(onProgress, 'snapshots', `snapshotting ${visitedPaths.size} unique paths`);
+  const repository = createPhase1Repository();
+  let snapshotsTaken = 0;
+  const snapshotErrors: { path: string; code: string; message: string }[] = [];
+  for (const path of visitedPaths) {
+    const fullUrl = urlForPath(baseUrl, path);
+    try {
+      const r = await runSnapshot(fullUrl, { respectRobots: false });
+      await repository.upsertPageSnapshot({
+        organizationId,
+        siteId,
+        pathRef: normalizePathRef(r.finalUrl),
+        url: r.finalUrl,
+        data: r.data,
+        fetchedAt: new Date(),
+      });
+      snapshotsTaken++;
+    } catch (err) {
+      if (err instanceof SnapshotError) {
+        snapshotErrors.push({ path, code: err.code, message: err.message });
+      } else {
+        snapshotErrors.push({
+          path,
+          code: 'UNKNOWN',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  // 4) Insights
+  progress(onProgress, 'insights', 'running Phase 2 insights pipeline');
+  const padMs = 60_000;
+  const insights = await runPhase2InsightsPipeline({
+    organizationId,
+    siteId,
+    window: {
+      start: new Date(sessionStart.getTime() - padMs).toISOString(),
+      end: new Date(sessionEnd.getTime() + padMs).toISOString(),
+    },
+    maxFindings: 50,
+  });
+
+  // 5) Sample rows for the inspector. Narrow column lists keep us
+  // resilient to schema drift on dev DBs missing recent migrations
+  // (e.g. forge_findings.learn_adjustment from drizzle/0013).
+  const db = getDb();
+  const [eventSample, snapshotSample, findingsSample] = await Promise.all([
+    db
+      .select({
+        id: phase1Events.id,
+        type: phase1Events.type,
+        path: phase1Events.path,
+        source: phase1Events.source,
+        occurredAt: phase1Events.occurredAt,
+      })
+      .from(phase1Events)
+      .where(eq(phase1Events.siteId, siteId))
+      .limit(5),
+    db
+      .select({
+        pathRef: phase2PageSnapshots.pathRef,
+        url: phase2PageSnapshots.url,
+        contentHash: phase2PageSnapshots.contentHash,
+        fetchedAt: phase2PageSnapshots.fetchedAt,
+      })
+      .from(phase2PageSnapshots)
+      .where(eq(phase2PageSnapshots.siteId, siteId))
+      .limit(5),
+    db
+      .select({
+        ruleId: zybitFindings.ruleId,
+        pathRef: zybitFindings.pathRef,
+        title: zybitFindings.title,
+        priorityScore: zybitFindings.priorityScore,
+      })
+      .from(zybitFindings)
+      .where(eq(zybitFindings.siteId, siteId))
+      .limit(10),
+  ]);
+
+  progress(onProgress, 'done', 'scenario complete');
+  return {
+    runId,
+    scenarioId: scenario.id,
+    organizationId,
+    siteId,
+    counts: {
+      sessions,
+      events: written,
+      snapshots: snapshotsTaken,
+      findings: insights.findings.length,
+    },
+    sample: {
+      events: eventSample,
+      snapshots: snapshotSample,
+      findings: findingsSample,
+    },
+    startedAt,
+    finishedAt: now(),
+    ...(snapshotErrors.length ? { snapshotErrors } : {}),
+  };
+}

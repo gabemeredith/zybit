@@ -30,6 +30,13 @@ export interface SiteManifest {
   localPort?: number;
   localHostname?: string;
   runCommand?: string;
+  /**
+   * Fully-qualified base URL the runner drives sessions + snapshots
+   * against. For local OSS sites: `http://${localHostname}:${localPort}`.
+   * For tunneled access: the tunnel URL. For Lighthouse-served synthetic
+   * sites: the path under Lighthouse's own port.
+   */
+  baseUrl: string;
   primaryFunnelPaths: string[];
   expectedConversionEvent?: string;
   primaryCtaSelector?: string;
@@ -89,4 +96,5 @@ export interface GenerateResult {
   };
   startedAt: string;
   finishedAt: string;
+  snapshotErrors?: Array<{ path: string; code: string; message: string }>;
 }
