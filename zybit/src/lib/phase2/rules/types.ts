@@ -115,6 +115,20 @@ export interface SnapshotDiagram {
   proposedFix: string;
 }
 
+/**
+ * Layer 1 Learn — per-site re-ranking metadata applied after rules run.
+ * `delta` is added to `priorityScore`. `visible` gates the card-view pill at
+ * |delta| >= 0.05; the math is always applied to the score regardless.
+ */
+export interface LearnAdjustment {
+  delta: number;
+  tier: 1 | 2 | 3 | 4;
+  direction: 'boost' | 'dampen';
+  reason: string;
+  basedOnOutcomeIds: string[];
+  visible: boolean;
+}
+
 export interface AuditFinding {
   /** Stable, human-readable id, e.g. `hero-hierarchy-inversion:/pricing`. */
   id: string;
@@ -158,6 +172,12 @@ export interface AuditFinding {
     elementRef?: string;
     formRef?: string;
   };
+  /**
+   * Layer 1 Learn metadata. Present when the re-ranker matched past outcomes
+   * for this finding. `priorityScore` already reflects the `delta`; this field
+   * carries the explanation + audit trail.
+   */
+  learnAdjustment?: LearnAdjustment;
 }
 
 /**

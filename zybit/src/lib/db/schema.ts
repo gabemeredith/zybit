@@ -362,6 +362,14 @@ export const zybitFindings = pgTable(
       hypothesis: string | null;
       createdAt: string;
     } | null>(),
+    learnAdjustment: jsonb('learn_adjustment').$type<{
+      delta: number;
+      tier: 1 | 2 | 3 | 4;
+      direction: 'boost' | 'dampen';
+      reason: string;
+      basedOnOutcomeIds: string[];
+      visible: boolean;
+    } | null>(),
     // Lifecycle
     status: text('status').notNull().default('open'), // 'open'|'approved'|'dismissed'|'shipped'|'measured'
     previewUrl: text('preview_url'),

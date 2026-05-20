@@ -3,10 +3,12 @@ import { createPhase1Repository, generateFindings } from '@/lib/phase1';
 import { buildInsightInputFromEvents, runInsightInputGate } from '@/lib/phase2';
 import type { Phase2SiteConfig, RollupContext, RunInsightsResponse, TimeWindow } from '@/lib/phase2/types';
 import { runAuditRules } from '@/lib/phase2/rules';
+import { applyLearnRerank } from '@/lib/phase2/rules/learnReranker';
 import type { PageSnapshot } from '@/lib/phase2/snapshots/types';
 import { buildCaptureIndex, isCaptureV2Enabled } from '@/lib/phase2/capture';
 import { createCaptureRepository } from '@/lib/phase2/capture/repository';
 import type { PageCapture } from '@/lib/phase2/capture/types';
+import { createOutcomesRepository } from '@/lib/phase2/outcomes/repository';
 
 export interface RunPhase2InsightsArgs {
   organizationId: string;
@@ -92,6 +94,11 @@ export async function runPhase2InsightsPipeline(
     pageSnapshotsByPath,
     ...(pageCapturesByPath ? { pageCapturesByPath } : {}),
   });
+
+  // Layer 1 Learn — re-rank by past outcomes for this site. Pure fn, no schema
+  // change. Findings still surface — order and learnAdjustment metadata shift.
+  const pastOutcomes = await createOutcomesRepository().listForSite(siteId);
+  auditReport.findings = applyLearnRerank(auditReport.findings, pastOutcomes);
 
   // Best-effort: never block or fail an insights run on a usage write.
   incrementUsage(organizationId, 'insightsRuns', 1).catch(() => {});

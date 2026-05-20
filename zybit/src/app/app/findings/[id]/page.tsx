@@ -13,8 +13,10 @@ import type {
   AuditFindingEvidence,
   AuditFindingImpactEstimate,
   AuditFindingPrescription,
+  LearnAdjustment,
   SnapshotDiagram,
 } from "@/lib/phase2/rules/types";
+import { createOutcomesRepository, type ExperimentOutcomeRow } from "@/lib/phase2/outcomes/repository";
 
 const SEVERITY_STYLES = {
   critical: "bg-red-50 text-red-700 border-red-100",
@@ -29,6 +31,29 @@ const STATUS_LABELS: Record<string, string> = {
   shipped: "Shipped",
   measured: "Measured",
 };
+
+function outcomeGlyph(o: ExperimentOutcomeRow): string {
+  if (o.guardrailBreached) return "⚠";
+  if (o.result === "positive") return "✓";
+  if (o.result === "negative") return "✗";
+  return "○";
+}
+
+function outcomeSentence(o: ExperimentOutcomeRow): string {
+  const path = o.pathRef ?? "(site-wide)";
+  const mod = o.modificationType ? ` · ${o.modificationType}` : "";
+  if (o.guardrailBreached) {
+    const sign = (o.liftPct ?? 0) >= 0 ? "+" : "−";
+    return `Stopped early — breached ${o.guardrailBreached} on ${path} · primary ${sign}${Math.abs(o.liftPct ?? 0).toFixed(1)}%${mod}`;
+  }
+  if (o.result === "positive") {
+    return `Won +${(o.liftPct ?? 0).toFixed(1)}% on ${path}${mod}`;
+  }
+  if (o.result === "negative") {
+    return `Lost ${(o.liftPct ?? 0).toFixed(1)}% on ${path}${mod}`;
+  }
+  return `Inconclusive on ${path}${mod}`;
+}
 
 function timeAgo(d: Date | string): string {
   const diff = Date.now() - new Date(d).getTime();
@@ -64,6 +89,13 @@ export default async function FindingDetailPage({
 
   const finding = rows[0];
   if (!finding) notFound();
+
+  // Layer 1 Learn — load matched past outcomes for the "Past tests" panel.
+  const learn = finding.learnAdjustment as LearnAdjustment | null;
+  const pastOutcomes: ExperimentOutcomeRow[] =
+    learn && learn.basedOnOutcomeIds.length > 0
+      ? await createOutcomesRepository().listByIds(finding.siteId, learn.basedOnOutcomeIds)
+      : [];
 
   return (
     <div className="p-8 max-w-3xl mx-auto">
@@ -128,6 +160,35 @@ export default async function FindingDetailPage({
         impactEstimate={finding.impactEstimate as AuditFindingImpactEstimate | null}
         snapshotDiagram={finding.snapshotDiagram as unknown as SnapshotDiagram | null}
       />
+
+      {/* Past-tests panel (Z-3 / Zybit-093) */}
+      {learn && pastOutcomes.length > 0 && (
+        <section className="mt-6 bg-white border border-black/[0.05] rounded-2xl px-6 py-5">
+          <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1">
+            Past tests on your site
+          </div>
+          <div className="text-xs text-[#9B9B9B] mb-4">
+            Tier {learn.tier} match · Adjusted by {learn.delta >= 0 ? "+" : "−"}
+            {Math.abs(learn.delta).toFixed(2)}
+          </div>
+          <ul className="space-y-2 text-sm">
+            {pastOutcomes.map((o) => (
+              <li key={o.id} className="flex items-center gap-2">
+                <Link
+                  href={`/app/experiments/${o.experimentId}`}
+                  className="flex-1 flex items-center gap-2 text-[#111] hover:text-[#6B6B6B] transition-colors"
+                >
+                  <span className="font-mono text-base shrink-0">{outcomeGlyph(o)}</span>
+                  <span className="text-sm">{outcomeSentence(o)}</span>
+                </Link>
+                <span className="text-xs text-[#9B9B9B] shrink-0">
+                  {o.concludedAt.toISOString().slice(0, 10)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Experiment section */}
       {finding.prescription && finding.status !== "dismissed" && (

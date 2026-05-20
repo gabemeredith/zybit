@@ -74,7 +74,19 @@ type ResultEntry = {
   participants: number | null;
 };
 
-type TimelineEntry = DetectionEntry | DeploymentEntry | ResultEntry;
+type LearnedEntry = {
+  kind: 'learned';
+  date: Date;
+  experimentId: string;
+  ruleId: string | null;
+  pathRef: string | null;
+  modificationType: string | null;
+  result: string;
+  liftPct: number | null;
+  guardrailBreached: string | null;
+};
+
+type TimelineEntry = DetectionEntry | DeploymentEntry | ResultEntry | LearnedEntry;
 
 // ---------------------------------------------------------------------------
 // Data fetching
@@ -118,6 +130,9 @@ async function loadTimeline(
     db
       .select({
         experimentId: zybitExperimentOutcomes.experimentId,
+        ruleId: zybitExperimentOutcomes.ruleId,
+        pathRef: zybitExperimentOutcomes.pathRef,
+        modificationType: zybitExperimentOutcomes.modificationType,
         result: zybitExperimentOutcomes.result,
         liftPct: zybitExperimentOutcomes.liftPct,
         confidence: zybitExperimentOutcomes.confidence,
@@ -186,6 +201,20 @@ async function loadTimeline(
         participants:
           (outcome.controlParticipants ?? 0) + (outcome.variantParticipants ?? 0),
       });
+
+      // LEARNED entry (Zybit-093) — one minute after the result so chronological
+      // order reads "we saw the result, then the model learned from it."
+      entries.push({
+        kind: 'learned',
+        date: new Date(outcome.concludedAt.getTime() + 60_000),
+        experimentId: exp.id,
+        ruleId: outcome.ruleId,
+        pathRef: outcome.pathRef,
+        modificationType: outcome.modificationType,
+        result: outcome.result,
+        liftPct: outcome.liftPct,
+        guardrailBreached: outcome.guardrailBreached,
+      });
     }
   }
 
@@ -220,6 +249,7 @@ function EntryIcon({ kind }: { kind: TimelineEntry['kind'] }) {
     detection: '🔍',
     deployment: '🚀',
     result: '📊',
+    learned: '🧠',
   };
   return <span className="text-lg">{icons[kind]}</span>;
 }
@@ -295,7 +325,46 @@ function EntryLabel({ entry }: { entry: TimelineEntry }) {
     );
   }
 
+  if (entry.kind === 'learned') {
+    return (
+      <div>
+        <p className="font-medium">{learnedSentence(entry)}</p>
+        <p className="text-sm text-[#6B6B6B] mt-0.5">{learnedConsequence(entry)}</p>
+      </div>
+    );
+  }
+
   return null;
+}
+
+function learnedSentence(e: LearnedEntry): string {
+  const rule = e.ruleId ?? 'this rule';
+  const path = e.pathRef ?? '(site-wide)';
+  if (e.guardrailBreached) {
+    return `Your ${rule} variant on ${path} was stopped early — breached ${e.guardrailBreached}.`;
+  }
+  if (e.result === 'positive') {
+    return `You tested ${rule} on ${path} — variant won +${(e.liftPct ?? 0).toFixed(1)}%.`;
+  }
+  if (e.result === 'negative') {
+    return `You tested ${rule} on ${path} — variant lost ${(e.liftPct ?? 0).toFixed(1)}%.`;
+  }
+  return `You tested ${rule} on ${path} — inconclusive.`;
+}
+
+function learnedConsequence(e: LearnedEntry): string {
+  const rule = e.ruleId ?? 'similar';
+  if (e.guardrailBreached) {
+    const mod = e.modificationType ? `${e.modificationType} variants on ` : '';
+    return `Future ${mod}${rule} findings will rank lower until a clean win.`;
+  }
+  if (e.result === 'positive') {
+    return `Future ${rule} findings will rank higher until traffic patterns shift.`;
+  }
+  if (e.result === 'negative') {
+    return `Future ${rule} findings will rank lower until a win.`;
+  }
+  return 'No ranking change — insufficient signal.';
 }
 
 function dateLabel(d: Date): string {
@@ -327,6 +396,7 @@ export default async function LoopPage({
     detection: 'Detected',
     deployment: 'Deployed',
     result: 'Result',
+    learned: 'Learned',
   };
 
   return (
