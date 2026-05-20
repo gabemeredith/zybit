@@ -47,3 +47,10 @@ PRD.full.md
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# lighthouse — cloned upstream OSS sites used as Phase 1 fixtures.
+# Manifests + patches under each site dir ARE tracked; the clones are not.
+/lighthouse/sites/*/
+!/lighthouse/sites/*/manifest.json
+!/lighthouse/sites/*/patches/
+!/lighthouse/sites/README.md

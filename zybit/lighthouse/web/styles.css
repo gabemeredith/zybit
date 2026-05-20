@@ -1,0 +1,256 @@
+:root {
+  color-scheme: light dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 2.5rem 1.5rem;
+  background: canvas;
+  color: canvastext;
+}
+
+#root {
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 1rem;
+}
+
+.loading {
+  opacity: 0.6;
+}
+
+.login {
+  max-width: 22rem;
+  margin: 4rem auto;
+  padding: 1.5rem;
+  border: 1px solid color-mix(in srgb, canvastext 20%, transparent);
+  border-radius: 0.6rem;
+}
+
+.login form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+input[type="password"],
+input[type="text"],
+input[type="number"],
+select {
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid color-mix(in srgb, canvastext 25%, transparent);
+  border-radius: 0.4rem;
+  background: canvas;
+  color: canvastext;
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid color-mix(in srgb, canvastext 35%, transparent);
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, canvastext 8%, canvas);
+  color: canvastext;
+  cursor: pointer;
+}
+
+button:hover {
+  background: color-mix(in srgb, canvastext 14%, canvas);
+}
+
+button.primary {
+  border-color: transparent;
+  background: canvastext;
+  color: canvas;
+}
+
+button.primary:hover {
+  opacity: 0.9;
+}
+
+.error {
+  color: #c44;
+  margin: 0.4rem 0 0;
+  font-size: 0.85em;
+}
+
+header.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid color-mix(in srgb, canvastext 15%, transparent);
+  padding-bottom: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+header.app-header .right {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+.empty {
+  margin: 3rem 0;
+  text-align: center;
+  opacity: 0.6;
+}
+
+.controls {
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, canvastext 15%, transparent);
+  border-radius: 0.5rem;
+}
+
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.control-row label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85em;
+  gap: 0.25rem;
+}
+
+.runpane {
+  margin-top: 1.5rem;
+  /* Break out of #root's 64rem cap so the embedded PM iframe has real
+     estate. Stops 1rem from each viewport edge. */
+  width: calc(100vw - 2rem);
+  max-width: 100rem;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 1.5rem;
+}
+
+.col h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  margin: 0 0 0.5rem;
+}
+
+.col .subhead {
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  margin: 1.25rem 0 0.4rem;
+  font-weight: 600;
+}
+
+.pm-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pm-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pm-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+.pm-iframe {
+  width: 100%;
+  height: calc(100vh - 200px);
+  min-height: 32rem;
+  border: 1px solid color-mix(in srgb, canvastext 20%, transparent);
+  border-radius: 0.4rem;
+  background: canvas;
+}
+
+ul.progress {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85em;
+}
+
+ul.progress li {
+  padding: 0.3rem 0.5rem;
+  border-left: 2px solid color-mix(in srgb, canvastext 25%, transparent);
+}
+
+ul.progress li.step-done {
+  border-left-color: #2a8;
+}
+
+ul.progress li.step-error {
+  border-left-color: #c44;
+}
+
+table.counts {
+  border-collapse: collapse;
+  margin: 0.5rem 0 1rem;
+}
+
+table.counts th,
+table.counts td {
+  padding: 0.3rem 0.8rem;
+  text-align: left;
+}
+
+table.counts th {
+  font-weight: normal;
+  opacity: 0.7;
+}
+
+details.group {
+  margin: 0.5rem 0;
+  border: 1px solid color-mix(in srgb, canvastext 12%, transparent);
+  border-radius: 0.35rem;
+}
+
+details.group summary {
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+}
+
+details.group pre {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-top: 1px solid color-mix(in srgb, canvastext 12%, transparent);
+  font-size: 0.78em;
+  overflow-x: auto;
+  max-height: 36rem;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.9em;
+  background: color-mix(in srgb, canvastext 8%, canvas);
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+}

@@ -30,7 +30,7 @@ export async function countSiteSessions(siteId: string): Promise<number> {
   return Number(rows[0]?.cnt ?? 0);
 }
 
-async function upsertFindings(
+export async function upsertFindings(
   organizationId: string,
   siteId: string,
   auditFindings: AuditFinding[],

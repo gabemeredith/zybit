@@ -5,6 +5,7 @@ import { getServerAuth } from "@/lib/auth/serverAuth";
 import { getOrCreateOrg } from "@/lib/db/queries/org";
 import { createPhase1Repository } from "@/lib/phase1";
 import AppShell from "@/components/app/AppShell";
+import ImpersonationBanner from "@/components/app/ImpersonationBanner";
 
 export default async function AppLayout({
   children,
@@ -22,5 +23,10 @@ export default async function AppLayout({
   const sites = await repository.listSites({ organizationId: orgId, limit: 1 });
   const domain = sites[0]?.domain ?? null;
 
-  return <AppShell domain={domain}>{children}</AppShell>;
+  return (
+    <AppShell domain={domain}>
+      <ImpersonationBanner orgId={orgId} />
+      {children}
+    </AppShell>
+  );
 }
