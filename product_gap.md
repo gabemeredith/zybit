@@ -1,6 +1,6 @@
 # Zybit — Product Gap Analysis & Roadmap
 
-> **Status (updated 2026-05-19):** Analysis engine (Understand → Watch → Identify → Propose) production-ready. Test → Measure in place: outcome computation, preview, proxy reliability, PostHog visitor-ID bridge, auto-stop PM email, and "results last refreshed" cockpit surface. **GA4 connector shipped** (aggregate-grain, Identify/Propose only). **Visible loop view shipped** (timeline + guardrail badge + multi-site selector). Gap 2 (Billing) — metering + enforcement shipped; round-trip code bugs fixed; only live stripe-cli verification remains. Gap 6 (Onboarding) — integration-health cockpit + required MRR/AOV shipped. Remaining critical-path: live Stripe verification, then the Learn rule-calibration loop. Refer to `zybit/docs/BACKLOG.md` for sequencing.
+> **Status (updated 2026-05-19):** Analysis engine (Understand → Watch → Identify → Propose) production-ready. Test → Measure in place: outcome computation, preview, proxy reliability, PostHog visitor-ID bridge, auto-stop PM email, and "results last refreshed" cockpit surface. **GA4 connector shipped** (aggregate-grain, Identify/Propose only). **Visible loop view shipped** (timeline + guardrail badge + multi-site selector + LEARNED entry). **Learn Layer 1 (per-site re-ranking) shipped** — past outcomes now adjust `priorityScore` on new findings via `applyLearnRerank`. Gap 2 (Billing) — metering + enforcement shipped; round-trip code bugs fixed; only live stripe-cli verification remains. Gap 6 (Onboarding) — integration-health cockpit + required MRR/AOV shipped. Remaining critical-path: live Stripe verification, then Learn Layer 2 (per-site rule-threshold calibration). Refer to `zybit/docs/BACKLOG.md` for sequencing.
 
 ---
 
@@ -266,6 +266,8 @@ The proxy stops applying the variant on next Edge Config sync (within 30s). No m
 ---
 
 ## Gap 4 — Outcome Feedback & Learning Loop (P1, The Moat)
+
+> **Status:** ⚠️ Partial — **Layer 1 (per-site re-ranking) shipped.** `applyLearnRerank` in `zybit/src/lib/phase2/rules/learnReranker.ts` matches new findings against past outcomes via a cascade (`(ruleId, pathRef, modType)` → `(ruleId, pathRef)` → `(ruleId, modType)` → `(ruleId)`) and adjusts `priorityScore` using `clamp(liftPct, ±20) × confidence × tierStrength × 0.01` with a stacked guardrail penalty. Persisted as `learn_adjustment` jsonb on `forge_findings` (drizzle/0013), surfaced as backlog pill, finding-detail "Past tests" panel, and LEARNED timeline entry on `/app/loop`. **Layer 2 (per-site rule-threshold mutation) and Layer 3 (cross-site priors, ≥50 customers) remain unbuilt** — the architecture described below was the original three-layer vision; only Layer 1 is shipped.
 
 ### Problem
 Zybit's audit rules produce the same findings regardless of what has already been tested and measured. A rule will flag `form-abandonment` on a page even if Zybit already ran an experiment on that exact form and it did not move the metric. The rules have no memory.
