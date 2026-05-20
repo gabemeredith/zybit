@@ -2,7 +2,7 @@
 
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getServerAuth } from "@/lib/auth/serverAuth";
 import { getDb } from "@/lib/db/client";
 import { zybitExperiments, zybitFindings } from "@/lib/db/schema";
