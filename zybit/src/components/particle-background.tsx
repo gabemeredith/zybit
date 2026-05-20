@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useMemo } from "react";
+import React, { useRef, useMemo, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
@@ -445,6 +445,23 @@ function ParticleSwarm() {
   const smoothPanRef = useRef(0);
   const smoothProgressRef = useRef(0);
 
+  // Cache the desktop normalization denominator so useFrame never triggers a
+  // synchronous layout reflow by reading scrollHeight mid-frame (layout thrashing).
+  // Only desktop uses this; mobile maps uP = scrollInVH directly.
+  const maxScrollInVHRef = useRef(5.0);
+  useEffect(() => {
+    if (isMobile) return;
+    const update = () => {
+      maxScrollInVHRef.current = Math.max(
+        5.0,
+        (document.documentElement.scrollHeight - window.innerHeight) / window.innerHeight,
+      );
+    };
+    update();
+    window.addEventListener("resize", update, { passive: true });
+    return () => window.removeEventListener("resize", update);
+  }, [isMobile]);
+
   // Generate centered buffers
   const buffers = useMemo(() => ({
     spawn: getSpawnPoints(PARTICLE_COUNT),
@@ -511,18 +528,12 @@ function ParticleSwarm() {
     
     const scrollInVH = scrollY / window.innerHeight;
 
-    // On mobile, sections 1–4 are all h-screen, so a direct 1:1 mapping
-    // (uP = scrollInVH) aligns each shape with its text section perfectly.
-    // Normalizing against total page height compresses uP — at the Jet section
-    // (scroll=2vh) uP≈1.65 so the shape is only ~70% formed; at the Chip
-    // section (scroll=3vh) uP≈2.4 leaving it ~42% formed and ~0.7vh below
-    // center. Section 5 (finding card) has bg-[#FAFAF8] so particles aren't
-    // visible there; SilkWave reaches uP=5 before the CTA section regardless.
-    // Desktop keeps the normalized mapping — shapes sit to the sides and the
-    // full-range spread over the whole scroll feels intentional there.
-    const uP = isMobile
-      ? Math.min(5.0, scrollInVH)
-      : Math.min(5.0, scrollInVH * (5.0 / Math.max(5.0, (document.documentElement.scrollHeight - window.innerHeight) / window.innerHeight)));
+    // Mobile uses a direct 1:1 mapping (sections 1–4 are all h-screen) so each
+    // shape is fully formed when its text section is reached. Desktop uses the
+    // cached normalization denominator — updated on resize, never read mid-frame
+    // so there is no per-frame layout reflow.
+    const maxScrollInVH = isMobile ? 5.0 : maxScrollInVHRef.current;
+    const uP = Math.min(5.0, scrollInVH * (5.0 / maxScrollInVH));
 
     // Exponential-decay lerp at lambda=5: smooth on 60/90/120 Hz ProMotion without lag.
     // Both Y-pan and morph progress target the same uP so they stay perfectly in sync,
