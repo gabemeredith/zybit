@@ -31,12 +31,13 @@ export const acmebank: Scenario = {
     displayName: 'AcmeBank',
     stack: 'static HTML served by Lighthouse',
     baseUrl: 'http://localhost:3001/fake-sites/acmebank',
-    // Only `/` here so every session lands there — needed for the
-    // bounce-on-key-page rule to reach its MIN_ENTRIES=100 threshold.
-    // Pricing/signup pages still exist on disk and get snapshotted via
-    // the runner's "primaryFunnelPaths union final-path" set when
-    // engineered scenarios visit them; for the smoke we only need `/`.
-    primaryFunnelPaths: ['/'],
+    // Sessions land on /checking-accounts so the finding reads like a
+    // real banking key-funnel page rather than a generic `/`. The HTML
+    // at /fake-sites/acmebank/checking-accounts.html is engineered the
+    // same way as the home page — buried CTA, padding-heavy copy — so
+    // the bounce-on-key-page rule still fires (MIN_ENTRIES=100 met by
+    // having every session enter here).
+    primaryFunnelPaths: ['/checking-accounts'],
     primaryCtaSelector: '[data-testid=signup-cta]',
     expectedConversionEvent: 'form_submit',
     requiresTunnel: false,

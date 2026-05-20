@@ -172,8 +172,11 @@ async function pollRun(runId, runPane) {
 
 function renderRunState(runPane, state) {
   clear(runPane);
-  const left = el('div', { class: 'col' }, [
-    el('h2', {}, 'progress'),
+
+  // Left column — INTERNALS: progress + counts + sample JSON.
+  const left = el('div', { class: 'col internals-col' }, [
+    el('h2', {}, 'internals'),
+    el('h3', { class: 'subhead' }, 'progress'),
     el(
       'ul',
       { class: 'progress' },
@@ -186,17 +189,16 @@ function renderRunState(runPane, state) {
       : null,
   ]);
 
-  const right = el('div', { class: 'col' });
   if (state.status === 'done' && state.result) {
     const { counts, sample, organizationId, siteId, snapshotErrors } = state.result;
-    right.appendChild(el('h2', {}, 'results'));
-    right.appendChild(
+    left.appendChild(el('h3', { class: 'subhead' }, 'results'));
+    left.appendChild(
       el('p', {}, [
         el('strong', {}, 'org/site '),
         el('code', {}, `${organizationId} / ${siteId}`),
       ]),
     );
-    right.appendChild(
+    left.appendChild(
       el('table', { class: 'counts' }, [
         el('tr', {}, [el('th', {}, 'sessions'), el('td', {}, String(counts.sessions))]),
         el('tr', {}, [el('th', {}, 'events'), el('td', {}, String(counts.events))]),
@@ -205,26 +207,26 @@ function renderRunState(runPane, state) {
       ]),
     );
     if (snapshotErrors?.length) {
-      right.appendChild(
+      left.appendChild(
         el('details', { class: 'group' }, [
           el('summary', {}, `${snapshotErrors.length} snapshot error(s)`),
           el('pre', {}, JSON.stringify(snapshotErrors, null, 2)),
         ]),
       );
     }
-    right.appendChild(
+    left.appendChild(
       el('details', { class: 'group', open: 'open' }, [
         el('summary', {}, `findings (${sample.findings.length} shown)`),
         el('pre', {}, JSON.stringify(sample.findings, null, 2)),
       ]),
     );
-    right.appendChild(
+    left.appendChild(
       el('details', { class: 'group' }, [
         el('summary', {}, `snapshots sample (${sample.snapshots.length})`),
         el('pre', {}, JSON.stringify(sample.snapshots, null, 2)),
       ]),
     );
-    right.appendChild(
+    left.appendChild(
       el('details', { class: 'group' }, [
         el('summary', {}, `events sample (${sample.events.length})`),
         el('pre', {}, JSON.stringify(sample.events, null, 2)),
@@ -232,7 +234,63 @@ function renderRunState(runPane, state) {
     );
   }
 
+  // Right column — PM VIEW: "Open as PM" button until clicked, then
+  // an iframe of the embedded /app/loop loaded as the synthetic PM.
+  const right = el('div', { class: 'col pm-col' }, [el('h2', {}, 'pm view')]);
+  if (state.status === 'done' && state.result) {
+    right.appendChild(buildPmView(state.result.siteId));
+  } else if (state.status === 'running') {
+    right.appendChild(
+      el('p', { class: 'pm-status' }, 'pm view appears here once the run finishes.'),
+    );
+  }
+
   runPane.appendChild(el('div', { class: 'two-col' }, [left, right]));
+}
+
+function buildPmView(siteId) {
+  const wrap = el('div', { class: 'pm-view' });
+  const status = el(
+    'p',
+    { class: 'pm-status' },
+    'embed /app/loop as the synthetic PM for this site.',
+  );
+  const openBtn = el(
+    'button',
+    { type: 'button', class: 'primary' },
+    'open as PM',
+  );
+  openBtn.addEventListener('click', async () => {
+    openBtn.setAttribute('disabled', 'disabled');
+    status.textContent = 'minting session…';
+    try {
+      const r = await api('/lighthouse/api/impersonate/start', {
+        method: 'POST',
+        body: JSON.stringify({ siteId }),
+      });
+      if (!r.ok) {
+        const msg = (r.body && (r.body.detail || r.body.error)) || `http ${r.status}`;
+        throw new Error(msg);
+      }
+      // Swap the button for the iframe. Sandbox is permissive on purpose:
+      // /app/* needs scripts, same-origin cookies, forms, and popups.
+      clear(wrap);
+      wrap.appendChild(
+        el('iframe', {
+          src: r.body.embedUrl,
+          class: 'pm-iframe',
+          sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups',
+          title: 'PM view (synthetic)',
+        }),
+      );
+    } catch (err) {
+      status.textContent = `error: ${err.message}`;
+      openBtn.removeAttribute('disabled');
+    }
+  });
+  wrap.appendChild(openBtn);
+  wrap.appendChild(status);
+  return wrap;
 }
 
 async function boot() {

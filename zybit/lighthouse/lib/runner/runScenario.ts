@@ -13,7 +13,13 @@
 
 import { eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
-import { phase1Events, phase2PageSnapshots } from '@/lib/db/schema';
+import {
+  phase1Events,
+  phase2PageSnapshots,
+  zybitExperimentOutcomes,
+  zybitExperiments,
+  zybitFindings,
+} from '@/lib/db/schema';
 import { createPhase1Repository } from '@/lib/phase1';
 import { upsertFindings } from '@/lib/phase2/jobs/insightsTrigger';
 import { runPhase2InsightsPipeline } from '@/lib/phase2/runInsightsPipeline';
@@ -73,6 +79,33 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
   const runId = `lh_run_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
   const { scenario, sessions, onProgress } = opts;
   const baseUrl = opts.baseUrl ?? scenario.siteManifest.baseUrl;
+
+  // 0) Reset prior data for this site so re-runs start clean.
+  //
+  // The event sink dedupes on (siteId, source, sourceEventId) and the
+  // simulator generates deterministic ids, so without a reset a re-run
+  // inserts 0 events and the audit window (now()) sees 0 in-window
+  // events even though the table has stale rows from yesterday. We also
+  // clear experiments + outcomes so the PM-view timeline ("/app/loop")
+  // shows raw before-state, not stale DEPLOYED entries from prior runs.
+  // Org/site/user rows are intentionally preserved — they're needed for
+  // the impersonation handoff in Step 3.
+  //
+  // Every delete is scoped to a single `lighthouse_site_<slug>` siteId,
+  // so this can never touch real customer data even on a shared DB.
+  const preExistingSiteId = `lighthouse_site_${scenario.siteManifest.slug}`;
+  {
+    const db = getDb();
+    await Promise.all([
+      db.delete(phase1Events).where(eq(phase1Events.siteId, preExistingSiteId)),
+      db.delete(phase2PageSnapshots).where(eq(phase2PageSnapshots.siteId, preExistingSiteId)),
+      db.delete(zybitFindings).where(eq(zybitFindings.siteId, preExistingSiteId)),
+      db
+        .delete(zybitExperimentOutcomes)
+        .where(eq(zybitExperimentOutcomes.siteId, preExistingSiteId)),
+      db.delete(zybitExperiments).where(eq(zybitExperiments.siteId, preExistingSiteId)),
+    ]);
+  }
 
   // 1) Provision
   progress(onProgress, 'provisioning', 'creating lighthouse_* org/site/config');

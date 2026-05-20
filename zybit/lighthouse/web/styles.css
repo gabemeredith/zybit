@@ -130,11 +130,18 @@ header.app-header .right {
 
 .runpane {
   margin-top: 1.5rem;
+  /* Break out of #root's 64rem cap so the embedded PM iframe has real
+     estate. Stops 1rem from each viewport edge. */
+  width: calc(100vw - 2rem);
+  max-width: 100rem;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .two-col {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   gap: 1.5rem;
 }
 
@@ -144,6 +151,43 @@ header.app-header .right {
   letter-spacing: 0.04em;
   opacity: 0.75;
   margin: 0 0 0.5rem;
+}
+
+.col .subhead {
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  margin: 1.25rem 0 0.4rem;
+  font-weight: 600;
+}
+
+.pm-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pm-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pm-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+.pm-iframe {
+  width: 100%;
+  height: calc(100vh - 200px);
+  min-height: 32rem;
+  border: 1px solid color-mix(in srgb, canvastext 20%, transparent);
+  border-radius: 0.4rem;
+  background: canvas;
 }
 
 ul.progress {
