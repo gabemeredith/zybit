@@ -138,10 +138,12 @@ To reset between runs, delete the lighthouse_* rows in this order
 | 10 | cloudflared tunnel wrapper | `lighthouse/lib/tunnel/cloudflared.ts` |
 | 11 | PostHog opt-in sink (4 tests) | `lighthouse/lib/sinks/posthog.ts` |
 | 12 | acmebank fake site + scenario + smoke | `lighthouse/fake-sites/acmebank/*`, `lighthouse/lib/scenarios/acmebank.ts` |
+| 13 | findings persist to `forge_findings`; synthetic `app_users` row per scenario; auto-reset of events/snapshots/findings/experiments per run | `lighthouse/lib/runner/runScenario.ts`, `lighthouse/lib/seeder/orgSite.ts` |
+| 14 | "open as PM" iframe — mints a `zb_session` for the synthetic user and embeds `/app/loop`; amber banner inside `/app/*` for `lighthouse_org_*` | `lighthouse/server/routes/impersonate.ts`, `lighthouse/web/app.js`, `src/components/app/ImpersonationBanner.tsx`, `src/app/app/layout.tsx` |
 
-**35/35 unit tests pass.** Only files touched outside `lighthouse/`:
-`zybit/package.json` (one line: `tsx` devDep), plus a Lighthouse-related
-`.gitignore` update. Zero `src/` modifications.
+Steps 13–14 touch `src/`: `src/lib/phase2/jobs/insightsTrigger.ts`
+(one `export`), `src/components/app/ImpersonationBanner.tsx` (new),
+`src/app/app/layout.tsx` (mount the banner).
 
 Run tests:
 
@@ -151,19 +153,47 @@ npx vitest run --config lighthouse/vitest.config.ts
 
 ## 8. Known limitations (Phase 1 scope)
 
-- **Findings shown in the Lighthouse inspector are NOT persisted to
-  `forge_findings`.** The Zybit pull-sync cron is what writes them
-  (via `src/lib/phase2/jobs/insightsTrigger.ts → upsertFindings`), and
-  we deliberately don't call it. So Zybit's PM dashboard at
-  `/app/loop` won't show these findings unless we add a separate
-  write path.
+- **Test/Measure/Learn surfaces render empty for lighthouse sites.**
+  `/app/experiments/*` is DNS-gated and the variant-preview route
+  fetches `https://<domain>/<path>` which doesn't fit the synthetic
+  `localhost:3001/fake-sites/...` origin. Fixing this means
+  synthesizing `forge_experiments` + `zybit_experiment_outcomes` per
+  scenario (and patching the preview route for `lighthouse_site_*`).
+  Deferred — out of scope for v1 embed.
+- **Cookie handoff is localhost-only.** The impersonation route mints
+  a `zb_session` cookie without a `Domain` attribute; browsers share
+  it across ports on `localhost` but a deployed Lighthouse would need
+  a signed handoff token + a `/api/lighthouse/handoff` endpoint on
+  the Zybit side. Local-dev only.
 - `--mode posthog` and the `cloudflared` tunnel wrapper are wired up
   but only exercised against real OSS sites you feed in (see §9).
   posthog mode also requires `LIGHTHOUSE_POSTHOG_API_KEY` in
   `lighthouse/.env`.
-- Loop steps 5–7 (Test / Measure / Learn) are deferred. Test needs a
-  customer origin to proxy; Measure needs assignments from Test;
-  Learn needs outcomes from Measure.
+- The other AcmeBank pages (`index.html`, `pricing.html`,
+  `signup.html`) still have placeholder copy. Only matters if a
+  finding surfaces them in a snapshot diagram.
+
+## 8a. The PM view
+
+After a Generate finishes, the right column shows **open as PM**. Click
+it:
+
+1. `POST /lighthouse/api/impersonate/start` mints a real `zb_session`
+   cookie for the synthetic `app_users` row that the seeder created
+   (`lighthouse_user_<slug>`).
+2. The button swaps for an iframe of `http://localhost:3000/app/loop`
+   (override origin via `ZYBIT_APP_BASE_URL` in `lighthouse/.env`).
+3. An amber banner at the top of every `/app/*` page identifies the
+   session as synthetic (`Synthetic Lighthouse PM view (lighthouse_org_<slug>)`).
+4. The cookie scopes to host `localhost`, so it's also valid in any
+   other browser tab on `:3000`. Side effect: opening as PM overwrites
+   any real `zb_session` you have on `localhost`. Log back in if you
+   had a real session running.
+
+A new run via Generate auto-clears prior events/snapshots/findings/
+experiments for the same `lighthouse_site_<slug>` so the PM view shows
+only the current run's state. Org/site/user rows are preserved so the
+session cookie keeps working across runs.
 
 ## 9. Adding more scenarios
 
