@@ -208,6 +208,11 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     },
     maxFindings: 50,
   });
+  // `auditReport` is typed as optional on the pipeline result for legacy
+  // reasons; in practice runPhase2InsightsPipeline always returns it.
+  // Default to an empty array so downstream code (logging, persistence,
+  // counts, samples) doesn't have to repeat the narrowing.
+  const auditFindings = (insights.auditReport?.findings ?? []) as AuditFinding[];
   if (insights.warnings.length > 0 || !insights.trustworthy) {
     progress(
       onProgress,
@@ -220,7 +225,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
   progress(
     onProgress,
     'insights',
-    `auditReport: ${insights.auditReport.findings.length} findings (legacy ${insights.findings.length})`,
+    `auditReport: ${auditFindings.length} findings (legacy ${insights.findings.length})`,
   );
 
   // Persist findings to forge_findings so /app/loop (and the embedded
@@ -228,7 +233,6 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
   // verbatim — same deterministic id, same dedup, same shape.
   // Persistence failure is non-fatal: a run is still useful even if the
   // PM view ends up empty.
-  const auditFindings = (insights.auditReport?.findings ?? []) as AuditFinding[];
   if (auditFindings.length > 0) {
     try {
       const writtenFindings = await upsertFindings(
@@ -282,7 +286,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
       .where(eq(phase2PageSnapshots.siteId, siteId))
       .limit(5),
   ]);
-  const findingsSample = insights.auditReport.findings.slice(0, 10).map((f) => ({
+  const findingsSample = auditFindings.slice(0, 10).map((f) => ({
     ruleId: f.ruleId,
     pathRef: f.pathRef,
     title: f.title,
@@ -302,7 +306,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
       sessions,
       events: written,
       snapshots: snapshotsTaken,
-      findings: insights.auditReport.findings.length,
+      findings: auditFindings.length,
     },
     sample: {
       events: eventSample,
