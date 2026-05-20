@@ -72,7 +72,7 @@ export async function postGenerate(req: IncomingMessage, res: ServerResponse): P
 
   const state = createRun(scenarioId);
 
-  // Background — do NOT await. The caller polls /api/runs/:runId for progress.
+  // Background — do NOT await. The caller polls /lighthouse/api/runs/:runId for progress.
   void (async () => {
     try {
       const result = await runScenario({

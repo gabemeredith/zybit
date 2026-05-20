@@ -37,7 +37,7 @@ async function api(path, opts) {
 }
 
 async function checkAuth() {
-  const { body } = await api('/api/me');
+  const { body } = await api('/lighthouse/api/me');
   return Boolean(body && body.authenticated);
 }
 
@@ -64,7 +64,7 @@ function renderLogin(errorMessage) {
 async function handleLogin(ev) {
   ev.preventDefault();
   const password = ev.target.elements.password.value;
-  const r = await api('/api/auth', {
+  const r = await api('/lighthouse/api/auth', {
     method: 'POST',
     body: JSON.stringify({ password }),
   });
@@ -73,7 +73,7 @@ async function handleLogin(ev) {
 }
 
 async function handleLogout() {
-  await api('/api/logout', { method: 'POST' });
+  await api('/lighthouse/api/logout', { method: 'POST' });
   renderLogin();
 }
 
@@ -92,7 +92,7 @@ async function renderDashboard() {
   const runPane = el('section', { class: 'runpane' });
   root.appendChild(el('div', {}, [header, controls, runPane]));
 
-  const { body } = await api('/api/scenarios');
+  const { body } = await api('/lighthouse/api/scenarios');
   clear(controls);
   const scenarios = (body && body.scenarios) || [];
   if (scenarios.length === 0) {
@@ -128,7 +128,7 @@ async function renderDashboard() {
     const sessions = Number(sessionsInput.value);
     const mode = modeSelect.value;
     try {
-      const r = await api('/api/generate', {
+      const r = await api('/lighthouse/api/generate', {
         method: 'POST',
         body: JSON.stringify({ scenarioId, sessions, mode }),
       });
@@ -155,7 +155,7 @@ async function renderDashboard() {
 async function pollRun(runId, runPane) {
   let lastProgressCount = -1;
   for (;;) {
-    const { body } = await api(`/api/runs/${encodeURIComponent(runId)}`);
+    const { body } = await api(`/lighthouse/api/runs/${encodeURIComponent(runId)}`);
     if (!body) {
       clear(runPane);
       runPane.appendChild(el('p', { class: 'error' }, 'run vanished'));

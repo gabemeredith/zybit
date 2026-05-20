@@ -1,8 +1,8 @@
 /**
  * Auth routes:
- *   POST /api/auth    body: { password }   → set session cookie
- *   POST /api/logout                       → clear session cookie
- *   GET  /api/me                           → { authenticated: boolean }
+ *   POST /lighthouse/api/auth    body: { password }   → set session cookie
+ *   POST /lighthouse/api/logout                       → clear session cookie
+ *   GET  /lighthouse/api/me                           → { authenticated: boolean }
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
