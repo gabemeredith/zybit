@@ -43,8 +43,11 @@ From the **app root** (the inner `zybit/` that owns the Next.js app and
 `lighthouse/`):
 
 ```bash
-npx tsx --env-file=lighthouse/.env lighthouse/server/index.ts
+npx tsx --env-file=.env --env-file=lighthouse/.env lighthouse/server/index.ts
 ```
+
+Zybit's `.env` is loaded first (for `DATABASE_URL` and other shared
+keys), then `lighthouse/.env` overlays `LIGHTHOUSE_*` keys on top.
 
 Then open <http://localhost:3001/lighthouse>.
 

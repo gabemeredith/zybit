@@ -7,6 +7,8 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { getMe, postAuth, postLogout } from './routes/auth';
+import { getRunById, postGenerate } from './routes/generate';
+import { getScenarios } from './routes/scenarios';
 import { isStaticRequest, serveStatic } from './static';
 
 const PORT = Number.parseInt(process.env.LIGHTHOUSE_PORT ?? '3001', 10);
@@ -21,12 +23,16 @@ const routes: Record<string, Handler> = {
   'POST /api/auth': postAuth,
   'POST /api/logout': postLogout,
   'GET /api/me': getMe,
+  'GET /api/scenarios': getScenarios,
+  'POST /api/generate': postGenerate,
 };
 
 function notFound(res: ServerResponse): void {
   res.writeHead(404, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ error: 'not_found' }));
 }
+
+const RUN_PATH = /^\/api\/runs\/([\w-]+)$/;
 
 const server = createServer(async (req, res) => {
   const method = req.method ?? 'GET';
@@ -36,6 +42,11 @@ const server = createServer(async (req, res) => {
     const handler = routes[key];
     if (handler) {
       await handler(req, res);
+      return;
+    }
+    const runMatch = method === 'GET' ? RUN_PATH.exec(url.pathname) : null;
+    if (runMatch) {
+      getRunById(runMatch[1], req, res);
       return;
     }
     const staticPath = isStaticRequest(method, url.pathname);
