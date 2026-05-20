@@ -124,9 +124,10 @@ export async function launchExperimentAction(
     return {
       type: "overlap_warning",
       overlaps: runningOnSite.map((e) => {
-        const name = e.notes
-          ? (JSON.parse(e.notes) as { name?: string }).name ?? e.hypothesis
-          : e.hypothesis;
+        let name = e.hypothesis;
+        try {
+          if (e.notes) name = (JSON.parse(e.notes) as { name?: string }).name ?? e.hypothesis;
+        } catch { /* malformed notes — fall back to hypothesis */ }
         return { id: e.id, name };
       }),
     };

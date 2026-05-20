@@ -4,6 +4,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -69,7 +70,7 @@ export const authRateLimits = pgTable(
     count: integer('count').notNull().default(1),
   },
   (table) => ({
-    pk: uniqueIndex('auth_rate_limits_pk').on(table.key, table.windowStart),
+    pk: primaryKey({ columns: [table.key, table.windowStart] }),
   })
 );
 

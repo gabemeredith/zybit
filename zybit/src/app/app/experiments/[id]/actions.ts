@@ -25,12 +25,17 @@ export async function updateExperimentStatusAction(
   if (!VALID_STATUSES.includes(status)) return;
 
   const db = getDb();
+  const now = new Date();
 
-  // When launching (draft → running), detect concurrent experiments on the same site.
-  let overlappingIds: string[] | null = null;
+  // These are only set when transitioning a non-running experiment to running.
+  // Initialized as undefined so Drizzle omits them from the UPDATE in all other cases,
+  // preventing audit trail wipe and spurious startedAt resets.
+  let overlappingIds: string[] | null | undefined = undefined;
+  let startedAt: Date | undefined = undefined;
+
   if (status === "running") {
     const [thisExp] = await db
-      .select({ siteId: zybitExperiments.siteId })
+      .select({ siteId: zybitExperiments.siteId, status: zybitExperiments.status })
       .from(zybitExperiments)
       .where(
         and(
@@ -40,7 +45,11 @@ export async function updateExperimentStatusAction(
       )
       .limit(1);
 
-    if (thisExp) {
+    // Only run overlap detection when actually launching (draft → running).
+    // Skip if already running to avoid resetting startedAt or wiping the audit trail.
+    if (thisExp && thisExp.status !== "running") {
+      startedAt = now;
+
       const runningOnSite = await db
         .select({
           id: zybitExperiments.id,
@@ -60,26 +69,24 @@ export async function updateExperimentStatusAction(
         return {
           type: "overlap_warning",
           overlaps: runningOnSite.map((e) => {
-            const name = e.notes
-              ? (JSON.parse(e.notes) as { name?: string }).name ?? e.hypothesis
-              : e.hypothesis;
+            let name = e.hypothesis;
+            try {
+              if (e.notes) name = (JSON.parse(e.notes) as { name?: string }).name ?? e.hypothesis;
+            } catch { /* malformed notes — fall back to hypothesis */ }
             return { id: e.id, name };
           }),
         };
       }
 
-      if (runningOnSite.length > 0) {
-        overlappingIds = runningOnSite.map((e) => e.id);
-      }
+      overlappingIds = runningOnSite.length > 0 ? runningOnSite.map((e) => e.id) : null;
     }
   }
 
-  const now = new Date();
   await db
     .update(zybitExperiments)
     .set({
       status,
-      startedAt: status === "running" ? now : undefined,
+      startedAt,
       completedAt: status === "completed" || status === "stopped" ? now : undefined,
       overlappingExperimentIds: overlappingIds,
       updatedAt: now,
