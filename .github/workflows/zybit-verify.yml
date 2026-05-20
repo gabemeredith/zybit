@@ -29,6 +29,8 @@ jobs:
 
       - run: npm run verify
 
+      - run: npm run test
+
   migrate-smoke:
     runs-on: ubuntu-latest
     env:

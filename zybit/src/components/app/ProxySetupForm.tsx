@@ -298,11 +298,25 @@ export default function ProxySetupForm({
           )}
 
           {phase === "verified" && (
-            <div className="inline-flex items-center gap-2 text-sm font-bold text-emerald-700">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-                <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              CNAME resolves. You&rsquo;re live.
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 text-sm font-bold text-emerald-700">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+                  <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                CNAME resolves correctly.
+              </div>
+              {dnsResult?.proxyLive ? (
+                <div className="inline-flex items-center gap-2 text-sm font-bold text-emerald-700">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+                    <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Proxy live — HTTPS responding.
+                </div>
+              ) : (
+                <div className="text-xs text-[#6B6B6B] ml-6">
+                  TLS cert provisioning (may take a few minutes after first CNAME).
+                </div>
+              )}
             </div>
           )}
 

@@ -130,7 +130,23 @@ export type VerifyProxyDnsResult = {
   expected: string;
   target?: string;
   error?: "not_configured" | "timeout" | "nxdomain" | "mismatch";
+  /** True when an HTTPS HEAD to the customer subdomain returned a non-error status. */
+  proxyLive?: boolean;
 };
+
+/** HEAD `https://{host}` with a 5 s timeout. Returns true if status < 500. */
+async function probeHttps(host: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://${host}`, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(5_000),
+    });
+    return res.status < 500;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Resolve the customer's CNAME and compare to <proxy_slug>.zybit.run. Returns
@@ -171,7 +187,10 @@ export async function verifyProxyDnsAction(siteId: string): Promise<VerifyProxyD
     if (target !== expected.toLowerCase()) {
       return { resolved: false, expected, target, error: "mismatch" };
     }
-    return { resolved: true, expected, target };
+
+    // CNAME is correct — probe HTTPS to confirm TLS cert is provisioned and proxy is live.
+    const proxyLive = await probeHttps(site.customerSubdomain);
+    return { resolved: true, expected, target, proxyLive };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg === "timeout") return { resolved: false, expected, error: "timeout" };
