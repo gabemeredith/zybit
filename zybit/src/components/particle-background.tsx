@@ -511,12 +511,18 @@ function ParticleSwarm() {
     
     const scrollInVH = scrollY / window.innerHeight;
 
-    // Normalize progress against the actual page height so morph state and Y-pan
-    // always use the same scale. When page height != exactly 5×vh (e.g. min-h-screen
-    // section 5 is taller on mobile), keeping them in sync prevents shapes from
-    // appearing at the wrong scroll positions.
-    const maxScrollInVH = Math.max(5.0, (document.documentElement.scrollHeight - window.innerHeight) / window.innerHeight);
-    const uP = Math.min(5.0, scrollInVH * (5.0 / maxScrollInVH));
+    // On mobile, sections 1–4 are all h-screen, so a direct 1:1 mapping
+    // (uP = scrollInVH) aligns each shape with its text section perfectly.
+    // Normalizing against total page height compresses uP — at the Jet section
+    // (scroll=2vh) uP≈1.65 so the shape is only ~70% formed; at the Chip
+    // section (scroll=3vh) uP≈2.4 leaving it ~42% formed and ~0.7vh below
+    // center. Section 5 (finding card) has bg-[#FAFAF8] so particles aren't
+    // visible there; SilkWave reaches uP=5 before the CTA section regardless.
+    // Desktop keeps the normalized mapping — shapes sit to the sides and the
+    // full-range spread over the whole scroll feels intentional there.
+    const uP = isMobile
+      ? Math.min(5.0, scrollInVH)
+      : Math.min(5.0, scrollInVH * (5.0 / Math.max(5.0, (document.documentElement.scrollHeight - window.innerHeight) / window.innerHeight)));
 
     // Exponential-decay lerp at lambda=5: smooth on 60/90/120 Hz ProMotion without lag.
     // Both Y-pan and morph progress target the same uP so they stay perfectly in sync,
