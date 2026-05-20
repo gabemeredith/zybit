@@ -26,24 +26,24 @@ npm install                     # installs tsx etc. for the workspace
 
 ## 2. Env files
 
-Lighthouse reads two `.env` files: Zybit's (for `DATABASE_URL`) and
-its own (for `LIGHTHOUSE_*`).
+Lighthouse reads two `.env` files: Zybit's (for `DATABASE_URL` and
+`ADMIN_PASSWORD`) and its own (for `LIGHTHOUSE_*`).
 
-Confirm Zybit's `.env` exists at the app root and has `DATABASE_URL`:
+Confirm Zybit's `.env` exists at the app root and has both keys:
 
 ```bash
 cd zybit                        # inner app root
-grep '^DATABASE_URL' .env
+grep -E '^(DATABASE_URL|ADMIN_PASSWORD)' .env
 ```
 
 Create `lighthouse/.env` (gitignored):
 
 ```env
-LIGHTHOUSE_PASSWORD=hunter2
 LIGHTHOUSE_PORT=3001
 ```
 
-Pick any password — `hunter2` matches the smoke walkthrough.
+The password gate reuses `ADMIN_PASSWORD` from Zybit's `.env` — no
+separate Lighthouse password to maintain.
 
 ## 3. Boot
 
@@ -62,7 +62,7 @@ lighthouse listening on http://localhost:3001/lighthouse
 ## 4. Drive the GUI
 
 1. Open <http://localhost:3001/lighthouse>.
-2. Enter the password from `lighthouse/.env`. The dashboard loads.
+2. Enter `ADMIN_PASSWORD` from Zybit's `.env`. The dashboard loads.
 3. Confirm the dropdown lists **AcmeBank — synthetic, designed to bounce**.
 4. Sessions defaults to **300**; mode = **direct**.
 5. Click **Generate**.
@@ -134,7 +134,7 @@ To reset between runs, delete the lighthouse_* rows in this order
 | 6 | batched direct event sink → `phase1_events` | `lighthouse/lib/sinks/direct.ts` |
 | 7 | persona-driven session simulator (8 tests) | `lighthouse/lib/generators/sessionDriver.ts` |
 | 8 | scenario runner (provision → sessions → snapshots → pipeline) | `lighthouse/lib/runner/runScenario.ts` |
-| 9 | `/api/generate` + `/api/runs/:id` + inspector UI | `lighthouse/server/routes/{generate,scenarios}.ts`, `lighthouse/web/app.js` |
+| 9 | `/lighthouse/api/generate` + `/lighthouse/api/runs/:id` + inspector UI | `lighthouse/server/routes/{generate,scenarios}.ts`, `lighthouse/web/app.js` |
 | 10 | cloudflared tunnel wrapper | `lighthouse/lib/tunnel/cloudflared.ts` |
 | 11 | PostHog opt-in sink (4 tests) | `lighthouse/lib/sinks/posthog.ts` |
 | 12 | acmebank fake site + scenario + smoke | `lighthouse/fake-sites/acmebank/*`, `lighthouse/lib/scenarios/acmebank.ts` |
@@ -188,11 +188,11 @@ sites" section).
 The most common failure modes and their fixes:
 
 - **Server boots but `/api/scenarios` returns 401** — your cookie
-  doesn't match the running server's `LIGHTHOUSE_PASSWORD`. Restart
-  after changing the env var; cookies are signed against it.
-- **Server fails with `LIGHTHOUSE_PASSWORD env var is required`** —
-  you booted without the second `--env-file=lighthouse/.env`. Both
-  env files are required.
+  doesn't match the running server's `ADMIN_PASSWORD`. Restart after
+  changing the env var; cookies are signed against it.
+- **Server fails with `ADMIN_PASSWORD env var is required`** — you
+  booted without `--env-file=.env` (Zybit's env). Both env files are
+  required.
 - **`Cannot find module 'drizzle-orm'`** — you're running the script
   from outside the workspace. Use absolute paths or cd into
   `zybit/zybit/`.

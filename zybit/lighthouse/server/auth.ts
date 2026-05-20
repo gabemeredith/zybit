@@ -1,12 +1,12 @@
 /**
  * Lighthouse password gate.
  *
- * Single shared password (LIGHTHOUSE_PASSWORD env). On successful POST
- * /api/auth, we set a signed cookie:
+ * Reuses Zybit's ADMIN_PASSWORD env. On successful POST /lighthouse/api/auth, we
+ * set a signed cookie:
  *
  *   lighthouse_session = <expiresMs>.<hmacHex>
  *
- * where hmacHex = HMAC-SHA256(LIGHTHOUSE_PASSWORD, expiresMs).
+ * where hmacHex = HMAC-SHA256(ADMIN_PASSWORD, expiresMs).
  *
  * On every request that needs auth, we re-verify the HMAC against the
  * current password and check that expiresMs is in the future. If the
@@ -20,10 +20,10 @@ export const COOKIE_NAME = 'lighthouse_session';
 const COOKIE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function getPassword(): string {
-  const pw = process.env.LIGHTHOUSE_PASSWORD;
+  const pw = process.env.ADMIN_PASSWORD;
   if (!pw || pw.length < 1) {
     throw new Error(
-      'LIGHTHOUSE_PASSWORD env var is required. Set it in lighthouse/.env.',
+      'ADMIN_PASSWORD env var is required. Set it in zybit/.env.',
     );
   }
   return pw;

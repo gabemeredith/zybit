@@ -30,12 +30,13 @@ Lighthouse shares Zybit's Postgres database. You need:
    npm install
    ```
 
-2. Create `lighthouse/.env` (gitignored) with your password:
+2. Create `lighthouse/.env` (gitignored):
 
    ```env
-   LIGHTHOUSE_PASSWORD=pick-something
    LIGHTHOUSE_PORT=3001
    ```
+
+   The password gate reuses `ADMIN_PASSWORD` from Zybit's `.env`.
 
 ## Run
 
@@ -55,7 +56,7 @@ Then open <http://localhost:3001/lighthouse>.
 
 | Var | Required | Default | Used by |
 |---|---|---|---|
-| `LIGHTHOUSE_PASSWORD` | yes | — | password gate (Step 2) |
+| `ADMIN_PASSWORD` | yes | — | inherited from Zybit; password gate (Step 2) |
 | `LIGHTHOUSE_PORT` | no | `3001` | http server |
 | `DATABASE_URL` | yes | — | inherited from Zybit; Lighthouse uses `getDb()` |
 | `LIGHTHOUSE_POSTHOG_API_KEY` | only for `--mode posthog` | — | posthog sink (Step 11) |
