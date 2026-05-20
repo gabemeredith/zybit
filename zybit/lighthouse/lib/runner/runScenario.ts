@@ -31,6 +31,8 @@ import { weightedSample } from '../generators/distributions';
 import { personaById } from '../personas';
 import { provisionLighthouseSite } from '../seeder/orgSite';
 import { DirectEventSink } from '../sinks/direct';
+import { PostHogEventSink } from '../sinks/posthog';
+import type { EventSink } from '../sinks/types';
 import type { EventSinkMode, GenerateProgressEvent, GenerateResult, Scenario } from '../types';
 
 export interface RunScenarioOpts {
@@ -69,10 +71,6 @@ function urlForPath(baseUrl: string, path: string): string {
 }
 
 export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult> {
-  if (opts.mode === 'posthog') {
-    throw new Error("--mode posthog is not implemented yet (Step 11)");
-  }
-
   const startedAt = now();
   const runId = `lh_run_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
   const { scenario, sessions, onProgress } = opts;
@@ -103,7 +101,10 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
 
   // 2) Sessions
   progress(onProgress, 'sessions', `running ${sessions} sessions`);
-  const sink = new DirectEventSink({ organizationId });
+  const sink: EventSink =
+    opts.mode === 'posthog'
+      ? new PostHogEventSink()
+      : new DirectEventSink({ organizationId });
   const personaMix = buildPersonaMix(scenario);
   const visitedPaths = new Set<string>();
   const sessionStart = new Date();
