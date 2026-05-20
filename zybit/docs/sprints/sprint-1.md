@@ -103,7 +103,7 @@
    - Per-rule checklist: "Form abandonment rule: needs 200 form interactions — you have 47"
    - Progress bars for the closest-to-firing rules
    - ETA estimate: "At your current traffic volume (~80 sessions/day), expect first findings in 3–4 days"
-3. ETA computed from `(requiredSessions - currentSessions) / avgSessionsPerDay` where `avgSessionsPerDay` from the last 7 days of events
+3. ETA computed from `(requiredSessions - currentSessions) / avgSessionsPerDay` where `avgSessionsPerDay` from the last 7 days of events. If `avgSessionsPerDay === 0` (no traffic yet), show "No traffic detected in the last 7 days — verify your integration is sending events" instead of an ETA.
 
 **Files:**
 - `src/lib/phase2/rules/types.ts` — add `minSessions`, `minEvents` to `AuditRule` interface

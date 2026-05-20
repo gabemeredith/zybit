@@ -83,6 +83,6 @@
 **Required fields:** `sessionId: string`, `type: string`, `occurredAt: ISO8601 string`, `siteId: string`
 - Missing required fields → 400 with field-level error
 - Unknown extra fields → accepted (forward-compatible)
-- `occurredAt` in the future by > 1h → reject (clock skew guard)
+- `occurredAt` in the future by > 5m → reject (clock skew guard — 5 minutes is sufficient for legitimate server clock drift; 1h is large enough to allow meaningful future-dated injection)
 
 **Files:** `src/app/api/phase2/intake/route.ts`

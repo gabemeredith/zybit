@@ -45,8 +45,8 @@
 1. Add `zybit_rate_limits (key TEXT PRIMARY KEY, count INT, reset_at TIMESTAMPTZ)` to schema + migration
 2. In `/api/auth/request-link/route.ts`:
    - Per-email limit: max 3 requests / 10 min. Key = `email:{sha256(email)}`
-   - Per-IP limit: max 10 requests / 10 min. Key = `ip:{x-forwarded-for}`
-   - Dedup: if an unexpired token for this email already exists in `zybit_magic_links`, return 200 without generating a new one (prevents inbox spam on repeated clicks)
+   - Per-IP limit: max 10 requests / 10 min. Key = `ip:{x-real-ip}` (Vercel sets this; do not use `x-forwarded-for` directly — it is spoofable by clients)
+   - Dedup: if an unexpired token for this email already exists in `zybit_magic_links` and was created < 60s ago, return 200 without generating a new one. After 60s, generate a fresh token and resend — the original email may have been lost or filtered as spam.
    - On limit exceeded: return `429` with `Retry-After` header and human-readable message
 
 **Files:**
