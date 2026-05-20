@@ -4,7 +4,7 @@
  * this module is read-only by design.
  */
 
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import { zybitExperimentOutcomes } from '@/lib/db/schema';
 
@@ -60,9 +60,32 @@ export function createOutcomesRepository(): OutcomesRepository {
 
     async listByIds(siteId, ids) {
       if (ids.length === 0) return [];
-      const all = await this.listForSite(siteId, 1000);
-      const set = new Set(ids);
-      return all.filter((r) => set.has(r.id));
+      const db = getDb();
+      const rows = await db
+        .select({
+          id: zybitExperimentOutcomes.id,
+          experimentId: zybitExperimentOutcomes.experimentId,
+          ruleId: zybitExperimentOutcomes.ruleId,
+          pathRef: zybitExperimentOutcomes.pathRef,
+          modificationType: zybitExperimentOutcomes.modificationType,
+          result: zybitExperimentOutcomes.result,
+          liftPct: zybitExperimentOutcomes.liftPct,
+          confidence: zybitExperimentOutcomes.confidence,
+          guardrailBreached: zybitExperimentOutcomes.guardrailBreached,
+          concludedAt: zybitExperimentOutcomes.concludedAt,
+        })
+        .from(zybitExperimentOutcomes)
+        .where(
+          and(
+            eq(zybitExperimentOutcomes.siteId, siteId),
+            inArray(zybitExperimentOutcomes.id, ids),
+          ),
+        );
+
+      return rows.map((r) => ({
+        ...r,
+        result: r.result as ExperimentOutcomeRow['result'],
+      }));
     },
   };
 }
