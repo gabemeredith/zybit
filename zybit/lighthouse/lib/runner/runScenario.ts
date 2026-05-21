@@ -29,6 +29,7 @@ import {
   runSnapshot,
   SnapshotError,
 } from '@/lib/phase2/snapshots';
+import { generateSyntheticExperiment } from './syntheticExperiment';
 import { runSession } from '../generators/sessionDriver';
 import { seededRng } from '../generators/rng';
 import { weightedSample } from '../generators/distributions';
@@ -259,6 +260,46 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     }
   }
 
+  // 4.5) Synthetic experiment — closes the loop for the PM view.
+  // Creates a running experiment for the top finding, emits assignment +
+  // conversion events (variant arm lifted), and runs Zybit's outcome
+  // computation so /app/loop shows DEPLOYED → RESULT → LEARNED. Non-fatal:
+  // a run is still useful for Identify/Propose even if this step fails.
+  progress(onProgress, 'experiments', 'creating synthetic experiment + outcome');
+  let experimentSummary: GenerateResult['experiment'];
+  try {
+    const exp = await generateSyntheticExperiment({
+      organizationId,
+      siteId,
+      slug: scenario.siteManifest.slug,
+      primaryMetric: scenario.siteManifest.expectedConversionEvent ?? 'cta_click',
+    });
+    experimentSummary = {
+      experimentId: exp.experimentId,
+      action: exp.action,
+      result: exp.result ?? null,
+      liftPct: exp.liftPct ?? null,
+      confidence: exp.confidence ?? null,
+      participants: exp.participants,
+      conversionEvents: exp.conversionEvents,
+    };
+    progress(
+      onProgress,
+      'experiments',
+      exp.action === 'no-finding'
+        ? 'no finding to test — skipped experiment'
+        : `experiment ${exp.action}: result=${exp.result ?? 'n/a'} lift=${
+            exp.liftPct != null ? `${exp.liftPct.toFixed(1)}%` : 'n/a'
+          } (${exp.participants} participants)`,
+    );
+  } catch (err) {
+    progress(
+      onProgress,
+      'experiments',
+      `experiment failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   // 5) Sample rows for the inspector.
   //
   // Events + snapshots come from the DB so we see the real persisted
@@ -318,6 +359,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     },
     startedAt,
     finishedAt: now(),
+    ...(experimentSummary ? { experiment: experimentSummary } : {}),
     ...(snapshotErrors.length ? { snapshotErrors } : {}),
   };
 }

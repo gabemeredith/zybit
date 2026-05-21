@@ -72,6 +72,7 @@ export interface GenerateProgressEvent {
     | 'sessions'
     | 'snapshots'
     | 'insights'
+    | 'experiments'
     | 'done'
     | 'error';
   message: string;
@@ -96,5 +97,15 @@ export interface GenerateResult {
   };
   startedAt: string;
   finishedAt: string;
+  /** Synthetic experiment outcome (Lighthouse Phase 2), when one was created. */
+  experiment?: {
+    experimentId: string | null;
+    action: 'stopped' | 'updated' | 'skipped' | 'no-finding';
+    result: string | null;
+    liftPct: number | null;
+    confidence: number | null;
+    participants: number;
+    conversionEvents: number;
+  };
   snapshotErrors?: Array<{ path: string; code: string; message: string }>;
 }

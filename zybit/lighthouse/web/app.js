@@ -190,7 +190,7 @@ function renderRunState(runPane, state) {
   ]);
 
   if (state.status === 'done' && state.result) {
-    const { counts, sample, organizationId, siteId, snapshotErrors } = state.result;
+    const { counts, sample, organizationId, siteId, snapshotErrors, experiment } = state.result;
     left.appendChild(el('h3', { class: 'subhead' }, 'results'));
     left.appendChild(
       el('p', {}, [
@@ -206,6 +206,20 @@ function renderRunState(runPane, state) {
         el('tr', {}, [el('th', {}, 'findings'), el('td', {}, String(counts.findings))]),
       ]),
     );
+    if (experiment && experiment.action !== 'no-finding') {
+      const liftLabel = experiment.liftPct != null ? `${experiment.liftPct.toFixed(1)}%` : 'n/a';
+      const confLabel =
+        experiment.confidence != null ? `${(experiment.confidence * 100).toFixed(1)}%` : 'n/a';
+      left.appendChild(
+        el('table', { class: 'counts' }, [
+          el('tr', {}, [el('th', {}, 'experiment'), el('td', {}, experiment.action)]),
+          el('tr', {}, [el('th', {}, 'result'), el('td', {}, experiment.result ?? 'n/a')]),
+          el('tr', {}, [el('th', {}, 'lift'), el('td', {}, liftLabel)]),
+          el('tr', {}, [el('th', {}, 'confidence'), el('td', {}, confLabel)]),
+          el('tr', {}, [el('th', {}, 'participants'), el('td', {}, String(experiment.participants))]),
+        ]),
+      );
+    }
     if (snapshotErrors?.length) {
       left.appendChild(
         el('details', { class: 'group' }, [
