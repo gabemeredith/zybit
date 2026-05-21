@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Checkout — WovenBasics</title>
+  </head>
+  <body>
+    <header>
+      <p><a href="/fake-sites/wovenbasics/">WovenBasics</a> · Secure checkout</p>
+    </header>
+
+    <main>
+      <section>
+        <h1>Checkout</h1>
+        <p>Express checkout: Shop Pay · PayPal · Apple Pay · Google Pay</p>
+        <p>Or check out below with email and card.</p>
+      </section>
+
+      <form action="/fake-sites/wovenbasics/cart" method="post" data-testid="checkout-form">
+        <section>
+          <h2>Contact</h2>
+          <p>
+            <label for="email">Email address <span aria-hidden="true">*</span></label>
+            <input id="email" name="email" type="email" required autocomplete="email" />
+          </p>
+          <p>
+            <label>
+              <input type="checkbox" name="marketing_opt_in" />
+              Email me about new releases and restocks
+            </label>
+          </p>
+          <p>Already a customer? <a href="/fake-sites/wovenbasics/account">Log in</a> (optional — guest checkout below)</p>
+        </section>
+
+        <section>
+          <h2>Shipping address</h2>
+          <p>
+            <label for="firstName">First name <span aria-hidden="true">*</span></label>
+            <input id="firstName" name="firstName" type="text" required autocomplete="given-name" />
+          </p>
+          <p>
+            <label for="lastName">Last name <span aria-hidden="true">*</span></label>
+            <input id="lastName" name="lastName" type="text" required autocomplete="family-name" />
+          </p>
+          <p>
+            <label for="address1">Address <span aria-hidden="true">*</span></label>
+            <input id="address1" name="address1" type="text" required autocomplete="address-line1" />
+          </p>
+          <p>
+            <label for="address2">Apartment, suite, etc. (optional)</label>
+            <input id="address2" name="address2" type="text" autocomplete="address-line2" />
+          </p>
+          <p>
+            <label for="city">City <span aria-hidden="true">*</span></label>
+            <input id="city" name="city" type="text" required autocomplete="address-level2" />
+          </p>
+          <p>
+            <label for="country">Country/region <span aria-hidden="true">*</span></label>
+            <select id="country" name="country" required autocomplete="country">
+              <option value="US">United States</option>
+              <option value="CA">Canada</option>
+              <option value="UK">United Kingdom</option>
+            </select>
+          </p>
+          <p>
+            <label for="province">State <span aria-hidden="true">*</span></label>
+            <select id="province" name="province" required autocomplete="address-level1">
+              <option value="">Select state</option>
+              <option value="NY">New York</option>
+              <option value="CA">California</option>
+              <option value="TX">Texas</option>
+            </select>
+          </p>
+          <p>
+            <label for="zip">ZIP code <span aria-hidden="true">*</span></label>
+            <input id="zip" name="zip" type="text" required autocomplete="postal-code" />
+          </p>
+          <p>
+            <label for="phone">Phone (for delivery questions only)</label>
+            <input id="phone" name="phone" type="tel" autocomplete="tel" />
+          </p>
+        </section>
+
+        <section>
+          <h2>Shipping method</h2>
+          <p>
+            <label><input type="radio" name="shipping_method" value="standard" checked /> Standard (3–5 business days) — $7.00</label>
+          </p>
+          <p>
+            <label><input type="radio" name="shipping_method" value="express" /> Express (1–2 business days) — $18.00</label>
+          </p>
+        </section>
+
+        <section>
+          <h2>Payment</h2>
+          <p>All transactions are secure and encrypted.</p>
+          <p>
+            <label for="cardNumber">Card number <span aria-hidden="true">*</span></label>
+            <input id="cardNumber" name="cardNumber" type="text" required inputmode="numeric" autocomplete="cc-number" />
+          </p>
+          <p>
+            <label for="expiration">Expiration date (MM/YY) <span aria-hidden="true">*</span></label>
+            <input id="expiration" name="expiration" type="text" required autocomplete="cc-exp" />
+          </p>
+          <p>
+            <label for="securityCode">Security code <span aria-hidden="true">*</span></label>
+            <input id="securityCode" name="securityCode" type="text" required autocomplete="cc-csc" />
+          </p>
+          <p>
+            <label>
+              <input type="checkbox" name="billing_same_as_shipping" checked />
+              Billing address is the same as shipping
+            </label>
+          </p>
+        </section>
+
+        <aside>
+          <h2>Order summary</h2>
+          <p>The Heavyweight Tee — Natural, M — $42.00</p>
+          <p>Subtotal: $42.00</p>
+          <p>Shipping: $7.00</p>
+          <p>Estimated tax: $3.92</p>
+          <p><strong>Total: $52.92</strong></p>
+        </aside>
+
+        <section>
+          <p>
+            <button type="submit" data-testid="place-order">Pay now — $52.92</button>
+          </p>
+          <p>
+            By placing your order you agree to our
+            <a href="/fake-sites/wovenbasics/terms">terms</a> and
+            <a href="/fake-sites/wovenbasics/privacy">privacy policy</a>.
+            365-day returns. Free pre-paid label.
+          </p>
+        </section>
+      </form>
+    </main>
+
+    <footer>
+      <p>© WovenBasics · Refund · Shipping · Privacy · Terms · Contact</p>
+    </footer>
+  </body>
+</html>

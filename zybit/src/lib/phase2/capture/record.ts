@@ -90,6 +90,7 @@ function mergeFormsMeasured(
     });
     return {
       ref: form.ref,
+      cssSelector: form.cssSelector,
       landmark: form.landmark,
       fieldCount: form.fieldCount,
       documentIndex: form.documentIndex,

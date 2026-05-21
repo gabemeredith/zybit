@@ -156,6 +156,7 @@ export function makeCta(
 ): CtaCandidate {
   return {
     ref: ref ?? `cta-${uid()}`,
+    cssSelector: null,
     tag: 'button',
     text,
     href: null,
@@ -183,6 +184,7 @@ export function makeForm(
   }));
   return {
     ref,
+    cssSelector: null,
     landmark,
     fieldCount: inputs.length,
     inputs: formInputs,

@@ -1,6 +1,6 @@
 # Lighthouse — Internal Pipeline Observation & Audit Tool
 
-> Status: planning. Branch `feat/lighthouse`. No code yet.
+> **Status (2026-05-21):** Week 1 data-generation rail shipped + an unplanned **Phase 2 synthetic-experiments rail** (creates a running experiment per scenario, computes its outcome, surfaces DEPLOYED → RESULT → LEARNED in the PM view). PR #56 added preview-iframe support for `lighthouse_site_*` and parse-time CSS selectors so control + variant actually diverge. **Next priority is not Week 3 — it's scenario realism.** See §7 for the reordered roadmap, §13 for the driver gaps that block credible findings.
 > Audience: Gabe + Asad. Internal only, password-gated at `/lighthouse`.
 
 ---
@@ -40,11 +40,11 @@ Lighthouse closes both gaps without requiring real customers.
 
 | Decision | Choice | Reason |
 |---|---|---|
-| Repo placement | **In-repo** at `zybit/src/app/lighthouse/*` (routes) and `zybit/src/lib/lighthouse/*` (engine) | Pre-customer schemas are unstable; shared types + DB; no isolation requirement because no prod data exists |
-| Access control | **Password gate** behind a `/lighthouse` route prefix; reuses Next.js middleware | Two users, no need for full auth |
-| Loop driver | **Direct function calls** — Lighthouse imports `runInsightsPipeline`, `computeOutcomes`, `applyLearnRerank`, etc. | Simplest; we already share a process; HTTP boundary would be ceremony |
+| Repo placement | **Standalone Node http server** at `zybit/lighthouse/` (own port, 3001 by default). Imports Zybit's pipeline functions directly via the workspace; does not modify `src/`. | Originally planned as in-repo Next.js routes at `src/app/lighthouse/*` + `src/lib/lighthouse/*`; switched to a separate process so Lighthouse can run independently of the main app and so engine code sits in one place (`lighthouse/lib/*`) instead of straddling Next.js conventions. |
+| Access control | **Password gate** behind `/lighthouse/*`; HMAC-signed cookie, password reuses `ADMIN_PASSWORD` from Zybit's `.env`. | Two users, no need for full auth |
+| Loop driver | **Direct function calls** — Lighthouse imports `runPhase2InsightsPipeline`, `runSnapshot`, `upsertFindings`, `computeOutcomes`, etc. directly. | Simplest; we already share a DB; HTTP boundary would be ceremony |
 | Data isolation | Single Postgres DB with a `lighthouse_*` site/org marker; no separate sandbox DB pre-customer | No real data to pollute; deferred until we have customers |
-| GUI vs CLI | **Both** — CLI for seeding, GUI for inspection + PM view | Comprehension requires a browser; verification benefits from CLI for CI |
+| GUI vs CLI | **GUI only** — single-page dashboard at `/lighthouse`. CLI (`lighthouse seed <name>`) was in the original Week 1 plan but never built; generation runs via `POST /lighthouse/api/generate`. | Two-dev tool; one entry point is enough. Revisit CLI if assertions land and we want CI integration. |
 | Standalone repo? | **No** | Shared types + DB outweigh the cosmetic clean-boundary win. Can extract later if needed |
 
 ---
@@ -53,79 +53,59 @@ Lighthouse closes both gaps without requiring real customers.
 
 ### 4.1 The Scenario
 
-A Scenario is a self-contained, JSON-serializable bundle that populates the full loop's input state for one synthetic site. It contains both **raw upstream data** and **optional pre-baked downstream artifacts**, which lets us enter the loop at any step.
+A Scenario describes one synthetic site: the manifest of its pages + the persona mix that should drive traffic. The runner (`lighthouse/lib/runner/runScenario.ts`) provisions the org/site/config from this manifest at generation time and emits events live — scenarios do **not** carry pre-baked events or expected-finding ground truth today.
+
+**Shipped shape** (`lighthouse/lib/types.ts`):
 
 ```typescript
 interface Scenario {
-  id: string;
-  name: string;                       // "AcmeBank Q3 post-launch"
-
-  // Setup — created first
-  organization: { id, name, plan };
-  site:         { id, url, meta: { mrr, aov, sessionCount } };
-  integrations: Integration[];        // PostHog/Segment/GA4 records (no real creds)
-  siteConfig:   Phase2SiteConfig;     // cohort/CTA/narrative
-
-  // Upstream data (Understand + Watch inputs)
-  pages:        { url, html }[];      // raw HTML for snapshot fetcher
-  events:       CanonicalEvent[];     // raw canonical events for phase1_events
-
-  // OPTIONAL pre-baked downstream data — skip earlier steps
-  prebaked?: {
-    snapshots?: PageSnapshot[];       // skip Understand
-    findings?:  Finding[];            // skip Identify
-    experiments?: Experiment[];       // skip Propose
-    outcomes?:  Outcome[];            // skip Measure (test Learn in isolation)
-  };
-
-  // Ground truth — what Lighthouse asserts on
-  expected: {
-    snapshots?: PartialMatch<PageSnapshot>[];
-    findings:  {
-      mustFire:    Partial<Finding>[];            // true positives
-      mustNotFire: { ruleId, pathRef, reason }[]; // trap cases for false-positive detection
-    };
-    outcomes?: { experimentId, result, liftPctRange, confidence }[];
-    learnAdjustments?: { findingId, deltaRange }[];
-  };
+  id: string;                          // 'acmebank' | 'wovenbasics'
+  name: string;                        // human-readable
+  siteManifest: SiteManifest;          // slug, bucket, baseUrl, primaryFunnelPaths,
+                                       // primaryCtaSelector, expectedConversionEvent,
+                                       // businessProfile.{mrr,aov}, biasNotes
+  personaMix: { personaId: string; weight: number }[];
+  defaultSessions: number;
 }
 ```
 
-### 4.2 Two viewing surfaces
+The runner derives everything else: it creates the `lighthouse_org_<slug>` / `lighthouse_site_<slug>` / `lighthouse_user_<slug>` rows on first run, weights persona draws by `personaMix`, drives sessions across `primaryFunnelPaths`, snapshots every visited path, runs the Phase 2 insights pipeline, then (since the Phase 2 rail shipped) generates a synthetic experiment for the top finding and computes its outcome.
 
-The GUI splits into two halves that serve different audiences:
+**Originally planned but never built** (deferred until §7 priorities #3 + #4 land):
 
-**Internals view** — engineer-facing. Vertical loop timeline showing each step's input, trigger, output, assertion pass/fail. Drill into raw JSON. Diff actual vs expected.
+- `pages: { url, html }[]` — raw HTML attached to the manifest. Today the HTML lives as static files under `lighthouse/fake-sites/<slug>/*.html` and is served by the Lighthouse http server; the snapshot fetcher reads it over HTTP like a real site. Folding raw HTML into the manifest is unnecessary while sites are served locally.
+- `events: CanonicalEvent[]` — pre-baked event stream. The session driver generates events live + deterministically, so a snapshot of events isn't needed for reproducibility.
+- `prebaked: { snapshots, findings, experiments, outcomes }` — entry-at-any-step short-circuits. Useful for Learn-in-isolation testing; would land alongside the assertion engine.
+- `expected: { findings.mustFire / mustNotFire, outcomes, learnAdjustments }` — ground truth for assertions. **Blocks priority #3 in §7.** Adding this field is the first concrete deliverable when the assertion engine starts.
 
-**PM view** — what-the-user-sees. Lighthouse impersonates the scenario's PM so you can open `/app/loop`, `/app/findings`, `/app/findings/[id]`, `/app/experiments/[id]`, and cockpit as if you were that customer. Almost free to build — it's the existing `/app` with a session-cookie + organizationId swap.
+### 4.2 Viewing surfaces
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ /lighthouse/scenarios/acmebank                              │
-├──────────────────────────────┬──────────────────────────────┤
-│ INTERNALS                    │ PM VIEW                      │
-│                              │                              │
-│ U → 23 snapshots             │ ┌─────────────────────────┐ │
-│ W → 4,812 events             │ │ /app/loop (as PM)       │ │
-│ I → 7 findings  ▸ 2 traps    │ │                         │ │
-│ P → prescriptions ready      │ │ [embed real /app pages] │ │
-│ T → 3 experiments running    │ │                         │ │
-│ M → 1 outcome (positive)     │ │                         │ │
-│ L → 4 adjustments (+0.18 max)│ │                         │ │
-└──────────────────────────────┴──────────────────────────────┘
-```
+The shipped GUI is a single-page dashboard at `/lighthouse` (`lighthouse/web/app.js`, ~316 lines) with three panes:
+
+**Left (control + progress)** — scenario dropdown, sessions input, mode toggle (`direct` | `posthog`), Generate button, and a live progress log streamed from the runner (`provisioning → sessions → snapshots → insights → experiments → done`, plus warnings like `gate: trustworthy=true`).
+
+**Right (result)** — when a run finishes, this pane shows counts (sessions/events/snapshots/findings), the synthetic-experiment summary (action / result / lift / participants), and sample rows from each phase output. The PM-view handoff button appears here.
+
+**PM-view iframe** — clicking **open as PM** calls `POST /lighthouse/api/impersonate/start`, which mints a real `zb_session` cookie for the synthetic `app_users` row (`lighthouse_user_<slug>`). The button swaps in-place for an iframe of `http://localhost:3000/app/loop` (override via `ZYBIT_APP_BASE_URL`). Inside that iframe an amber banner identifies the session as synthetic.
+
+**Not yet shipped** (queued in §7 priority #3 / #5):
+
+- Per-scenario route (`/lighthouse/scenarios/[id]`) with a vertical step-by-step timeline showing each phase's input/output/assertion-pass-fail. The current GUI shows the latest run's summary, not the loop as a stepwise timeline.
+- Side-by-side internals + PM-view layout. Today it's stacked: progress + result on top, PM iframe below when opened.
 
 ### 4.3 Per-loop-step coverage
 
-| Loop step | Inject | Trigger | Inspect | Assertions that matter |
-|---|---|---|---|---|
-| **Understand** | Synthetic HTML for N pages | `runSnapshotFetcher(siteId)` | `phase2_page_snapshots` rows | Headings/CTAs/forms detected; visual weight scoring; fold guess; SPA fallback fires when shell detected |
-| **Watch** | Canonical events (direct DB) or live PostHog/Segment/GA4 push | Direct insert or cron | `phase1_events` rows | Dedup on `(siteId, source, sourceEventId)`; cursor advances; canonical schema matches |
-| **Identify** | Site + snapshots + events | `runInsightsPipeline()` | `zybit_findings` rows | Specific findings fire (true positive); trap findings do NOT fire (true negative); evidence array well-formed |
-| **Propose** | Finding row | Read prescription + impact estimate | Prescription text, modification, revenue impact | Prescription coherent with evidence; impact estimate in plausible range given MRR/AOV |
-| **Test** | Experiment config + synthetic traffic | Headless requests through proxy | Bucket assignments, modified HTML | Bucketing deterministic; modifications applied; fail-open on errors; kill switch on `status != 'running'` |
-| **Measure** | Assignment events + conversion events | `/api/phase2/cron/compute-outcomes` | `zybit_experiment_outcomes` rows | Chi-squared correct; OBF threshold tightens early / loosens late; auto-stop at right moment; guardrail breach triggers PM email |
-| **Learn** | Site with prior outcomes | `applyLearnRerank(findings, outcomes)` | `learn_adjustment` jsonb on findings | Cascade tier matches correctly; D-with-guardrails formula produces expected delta; visibility threshold `|delta| ≥ 0.05` gates UI |
+Status as of 2026-05-21. Last column ("Assertions that matter") is what an assertion engine *would* check — none of these are enforced today (no `expected` field, no assertion engine; see §7 priority #3).
+
+| Loop step | Inject | Trigger | Inspect | Status | Assertions to enforce (future) |
+|---|---|---|---|---|---|
+| **Understand** | Static HTML at `lighthouse/fake-sites/<slug>/*.html`, served by Lighthouse on `:3001` | `runSnapshot(fullUrl)` per visited path | `phase2_page_snapshots` rows; sample shown in result pane | ✅ Exercised | Headings/CTAs/forms detected; visual weight scoring; fold guess; SPA fallback fires when shell detected; `cssSystem` populated |
+| **Watch** | Canonical events via `DirectEventSink` (default) or `PostHogEventSink` (`--mode posthog`) | Direct insert into `phase1_events` or PostHog capture API + the existing pull-sync cron | `phase1_events` rows | ✅ Exercised | Dedup on `(siteId, source, sourceEventId)`; cursor advances; canonical schema matches |
+| **Identify** | Site + snapshots + events | `runPhase2InsightsPipeline()`, persisted via `upsertFindings` | `zybit_findings` rows + in-memory `auditReport` shown in result | ✅ Exercised | Specific findings fire (true positive); trap findings do NOT fire (true negative); evidence array well-formed |
+| **Propose** | Finding row | Prescriptions are computed inside `runPhase2InsightsPipeline` and attached to each finding | Rendered in the PM-view `/app/findings/[id]` page | ✅ Exercised (via PM view) | Prescription coherent with evidence; impact estimate in plausible range given MRR/AOV |
+| **Test** | Top finding (selected by `generateSyntheticExperiment`) | Synthesizes a `running` `forge_experiments` row + assignment events for control + variant arms | `forge_experiments` row, control/variant iframes via preview route (now Lighthouse-aware, PR #56) | ⚠️ Exercised at the data layer only. Real bucketing + edge proxy not invoked — Lighthouse doesn't drive traffic through `/proxy/*`. | Bucketing deterministic; modifications applied; fail-open on errors; kill switch on `status != 'running'` |
+| **Measure** | Assignment + conversion events emitted by the synthetic experiment generator (variant arm lifted) | `computeOutcomes(experimentId)` | `zybit_experiment_outcomes` row + summary in result pane | ✅ Exercised | Chi-squared correct; OBF threshold tightens early / loosens late; auto-stop at right moment; guardrail breach triggers PM email |
+| **Learn** | Prior outcomes for the site | `applyLearnRerank` runs inside the next `runPhase2InsightsPipeline` invocation; `learn_adjustment` jsonb persisted on findings | LEARNED entry in `/app/loop` timeline | ✅ Exercised (transitively — needs a second Generate run for the same site to see Learn re-ranking) | Cascade tier matches correctly; D-with-guardrails formula produces expected delta; visibility threshold `\|delta\| ≥ 0.05` gates UI |
 
 ---
 
@@ -150,7 +130,7 @@ Random events are useless. To produce realistic streams, generate personas first
 - Funnel realism (viewed_pricing → clicked_signup → completed_signup with realistic drop-offs)
 - Decay curves (new features spike then decay; churning users decay over weeks)
 
-For the concrete week-1 build of the persona generator, see [`phase1.md`](./phase1.md).
+For the shipped session-driver implementation, see `lighthouse/lib/generators/sessionDriver.ts` + `lighthouse/lib/personas/index.ts`. The earlier plan in [`phase1.md`](./phase1.md) (Playwright against real OSS sites) was deferred in favor of synthetic fake-sites + a direct event sink — see §7.2 "Optional parallel track" for when the OSS-sites approach might revive.
 
 ---
 
@@ -173,26 +153,35 @@ Note: Zybit's audit rules are deterministic pure functions (12 rules, hundreds o
 
 ## 7. Roadmap
 
-Six weeks of focused work. Comprehension surfaces first; verification surfaces second.
+### 7.1 What shipped
 
-| Week | Deliverable | Why this order |
+Scope of "Week 1" in the original plan, plus an unplanned Phase 2 rail that closes the Identify → Test → Measure → Learn loop end-to-end:
+
+- ✅ Scenario format (manifest + persona-mix), DB seeder, GUI generation (CLI was descoped — see §3).
+- ✅ Two handcrafted scenarios: **AcmeBank** (engineered friction, bounce-on-key-page positive) and **WovenBasics** (realistic well-built DTC funnel, calibration / false-positive counterpart).
+- ✅ Direct-mode session driver — deterministic RNG, 5 personas, log-normal distributions, dedupe on `(siteId, source, sourceEventId)`.
+- ✅ `/app` impersonation handoff — `POST /lighthouse/api/impersonate/start` mints a real `zb_session` and the GUI embeds `/app/loop` in an iframe with a synthetic-PM banner.
+- ✅ **Phase 2 synthetic experiments + outcomes** — `generateSyntheticExperiment` creates a `running` experiment for the top finding, emits assignment + conversion events with the variant arm lifted, runs `computeOutcomes`, so `/app/loop` shows DEPLOYED → RESULT → LEARNED on a single Generate.
+- ✅ Preview iframe + parse-time CSS selectors (PR #56) — control + variant render real divergent HTML on Lighthouse synthetic sites.
+
+### 7.2 Reordered roadmap
+
+The original Week 2–6 plan still describes the right *destinations*, but the prerequisite for any of it is **scenarios that model funnel reality**. Running an assertion engine on top of random-walk traffic just measures the rule engine's behavior on noise. Reordered:
+
+| # | Deliverable | Why this order |
 |---|---|---|
-| 1 | Scenario format + DB seeder + `lighthouse seed <name>` CLI. Three handcrafted scenarios. | Without scenarios, nothing else works. |
-| 1 | `/app` impersonation at `/lighthouse/view/[siteId]` — opens the real PM dashboard as if you were that site's PM. | Highest-leverage week-1 deliverable. Comprehension before verification. |
-| 2 | Lighthouse internals panels at `/lighthouse/scenarios/[id]` — vertical step-by-step viewer, no assertions yet. | Inspection before assertions. See it before measuring it. |
-| 3 | Assertion engine + ground-truth editor + pass/fail badges. | Now you can detect regressions. |
-| 4 | Scenario authoring tools — Firecrawl URL ingest, LLM-grounded scenario generation, scenario forking. | Scales scenario library beyond handcrafted seeds. |
-| 5 | Cross-scenario regression dashboard — rows = scenarios, columns = loop steps, cells = pass/fail. | Catches drift after pipeline changes. |
-| 6 | Polish, edge cases, hand-off-able docs. | Internal product ≠ no polish — Asad uses it too. |
+| **1** | **Accurate scenarios.** Fix §13 #1 (transition matrix — per-scenario `transitionWeights` table, ~40 lines in `sessionDriver.ts`); then §13 #3 (per-path CTA registry so `cta_click` events stop tagging `signup-cta` on `/checkout`); then §13 #2 (continuous per-step exit hazard, replaces binary bounce). Re-author AcmeBank + WovenBasics to use the new fields so their event streams trace a directed funnel instead of a random walk. | Findings credibility depends on this. Everything below assumes scenarios actually model the funnels the rules are written for. |
+| **2** | **Per-scenario internals view at `/lighthouse/scenarios/[id]`.** Vertical step-by-step timeline of one run — input, trigger, output per phase, with drill-into-JSON. No assertions yet. | We have the data (runner emits per-phase progress + result samples); the GUI just doesn't render it as a timeline. Inspection before assertions. |
+| **3** | **Assertion engine + ground truth.** Add the `expected: { findings.mustFire, findings.mustNotFire, outcomes, learnAdjustments }` field to the Scenario type (§4.1). Build a comparator and surface pass/fail badges in the §7.2-#2 timeline. Add per-scenario trap cases. | Once scenarios are credible (#1) and you can see what each phase emitted (#2), assertions tell you *whether* what you saw was right. |
+| **4** | **Scenario authoring tools.** Firecrawl URL ingest (snapshot a real public site into a Scenario manifest skeleton), LLM-grounded scenario generation seeded on the handcrafted set, scenario forking. | Scales the scenario library beyond handcrafted seeds. Only worth doing after #1 — bulk-generated scenarios on a credible driver are useful; on a random-walk driver they multiply the noise. |
+| **5** | **Cross-scenario regression dashboard.** Rows = scenarios, columns = loop steps, cells = pass/fail / drift since last run. | Catches drift after pipeline changes. Requires #3 to mean anything. |
+| **6** | **Polish.** Edge cases, hand-off-able docs, deploy-ready impersonation handoff (signed token instead of localhost-cookie shortcut). | Internal product ≠ no polish — Asad uses it too. |
 
-### Week 1 in detail
+**Optional parallel track — real OSS sites (was `phase1.md`).** Driving Playwright against real public sites (cal.com, Medusa storefront, etc.) would solve §13 #1–#5 by construction (real DOM determines transitions and CTAs). It's a bigger build than the transition-matrix fix and isn't required to unblock #2–#6 above. Keep it as a Phase 2 fidelity upgrade once the synthetic-site rail has carried Lighthouse through assertions + regression.
 
-By end of week 1 we can:
-1. Run `lighthouse seed acmebank` from the terminal.
-2. Open `http://localhost:3000/lighthouse/view/<acmebank-site-id>` in a browser.
-3. See the real `/app/loop`, finding detail, experiment cockpit — populated with the scenario's data.
+### 7.3 Out-of-roadmap, opportunistic
 
-This alone is enormous. Everything after is acceleration.
+- Lighthouse-aware DNS-gate bypass for the proxy/Test step. Today the synthetic experiment's `forge_experiments` row is enough for the PM view to render DEPLOYED → RESULT, but no real bucketing runs because the proxy code path is DNS-gated. Two paths in §10 Q2: synthesizing `proxy_live=true` for `lighthouse_site_*` (~1 day) or cloudflared tunnel (highest-fidelity, deferred).
 
 ---
 
@@ -223,7 +212,7 @@ Net runtime cost on prod after these changes: **zero to negligible.** The archit
 
 1. **Should Lighthouse get its own DB schema namespace?** (`lighthouse_*` site/org marker is sufficient pre-customer. Revisit when we have real customers.)
 2. **Do we need a synthetic customer origin for proxy testing?** As of 2026-05-20, three known paths for exercising the Test step against AcmeBank-style synthetic origins. The DNS-gated experiment surface (`/app/experiments/[id]`) + the variant-preview iframe (`src/app/api/preview/[experimentId]/route.ts`) both assume `https://<public-domain>/<path>` — they don't fit `localhost:3001/fake-sites/<slug>/<path>` out of the box. Options, ordered by cost:
-   - **(small) Preview-only patch.** Detect `siteId LIKE 'lighthouse_site_%'` in the preview route and build `http://localhost:3001/fake-sites/<slug><path>` instead. The control/variant iframes render real synthetic HTML; the DNS gate stays untouched and no real A/B traffic is served. ~30 min.
+   - **(small) Preview-only patch.** ✅ **Shipped 2026-05-21** (commit 88b8786). The preview route now detects `lighthouse_site_<slug>` and rewrites to `http://${domain}/fake-sites/<slug>${path}`, and extends `frame-ancestors` to allow the Lighthouse origin so the iframe is not blocked when itself embedded inside Lighthouse on `:3001`. Control + variant iframes render real synthetic HTML; the DNS gate stays untouched; production sites unaffected.
    - **(medium) Lighthouse v2 — local proxy mode.** Skip the DNS gate for lighthouse sites by synthesizing a `proxy_live = true` row in `phase2_integrations` at provision time, and teach the proxy handler to use `http://localhost:3001/fake-sites/<slug>` as the origin when the experiment belongs to a `lighthouse_site_*`. Route customer-facing traffic through `http://localhost:3000/proxy/<slug>/<path>` instead of via DNS. Exercises real bucketing + variant code locally, with no tunnel and no public exposure. ~1 day.
    - **(heavy, end-to-end) cloudflared tunnel.** The wrapper already exists at `lighthouse/lib/tunnel/cloudflared.ts` and the manifest has a `requiresTunnel` field. Tunnel exposes `localhost:3001` as a real public URL; you point a test domain you own at Zybit's proxy via real CNAME; the **production** proxy code path runs unchanged. Requires `cloudflared` installed, a test domain, and DNS edits. Highest-fidelity verification; deferred until we want to exercise the deployed proxy stack from Lighthouse.
 
@@ -253,3 +242,54 @@ Net runtime cost on prod after these changes: **zero to negligible.** The archit
 - **2026-05-20** — Findings persist to `forge_findings` via the cron's existing `upsertFindings` helper (one-word `export` change in `src/lib/phase2/jobs/insightsTrigger.ts`). Each `Generate` first clears prior `phase1_events`, `phase2_page_snapshots`, `forge_findings`, `forge_experiments`, and `zybit_experiment_outcomes` for the target `lighthouse_site_<slug>` so re-runs are reproducible and the PM-view timeline doesn't accumulate stale DEPLOYED/MEASURED entries from earlier sessions.
 - **2026-05-20** — All Lighthouse HTTP routes namespaced under `/lighthouse/api/*` so they can't be confused with the Next app's `/api/*` (which lives on a different port anyway, but the visual cue matters for grep + log review). Static UI continues to serve at `/lighthouse/*`.
 - **2026-05-20** — Synthetic site uses `/checking-accounts` as its primary funnel path with a believable banking marketing page; the audit finding now reads like a real PM artefact rather than referencing bare `/`.
+- **2026-05-21** — Preview-route fix for Lighthouse synthetic sites shipped (commit 88b8786, PR #56). The preview route now rewrites the origin to `http://${domain}/fake-sites/<slug>${path}` and extends `frame-ancestors` to allow the Lighthouse origin. Closes the "(small) Preview-only patch" option in §10 Open question #2.
+- **2026-05-21** — Snapshot parser now emits a `cssSelector` per CtaCandidate/FormCandidate at parse time (stability ladder: testid → human-authored id → tag[name] → role+aria-label → bail). Synthetic experiment generator (`syntheticExperiment.ts`) picks its target selector from the snapshot instead of the hardcoded `[data-zybit-ref="primary-cta"]`. Result: Lighthouse-generated variants now mutate real elements on the fake-site HTML; preview iframes show actual control/variant divergence. Closes the long-standing "variant and control render identical HTML" bug. Commit f4958a8, PR #56.
+- **2026-05-21** — Added **WovenBasics** as the second registered scenario (PR #56): a realistic well-built DTC funnel (home → PDP → cart → checkout). Counterpart to AcmeBank's engineered friction — findings that fire on WovenBasics are calibration / false-positive signal, not real flaws. Persona mix is e-commerce skew (heavy casual, modest evaluator, smaller power-user, light churn + bot). Surfaced the driver-realism gaps documented in §13: with the SaaS-flavored `preferredPaths` in `personas/index.ts`, the five personas degenerate to near-identical behavior on a DTC URL space.
+
+---
+
+## 13. Session driver realism — known gaps
+
+The shipped direct-mode session driver (`lighthouse/lib/generators/sessionDriver.ts`) is good enough to populate `phase1_events` and exercise the audit rules end-to-end, but it has five real behavioral limitations that distort what Zybit sees. Ranked by impact on findings credibility:
+
+### 1. No funnel direction (load-bearing)
+
+`pickPath()` (sessionDriver.ts:124, 192) does an **independent** weighted-random draw on every page transition. There is no notion that after `/product` the next step should usually be `/cart`, not back to `/`. Sessions look like `[/, /checkout, /, /product]` — a directed walk through the funnel is unrepresentable, so **funnel drop-off** — the central concept in DTC and SaaS conversion — cannot be modeled.
+
+**Cheapest credible fix (~40 lines):** transition matrix. Add a per-scenario `transitionWeights: Record<string, Array<{path: string; weight: number}>>` and have `pickPath` look up transitions from the current path instead of sampling globally. Persona `preferredPaths` would weight transition options rather than overriding them.
+
+This is the single change that would make findings on multi-path scenarios meaningful. Fix this before Phase 3 assertion work, otherwise the assertion engine measures rule behavior on random walks.
+
+### 2. Bounce is binary
+
+`samplePagesCount()` (sessionDriver.ts:98): `if (rng.next() < persona.bounceProbability) return 1;` — otherwise a log-normal length is drawn and the session visits that many pages. Real sessions have a **continuous exit hazard** on each page ("user looked at /, looked at /product, left after 3 because they couldn't find what they wanted"). Here it is all-or-nothing: 1 page, or the full sampled pagesCount. The mid-funnel exit pattern is unrepresentable.
+
+**Fix sketch:** replace the up-front length draw with a per-step exit roll using a persona+path-dependent hazard rate. Pairs naturally with the transition matrix in #1.
+
+### 3. CTA clicks are path-agnostic and use a single `ctaId`
+
+sessionDriver.ts:158–174. `clickIntent` is a flat persona-level probability that fires regardless of which page the user is on, and every `cta_click` event is tagged with the same `primaryCta.ctaId` — so the rule engine sees `signup-cta` clicks happening on `/cart` and `/checkout`, which is nonsense. Same problem for `form_submit` on `/`. This pollutes any rule that joins clicks/submits to specific pages.
+
+**Fix sketch:** per-path CTA registry on the scenario manifest (`ctasPerPath: Record<string, Array<{ctaId, selector, intentMultiplier}>>`) and a click step that picks from the current page's registry. `formSubmitIntent` similarly gated on whether the current page actually has a form.
+
+### 4. Personas' `preferredPaths` are SaaS-flavored constants
+
+`personas/index.ts` — `power-user` prefers `/event-types`, `/bookings`, `/team`. None of those exist on a DTC site. The `2×` weighting in `pickPath` becomes a no-op on WovenBasics, and personas degenerate to "same path distribution, different click rates and dwell." For WovenBasics specifically, the five personas are almost behaviorally identical.
+
+**Don't fix this first.** Fixing personas without fixing #1 just gives a slightly better-flavored random walk. The right shape is: scenario declares a path taxonomy, personas declare *roles* (browser/comparer/converter/...), and the transition matrix per scenario maps role × current-page → next-page distribution.
+
+### 5. Dwell and scroll are per-page persona constants
+
+Real users dwell longer on `/product` than on `/`. The driver can't express that — `sampleDwell()` and `sampleScroll()` only see the persona, not the path. Minor compared to 1–3 but worth flagging because dwell-based rules (hesitation, return-visit-thrash) will look uniform across the funnel.
+
+**Fix sketch:** per-path multipliers on the scenario manifest, applied inside `sampleDwell` / `sampleScroll`.
+
+### Recommended order
+
+1. **#1 transition matrix** — unblocks everything else; ~40 lines + a per-scenario field.
+2. **#3 per-path CTA registry** — required to stop polluting rule input with cross-path clicks.
+3. **#2 continuous exit hazard** — naturally falls out of #1's per-step model.
+4. **#5 per-path dwell multipliers** — small, lands with #3.
+5. **#4 persona roles + transition-matrix-aware preferredPaths** — last; meaningful only after the others.
+
+Phase 1 (`phase1.md`) sketches a Playwright-driven driver against real OSS sites; #1–#5 are inherently solved there because the real DOM determines transitions and CTAs. Until that lands, the direct-mode driver is the only path and these fixes are how we close the credibility gap incrementally.

@@ -60,6 +60,13 @@ export interface HeadingItem {
 export interface CtaCandidate {
   /** Stable hash derived from outer markup; safe to reference across rules. */
   ref: string;
+  /**
+   * Best-guess browser-runnable CSS selector, computed at parse time. `null`
+   * when no stable attribute was available — better to leave the experiment
+   * builder field empty than to emit a fragile selector that silently breaks
+   * on a CSS refactor. See `cssSelector.ts` for the stability ladder.
+   */
+  cssSelector: string | null;
   tag: 'a' | 'button';
   text: string;
   href: string | null;
@@ -87,6 +94,8 @@ export interface FormInputItem {
 
 export interface FormCandidate {
   ref: string;
+  /** See `CtaCandidate.cssSelector` — same shape, same bail policy. */
+  cssSelector: string | null;
   landmark: PageLandmark;
   fieldCount: number;
   inputs: FormInputItem[];

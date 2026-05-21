@@ -26,7 +26,7 @@ function makeSnapshotResult(overrides: Partial<RunSnapshotResult> = {}): RunSnap
       headings: [{ level: 1, text: 'Hello world', documentIndex: 0 }],
       ctas: [
         {
-          ref: 'cta-1', tag: 'button', text: 'Get started', href: null,
+          ref: 'cta-1', cssSelector: null, tag: 'button', text: 'Get started', href: null,
           ariaLabel: null, landmark: 'main', visualWeight: 0.8,
           visualWeightSignals: ['bg-black'], foldGuess: 'above',
           domDepth: 3, documentIndex: 0, disabled: false,
@@ -164,6 +164,7 @@ describe('runStructuralAudit — heavy_form finding', () => {
           forms: [
             {
               ref: 'form-1',
+              cssSelector: null,
               landmark: 'main',
               fieldCount: 8,
               inputs: [],
@@ -191,6 +192,7 @@ describe('runStructuralAudit — heavy_form finding', () => {
           forms: [
             {
               ref: 'form-1',
+              cssSelector: null,
               landmark: 'main',
               fieldCount: 5,
               inputs: [],

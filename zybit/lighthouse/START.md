@@ -63,11 +63,11 @@ lighthouse listening on http://localhost:3001/lighthouse
 
 1. Open <http://localhost:3001/lighthouse>.
 2. Enter `ADMIN_PASSWORD` from Zybit's `.env`. The dashboard loads.
-3. Confirm the dropdown lists **AcmeBank — synthetic, designed to bounce**.
+3. Confirm the dropdown lists both scenarios: **AcmeBank — synthetic, designed to bounce** and **WovenBasics — realistic DTC, well-built**.
 4. Sessions defaults to **300**; mode = **direct**.
 5. Click **Generate**.
 6. Watch the left pane show progress (`provisioning → sessions →
-   snapshots → insights → done`); the right pane fills in.
+   snapshots → insights → experiments → done`); the right pane fills in.
 
 ## 5. Expected output
 
@@ -140,10 +140,30 @@ To reset between runs, delete the lighthouse_* rows in this order
 | 12 | acmebank fake site + scenario + smoke | `lighthouse/fake-sites/acmebank/*`, `lighthouse/lib/scenarios/acmebank.ts` |
 | 13 | findings persist to `forge_findings`; synthetic `app_users` row per scenario; auto-reset of events/snapshots/findings/experiments per run | `lighthouse/lib/runner/runScenario.ts`, `lighthouse/lib/seeder/orgSite.ts` |
 | 14 | "open as PM" iframe — mints a `zb_session` for the synthetic user and embeds `/app/loop`; amber banner inside `/app/*` for `lighthouse_org_*` | `lighthouse/server/routes/impersonate.ts`, `lighthouse/web/app.js`, `src/components/app/ImpersonationBanner.tsx`, `src/app/app/layout.tsx` |
+| 15 | Preview iframe loads for Lighthouse sites — origin rewritten to `http://<domain>/fake-sites/<slug>/<path>`, `frame-ancestors` extended so the page can embed inside Lighthouse on `:3001` (PR #56) | `src/app/api/preview/[experimentId]/route.ts` |
+| 16 | Parse-time `cssSelector` per CtaCandidate/FormCandidate (stability ladder, 17 tests); synthetic experiment generator picks selector from the snapshot — control + variant iframes now diverge instead of rendering identical HTML (PR #56) | `src/lib/phase2/snapshots/cssSelector.ts`, `lighthouse/lib/runner/syntheticExperiment.ts` |
+| 17 | wovenbasics fake site + scenario — realistic well-built DTC funnel (home → PDP → cart → checkout); calibration / false-positive counterpart to AcmeBank (PR #56) | `lighthouse/fake-sites/wovenbasics/*`, `lighthouse/lib/scenarios/wovenbasics.ts` |
 
 Steps 13–14 touch `src/`: `src/lib/phase2/jobs/insightsTrigger.ts`
 (one `export`), `src/components/app/ImpersonationBanner.tsx` (new),
 `src/app/app/layout.tsx` (mount the banner).
+
+## 7a. What's next
+
+Roadmap lives in [`LIGHTHOUSE.md` §7.2](./LIGHTHOUSE.md#72-reordered-roadmap).
+Short version, in order:
+
+1. **Accurate scenarios.** Fix the random-walk driver: per-scenario
+   transition matrix, then per-path CTA registry, then continuous
+   per-step exit hazard. Re-author AcmeBank + WovenBasics on the new
+   fields. Full ranking + fix sketches in [`LIGHTHOUSE.md` §13](./LIGHTHOUSE.md#13-session-driver-realism--known-gaps).
+2. Per-scenario internals view at `/lighthouse/scenarios/[id]` —
+   vertical step-by-step timeline of one run.
+3. Assertion engine — add an `expected` field to the Scenario type,
+   build the comparator, surface pass/fail badges in the timeline.
+4. Scenario authoring tools (Firecrawl + LLM-grounded generation).
+5. Cross-scenario regression dashboard.
+6. Polish + deploy-ready impersonation handoff.
 
 Run tests:
 
@@ -153,13 +173,24 @@ npx vitest run --config lighthouse/vitest.config.ts
 
 ## 8. Known limitations (Phase 1 scope)
 
-- **Test/Measure/Learn surfaces render empty for lighthouse sites.**
-  `/app/experiments/*` is DNS-gated and the variant-preview route
-  fetches `https://<domain>/<path>` which doesn't fit the synthetic
-  `localhost:3001/fake-sites/...` origin. Fixing this means
-  synthesizing `forge_experiments` + `zybit_experiment_outcomes` per
-  scenario (and patching the preview route for `lighthouse_site_*`).
-  Deferred — out of scope for v1 embed.
+- **Session driver is a random walk, not a directed funnel.** The
+  shipped direct-mode `sessionDriver.ts` does independent weighted
+  path sampling on every transition (`pickPath` at lines 124 + 192),
+  so sessions look like `[/, /checkout, /, /product]` rather than
+  `home → PDP → cart → checkout`. Funnel drop-off — the central
+  concept in DTC and SaaS conversion — cannot be modeled. Four
+  related limitations (binary bounce, path-agnostic CTA clicks,
+  SaaS-flavored persona `preferredPaths`, persona-only dwell/scroll)
+  compound the effect. Full ranking + fix sketches in
+  [`LIGHTHOUSE.md` §13](./LIGHTHOUSE.md#13-session-driver-realism--known-gaps).
+  The cheapest credible fix (transition matrix, ~40 lines) is the
+  load-bearing change; should land before any Phase 3 assertion work.
+- **Preview iframe + DNS-gated experiment surface for Lighthouse sites.**
+  ✅ Preview now works for `lighthouse_site_*` (PR #56). The DNS gate
+  on `/app/experiments/*` still requires either a synthesized
+  `proxy_live=true` row or a cloudflared tunnel to exercise the live
+  proxy stack — see [`LIGHTHOUSE.md` §10 Q2](./LIGHTHOUSE.md#10-open-questions)
+  for the two remaining paths.
 - **Cookie handoff is localhost-only.** The impersonation route mints
   a `zb_session` cookie without a `Domain` attribute; browsers share
   it across ports on `localhost` but a deployed Lighthouse would need

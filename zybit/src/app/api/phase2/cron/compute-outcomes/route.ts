@@ -21,7 +21,7 @@
 
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db/client';
-import { logger, cronitorPing } from '@/lib/observability';
+import { logger, cronitorPing, withCronAlert } from '@/lib/observability';
 import { computeAllOutcomes } from '@/lib/experiments/computeOutcomes';
 import { unauthorized } from '@/app/api/phase1/_shared';
 
@@ -50,7 +50,7 @@ function assertCronAuth(request: Request): NextResponse | null {
   return null;
 }
 
-export async function POST(request: Request) {
+async function runHandler(request: Request): Promise<Response> {
   const authError = assertCronAuth(request);
   if (authError) return authError;
 
@@ -99,3 +99,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export const POST = withCronAlert('compute-outcomes', runHandler);
