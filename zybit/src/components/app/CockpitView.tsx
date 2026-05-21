@@ -10,6 +10,9 @@ interface CockpitViewProps {
   orgId: string;
 }
 
+/** Snapshots older than this (days) flag the Understand layer as stale. */
+const SNAPSHOT_STALE_DAYS = 7;
+
 function timeAgo(isoDate: string): string {
   const diff = Date.now() - new Date(isoDate).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -176,7 +179,7 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
     return <NoSiteCTA />;
   }
 
-  const { site, pipeline, gate, findings, experiments, lastInsightAt } = data;
+  const { site, pipeline, gate, findings, experiments, snapshots, lastInsightAt } = data;
 
   // No integration → show guidance
   if (!pipeline || pipeline.integrations.length === 0) {
@@ -243,6 +246,14 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
           sub={lastInsightAt ? "insights pipeline ran" : "run insights to start"}
         />
       </div>
+
+      {/* Snapshot staleness — Zybit-023 */}
+      {snapshots.staleDays != null && snapshots.staleDays > SNAPSHOT_STALE_DAYS && (
+        <div className="mb-8 flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+          Page snapshots are {snapshots.staleDays} days old — the Understand layer may be stale.
+        </div>
+      )}
 
       {/* Top finding */}
       {findings.topFinding && (

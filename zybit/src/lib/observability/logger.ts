@@ -16,6 +16,7 @@ export interface LogContext {
     | 'health-alert'
     | 'capture-record'
     | 'capture-cron'
+    | 'snapshot-cron'
     | 'compute-outcomes';
   organizationId?: string;
   siteId?: string;

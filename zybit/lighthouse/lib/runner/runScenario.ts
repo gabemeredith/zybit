@@ -25,7 +25,6 @@ import { upsertFindings } from '@/lib/phase2/jobs/insightsTrigger';
 import { runPhase2InsightsPipeline } from '@/lib/phase2/runInsightsPipeline';
 import type { AuditFinding } from '@/lib/phase2/rules/types';
 import {
-  normalizePathRef,
   runSnapshot,
   SnapshotError,
 } from '@/lib/phase2/snapshots';
