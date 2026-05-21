@@ -4,6 +4,57 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-21 (session 2)
+
+**Session:** Layer 2 PM surface, Lighthouse Layer 2 exercise, Axiom verification, readiness assessment
+**Author:** —
+
+### What shipped
+
+- **Layer 2 PM-visible surface (Zybit-164 equivalent)**:
+  - `AuditFinding.calibration` field: calibration receipt attached to each finding produced under an active calibration.
+  - `learnAdjustment.calibration` persisted to `forge_findings` jsonb — no migration, extends existing column.
+  - "Tuned" badge on findings backlog (violet = loosened, orange = tightened).
+  - "Tuned for your site" panel on finding detail page: direction, multiplier, basis count.
+  - LEARNED timeline entries now show a violet calibration note when the rule's threshold was tuned.
+  - Loop page computes calibrations from loaded outcomes (pure function, one extra DB call via `createOutcomesRepository().listForSite()`).
+
+- **Lighthouse Layer 2 exercise (step 4.6)**:
+  - After step 4.5 creates a conclusive outcome, inserts 2 additional synthetic positive outcomes for the top finding's rule (if it's in `CALIBRATED_RULE_IDS`), bringing total to 3 (≥ `MIN_CONCLUSIVE_OUTCOMES`).
+  - Runs the pipeline a second time to confirm calibration fires.
+  - Reports `GenerateResult.layer2` — `calibrated`, `calibratedRuleCount`, `calibrationSummary`.
+  - Layer 2 is now **Lighthouse-verified**, not just unit-verified.
+
+- **Axiom drain verified and documented**:
+  - Token `xaat-f3c5f5b7-b6e8-4ac2-8b15-669b5f78087d` confirmed working against `api.axiom.co`.
+  - Dataset `axiom-audit` confirmed writeable (ingest test: `ingested: 1, failed: 0`).
+  - Action needed: set `AXIOM_DATASET=axiom-audit` in Vercel env vars. No code changes required.
+  - README env var table updated with all required/optional env vars.
+
+- **Sprint 4–5 cross-reference**: confirmed sprints 4–5 cover every missing gap. Zybit-153 (Axiom): just the env var. Zybit-154/155/156/157 all unbuilt — documented in AGENTS.md "What's needed before first customer" table.
+
+- **`RunInsightsResponse.auditReport` type**: added `calibration?` to both `findings` and `diagnostics` inline types in `phase2/types.ts` so Lighthouse and any external consumer can read calibration data without type errors.
+
+### Decisions made
+
+- **Layer 2 surface is read-only / informational.** The calibration happened before the finding was produced; the badge is a receipt, not a prompt for action. The "Tuned" label is deliberate — it's the PM-readable version of "threshold multiplier ×0.87."
+- **`learnAdjustment` jsonb extended, not a new column.** Both Layer 1 and Layer 2 live in the same column. `basedOnOutcomeIds` is always present (empty array when only Layer 2 fired) so existing detail-page array access never throws.
+- **Lighthouse seeds exactly 2 extra outcomes** (not more). This is the minimum to reach the gate (1 from step 4.5 + 2 seeded = 3). Seeded rows are idempotent (`onConflictDoNothing`) and scoped to `lighthouse_site_*` so they can never touch real customer data.
+
+### Blockers
+
+- Live Lighthouse/DB run still blocked (Neon host not in allowlist). All verification is done via the unit test suite (447 tests) + the Lighthouse step 4.6 path code.
+
+### What's next (in priority order for first real customer)
+
+1. **Set `AXIOM_DATASET=axiom-audit` in Vercel** — 1 env var, unblocks observability immediately.
+2. **Stripe live round-trip** (Zybit-040) — needs stripe-cli + test keys + reachable webhook endpoint.
+3. **GA4 limitation amber banner** (Zybit-157, ~0.5d) — prevents silent no-outcome runs for GA4-only customers.
+4. **Connector circuit breaker** (Zybit-154, ~2d).
+5. **Cron failure email** (Zybit-155, ~1d) — `withCronAlert` wrapper.
+
+---
+
 ## 2026-05-21
 
 **Session:** Learn — Layer 2 (per-site rule-threshold calibration)

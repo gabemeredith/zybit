@@ -298,12 +298,23 @@ export interface RunInsightsResponse {
       recommendation: string[];
       evidence: Array<{ label: string; value: string | number; context?: string }>;
       refs?: { snapshotId?: string; ctaRef?: string; elementRef?: string };
+      calibration?: {
+        direction: 'loosen' | 'tighten';
+        multiplier: number;
+        reason: string;
+        conclusiveCount: number;
+      };
     }>;
     diagnostics: Array<{
       ruleId: string;
       emitted: number;
       skippedReason?: string;
       candidatesEvaluated?: number;
+      calibration?: {
+        multiplier: number;
+        direction: 'loosen' | 'tighten' | 'neutral';
+        reason: string;
+      };
     }>;
     groundedInSnapshots: boolean;
   };

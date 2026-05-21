@@ -258,6 +258,18 @@ export default async function FindingsPage({
                               {Math.abs(finding.learnAdjustment.delta).toFixed(2)} from past tests
                             </span>
                           )}
+                          {(finding.learnAdjustment as { calibration?: { direction: string } } | null)?.calibration && (
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${
+                                (finding.learnAdjustment as { calibration?: { direction: string } })?.calibration?.direction === 'loosen'
+                                  ? 'bg-violet-50 text-violet-700 border-violet-100'
+                                  : 'bg-orange-50 text-orange-700 border-orange-100'
+                              }`}
+                              title={(finding.learnAdjustment as { calibration?: { reason: string } })?.calibration?.reason}
+                            >
+                              Tuned
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm font-semibold text-[#111] leading-snug mb-1 truncate">
                           {finding.title}

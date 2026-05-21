@@ -199,6 +199,17 @@ export interface AuditFinding {
    * carries the explanation + audit trail.
    */
   learnAdjustment?: LearnAdjustment;
+  /**
+   * Layer 2 Learn metadata. Present when this finding's rule had its detection
+   * floor calibrated from past outcomes on this site. The `multiplier` was
+   * already applied before the rule ran — this field is the PM-visible receipt.
+   */
+  calibration?: {
+    direction: 'loosen' | 'tighten';
+    multiplier: number;
+    reason: string;
+    conclusiveCount: number;
+  };
 }
 
 /**

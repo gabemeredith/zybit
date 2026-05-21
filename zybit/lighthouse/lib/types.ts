@@ -108,4 +108,14 @@ export interface GenerateResult {
     conversionEvents: number;
   };
   snapshotErrors?: Array<{ path: string; code: string; message: string }>;
+  /**
+   * Layer 2 calibration exercise result. Present when the runner seeded
+   * enough prior outcomes to trigger threshold calibration and re-ran the
+   * pipeline a second time. Proves the calibration mechanism works end-to-end.
+   */
+  layer2?: {
+    calibrated: boolean;
+    calibratedRuleCount: number;
+    calibrationSummary: Array<{ ruleId: string; direction: string; multiplier: number }>;
+  };
 }

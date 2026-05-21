@@ -23,9 +23,9 @@
  *
  * Built: timeline merge (detections/deployments/results), per-entry
  * rendering, empty state, detail links, guardrail-breach amber flag
- * (Zybit-091), and the multi-site selector (Zybit-092).
- * Not built: the LEARNED entry — depends on the Phase-2 rule-calibration
- * feedback loop, which does not exist yet.
+ * (Zybit-091), multi-site selector (Zybit-092), LEARNED entry with Layer 1
+ * re-ranking consequence (Zybit-093), and Layer 2 calibration note when the
+ * rule's threshold was tuned for this site.
  */
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +36,8 @@ import { eq, and, desc } from 'drizzle-orm';
 import { getServerAuth } from '@/lib/auth/serverAuth';
 import { getDb } from '@/lib/db/client';
 import { phase1Sites, zybitFindings, zybitExperiments, zybitExperimentOutcomes } from '@/lib/db/schema';
+import { computeRuleCalibrations } from '@/lib/phase2/rules/ruleCalibration';
+import { createOutcomesRepository } from '@/lib/phase2/outcomes/repository';
 
 // ---------------------------------------------------------------------------
 // Timeline entry types
@@ -84,6 +86,12 @@ type LearnedEntry = {
   result: string;
   liftPct: number | null;
   guardrailBreached: string | null;
+  /** Layer 2 calibration state for this rule at the time of this entry. */
+  calibration?: {
+    direction: 'loosen' | 'tighten';
+    reason: string;
+    conclusiveCount: number;
+  };
 };
 
 type TimelineEntry = DetectionEntry | DeploymentEntry | ResultEntry | LearnedEntry;
@@ -97,6 +105,11 @@ async function loadTimeline(
   orgId: string,
   siteId: string,
 ): Promise<TimelineEntry[]> {
+  // Fetch past outcomes via the outcomes repository so we have the full
+  // ExperimentOutcomeRow shape needed for computeRuleCalibrations.
+  const pastOutcomes = await createOutcomesRepository().listForSite(orgId, siteId);
+  const calibrations = computeRuleCalibrations(pastOutcomes);
+
   const [findings, experiments, outcomes] = await Promise.all([
     db
       .select({
@@ -204,6 +217,7 @@ async function loadTimeline(
 
       // LEARNED entry (Zybit-093) — one minute after the result so chronological
       // order reads "we saw the result, then the model learned from it."
+      const ruleCalibration = outcome.ruleId ? calibrations.get(outcome.ruleId) : undefined;
       entries.push({
         kind: 'learned',
         date: new Date(outcome.concludedAt.getTime() + 60_000),
@@ -214,6 +228,15 @@ async function loadTimeline(
         result: outcome.result,
         liftPct: outcome.liftPct,
         guardrailBreached: outcome.guardrailBreached,
+        ...(ruleCalibration && ruleCalibration.direction !== 'neutral'
+          ? {
+              calibration: {
+                direction: ruleCalibration.direction,
+                reason: ruleCalibration.reason,
+                conclusiveCount: ruleCalibration.conclusiveCount,
+              },
+            }
+          : {}),
       });
     }
   }
@@ -330,6 +353,12 @@ function EntryLabel({ entry }: { entry: TimelineEntry }) {
       <div>
         <p className="font-medium">{learnedSentence(entry)}</p>
         <p className="text-sm text-[#6B6B6B] mt-0.5">{learnedConsequence(entry)}</p>
+        {entry.calibration && (
+          <p className="text-xs text-violet-600 mt-1 font-medium">
+            Detection threshold {entry.calibration.direction === 'loosen' ? 'loosened' : 'raised'} based on{' '}
+            {entry.calibration.conclusiveCount} concluded experiment{entry.calibration.conclusiveCount === 1 ? '' : 's'} on this site.
+          </p>
+        )}
       </div>
     );
   }
