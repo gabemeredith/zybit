@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveIntegrationHealth } from '../cockpit';
+import { deriveIntegrationHealth, deriveBridgeHealth } from '../cockpit';
 
 const NOW = new Date('2026-05-19T12:00:00Z').getTime();
 
@@ -49,5 +49,32 @@ describe('deriveIntegrationHealth', () => {
     );
     expect(h.state).toBe('disconnected');
     expect(h.tone).toBe('gray');
+  });
+});
+
+describe('deriveBridgeHealth', () => {
+  it('is inactive (gray) when there is no experiment traffic', () => {
+    const b = deriveBridgeHealth(0, 0);
+    expect(b.state).toBe('inactive');
+    expect(b.tone).toBe('gray');
+  });
+
+  it('flags not-detected (amber) once enough visitors are assigned but none bridged', () => {
+    const b = deriveBridgeHealth(50, 0);
+    expect(b.state).toBe('not-detected');
+    expect(b.tone).toBe('amber');
+    expect(b.label).toContain('not detected');
+  });
+
+  it('stays healthy on low assignment volume to avoid first-hit flapping', () => {
+    const b = deriveBridgeHealth(5, 0);
+    expect(b.state).toBe('healthy');
+  });
+
+  it('is healthy (green) when assigned visitors join conversions', () => {
+    const b = deriveBridgeHealth(50, 12);
+    expect(b.state).toBe('healthy');
+    expect(b.tone).toBe('green');
+    expect(b.bridgedVisitors).toBe(12);
   });
 });

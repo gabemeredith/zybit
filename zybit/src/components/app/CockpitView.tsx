@@ -179,7 +179,7 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
     return <NoSiteCTA />;
   }
 
-  const { site, pipeline, gate, findings, experiments, snapshots, lastInsightAt } = data;
+  const { site, pipeline, gate, findings, experiments, snapshots, bridge, lastInsightAt } = data;
 
   // No integration → show guidance
   if (!pipeline || pipeline.integrations.length === 0) {
@@ -252,6 +252,15 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
         <div className="mb-8 flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
           Page snapshots are {snapshots.staleDays} days old — the Understand layer may be stale.
+        </div>
+      )}
+
+      {/* PostHog bridge health — Zybit-126 */}
+      {bridge.state === "not-detected" && (
+        <div className="mb-8 flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+          PostHog bridge not detected — {bridge.assignedVisitors} visitors assigned but none
+          joined to a conversion. Experiment outcomes may be undercounted.
         </div>
       )}
 
