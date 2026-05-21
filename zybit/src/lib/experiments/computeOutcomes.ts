@@ -87,7 +87,7 @@ async function queryBucketCounts(
   startedAt: Date,
   endAt: Date,
 ): Promise<ExperimentCounts> {
-  const rows = await db.execute<{
+  const result = await db.execute<{
     bucket: string;
     participants: string;
     conversions: string;
@@ -122,6 +122,10 @@ async function queryBucketCounts(
     LEFT JOIN converters c ON c.session_id = a.visitor_id
     GROUP BY a.bucket
   `);
+
+  // neon-http returns a result object ({ rows, rowCount, ... }); guard in case
+  // a future driver returns the row array directly.
+  const rows = Array.isArray(result) ? result : result.rows;
 
   const counts: ExperimentCounts = {
     control: { participants: 0, conversions: 0 },
@@ -206,46 +210,48 @@ async function concludeExperiment(
     modificationType = (mods[0] as { type: string }).type ?? null;
   }
 
-  await db.transaction(async (tx: DB) => {
-    await tx.insert(zybitExperimentOutcomes).values({
-      id: randomUUID(),
-      organizationId: experiment.organizationId,
-      siteId: experiment.siteId,
-      experimentId: experiment.id,
-      findingId: experiment.findingId ?? null,
-      ruleId,
-      pathRef: pathRef ?? experiment.targetPath,
-      modificationType,
-      result,
-      liftPct,
-      confidence,
-      controlConversions: counts.control.conversions,
-      controlParticipants: counts.control.participants,
-      variantConversions: counts.variant.conversions,
-      variantParticipants: counts.variant.participants,
-      guardrailBreached,
-      concludedAt,
-    });
-
-    await tx
-      .update(zybitExperiments)
-      .set({
-        status: newStatus,
-        resultControlRate:
-          counts.control.participants > 0
-            ? counts.control.conversions / counts.control.participants
-            : null,
-        resultVariantRate:
-          counts.variant.participants > 0
-            ? counts.variant.conversions / counts.variant.participants
-            : null,
-        resultConfidence: confidence,
-        resultParticipants: counts.control.participants + counts.variant.participants,
-        completedAt: concludedAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(zybitExperiments.id, experiment.id));
+  // Sequential writes: the app runs on the neon-http driver, which has no
+  // interactive transaction support. Insert the outcome first (the durable
+  // record), then flip experiment status — if the second write fails the
+  // outcome row still exists and the next cron pass reconciles status.
+  await db.insert(zybitExperimentOutcomes).values({
+    id: randomUUID(),
+    organizationId: experiment.organizationId,
+    siteId: experiment.siteId,
+    experimentId: experiment.id,
+    findingId: experiment.findingId ?? null,
+    ruleId,
+    pathRef: pathRef ?? experiment.targetPath,
+    modificationType,
+    result,
+    liftPct,
+    confidence,
+    controlConversions: counts.control.conversions,
+    controlParticipants: counts.control.participants,
+    variantConversions: counts.variant.conversions,
+    variantParticipants: counts.variant.participants,
+    guardrailBreached,
+    concludedAt,
   });
+
+  await db
+    .update(zybitExperiments)
+    .set({
+      status: newStatus,
+      resultControlRate:
+        counts.control.participants > 0
+          ? counts.control.conversions / counts.control.participants
+          : null,
+      resultVariantRate:
+        counts.variant.participants > 0
+          ? counts.variant.conversions / counts.variant.participants
+          : null,
+      resultConfidence: confidence,
+      resultParticipants: counts.control.participants + counts.variant.participants,
+      completedAt: concludedAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(zybitExperiments.id, experiment.id));
 }
 
 // ---------------------------------------------------------------------------
