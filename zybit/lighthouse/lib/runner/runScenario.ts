@@ -174,10 +174,13 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     const fullUrl = urlForPath(baseUrl, path);
     try {
       const r = await runSnapshot(fullUrl, { respectRobots: false });
+      // Use the logical path (from events/findings) as pathRef, not the fake-site
+      // URL path — so selector-validate and suggestions can match snapshot to finding.
+      const logicalPath = path.startsWith('/') ? path.replace(/\/$/, '') || '/' : `/${path}`;
       await repository.upsertPageSnapshot({
         organizationId,
         siteId,
-        pathRef: normalizePathRef(r.finalUrl),
+        pathRef: logicalPath,
         url: r.finalUrl,
         data: r.data,
         fetchedAt: new Date(),
