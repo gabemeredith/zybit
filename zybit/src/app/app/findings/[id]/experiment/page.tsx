@@ -13,6 +13,7 @@ import type {
   AuditFindingPrescription,
 } from "@/lib/phase2/rules/types";
 import type { CtaCandidate, HeadingItem } from "@/lib/phase2/snapshots/types";
+import { selectorStability, type SelectorStability } from "@/lib/phase2/snapshots/selectorUtils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,7 +24,10 @@ export type ChangeType = "copy" | "style" | "hide";
 export interface SelectorSuggestion {
   label: string;       // display text shown in dropdown
   selector: string;    // the CSS selector string
+  stability: SelectorStability; // Zybit-134 — how robust the selector is
 }
+
+const STABILITY_RANK: Record<SelectorStability, number> = { stable: 0, medium: 1, fragile: 2 };
 
 // ---------------------------------------------------------------------------
 // Default derivation helpers
@@ -108,9 +112,11 @@ function buildSuggestions(
     const text = cta.text.trim().slice(0, 60);
     if (!text) continue;
     // Use stable ref attr when available; fall back to text-content selector
+    const selector = `${cta.tag}[data-zybit-ref="${cta.ref}"]`;
     suggestions.push({
       label: `${cta.tag} "${text}" (${cta.landmark})`,
-      selector: `${cta.tag}[data-zybit-ref="${cta.ref}"]`,
+      selector,
+      stability: selectorStability(selector),
     });
   }
 
@@ -119,13 +125,16 @@ function buildSuggestions(
     if (!text) continue;
     const tag = `h${h.level}`;
     // Headings have no stable ref — use nth-of-type keyed by documentIndex
+    const selector = `${tag}:nth-of-type(${h.documentIndex + 1})`;
     suggestions.push({
       label: `${tag} "${text}"`,
-      selector: `${tag}:nth-of-type(${h.documentIndex + 1})`,
+      selector,
+      stability: selectorStability(selector),
     });
   }
 
-  return suggestions;
+  // Stable selectors first so the PM reaches for durable ones (Zybit-134).
+  return suggestions.sort((a, b) => STABILITY_RANK[a.stability] - STABILITY_RANK[b.stability]);
 }
 
 // ---------------------------------------------------------------------------

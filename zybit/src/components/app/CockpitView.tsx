@@ -179,7 +179,7 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
     return <NoSiteCTA />;
   }
 
-  const { site, pipeline, gate, findings, experiments, snapshots, lastInsightAt } = data;
+  const { site, pipeline, gate, findings, experiments, snapshots, bridge, lastInsightAt } = data;
 
   // No integration → show guidance
   if (!pipeline || pipeline.integrations.length === 0) {
@@ -247,11 +247,35 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
         />
       </div>
 
-      {/* Snapshot staleness — Zybit-023 */}
+      {/* Snapshot staleness — Zybit-023 / per-path drift Zybit-135 */}
       {snapshots.staleDays != null && snapshots.staleDays > SNAPSHOT_STALE_DAYS && (
+        <div className="mb-8 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+            Page snapshots are {snapshots.staleDays} days old — the Understand layer may be stale.
+          </div>
+          {snapshots.perPath.filter((p) => (p.staleDays ?? 0) > SNAPSHOT_STALE_DAYS).length > 0 && (
+            <ul className="mt-2 space-y-0.5 pl-4">
+              {snapshots.perPath
+                .filter((p) => (p.staleDays ?? 0) > SNAPSHOT_STALE_DAYS)
+                .slice(0, 8)
+                .map((p) => (
+                  <li key={p.pathRef} className="flex items-center justify-between gap-3 text-xs">
+                    <span className="font-mono truncate">{p.pathRef}</span>
+                    <span className="shrink-0 text-amber-600">{p.staleDays}d old</span>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* PostHog bridge health — Zybit-126 */}
+      {bridge.state === "not-detected" && (
         <div className="mb-8 flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-          Page snapshots are {snapshots.staleDays} days old — the Understand layer may be stale.
+          PostHog bridge not detected — {bridge.assignedVisitors} visitors assigned but none
+          joined to a conversion. Experiment outcomes may be undercounted.
         </div>
       )}
 

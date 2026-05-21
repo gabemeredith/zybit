@@ -41,6 +41,8 @@ Open `http://localhost:3000`. Before opening a PR: `npm run verify` (lint + Type
 | `AXIOM_TOKEN` | Observability | Axiom ingest token — logs drain to `axiom-audit` dataset |
 | `AXIOM_DATASET` | Observability | Set to `axiom-audit` (token verified 2026-05-21) |
 | `FORGE_CRON_SECRET` | Cron routes | Shared secret for `/api/phase2/cron/*` auth |
+| `EDGE_CONFIG` | Proxy / kill-switch | Vercel Edge Config read connection string |
+| `EDGE_CONFIG_ID` / `VERCEL_API_TOKEN` / `VERCEL_TEAM_ID` | Optional (kill-switch) | Enable the Edge Config kill-switch write on experiment stop (Zybit-116); no-op when unset |
 | `STRIPE_SECRET_KEY` | Billing | Stripe secret key (test or live) |
 | `STRIPE_WEBHOOK_SECRET` | Billing | Stripe webhook signing secret |
 | `STRIPE_PRICE_STARTER` / `_GROWTH` / `_SCALE` | Billing | Stripe price IDs for each plan |

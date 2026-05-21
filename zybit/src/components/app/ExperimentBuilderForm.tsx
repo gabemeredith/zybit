@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { saveExperimentBriefAction } from "@/app/app/findings/[id]/experiment/actions";
 import type { ChangeType, SelectorSuggestion } from "@/app/app/findings/[id]/experiment/page";
 import type { CssSystem } from "@/lib/phase2/snapshots/cssSystemDetector";
+import { copyHints } from "@/lib/experiments/copyHint";
 
 interface FormDefaults {
   experimentName: string;
@@ -159,7 +160,27 @@ function SuggestionsDropdown({
           onClick={() => { onSelect(s.selector); onClose(); }}
           className="w-full text-left px-3 py-2.5 hover:bg-black/[0.03] transition-colors border-b border-black/[0.04] last:border-0"
         >
-          <div className="text-xs font-medium text-[#111] truncate">{s.label}</div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-[#111] truncate">{s.label}</span>
+            <span
+              className={`shrink-0 ml-auto inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                s.stability === "stable"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : s.stability === "fragile"
+                    ? "bg-amber-50 text-amber-700"
+                    : "bg-black/[0.04] text-[#9B9B9B]"
+              }`}
+              title={
+                s.stability === "stable"
+                  ? "Robust selector — survives most redesigns"
+                  : s.stability === "fragile"
+                    ? "Positional selector — breaks if markup order changes"
+                    : "Moderately stable selector"
+              }
+            >
+              {s.stability}
+            </span>
+          </div>
           <div className="font-mono text-[10px] text-[#9B9B9B] truncate mt-0.5">{s.selector}</div>
         </button>
       ))}
@@ -368,6 +389,26 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
               ? "The replacement text the script writes into the element"
               : "Space-separated class names added to the element in the variant"}
           </p>
+          {/* Copy-quality hints (Zybit-125) — advisory, deterministic, non-blocking */}
+          {changeType === "copy" && (() => {
+            const hints = copyHints(newValue);
+            if (hints.length === 0) return null;
+            return (
+              <ul className="mt-2 space-y-1">
+                {hints.map((h, i) => (
+                  <li
+                    key={i}
+                    className={`flex items-start gap-1.5 text-[11px] ${
+                      h.level === "warn" ? "text-amber-700" : "text-[#6B6B6B]"
+                    }`}
+                  >
+                    <span className={`mt-1 h-1 w-1 shrink-0 rounded-full ${h.level === "warn" ? "bg-amber-400" : "bg-[#C9C9C9]"}`} />
+                    {h.message}
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
         </div>
       )}
 

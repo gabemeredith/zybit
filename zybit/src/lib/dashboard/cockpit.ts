@@ -66,8 +66,34 @@ export interface CockpitData {
   snapshots: {
     lastSnapshotAt: string | null;
     staleDays: number | null;
+    /**
+     * Per-path snapshot freshness (Zybit-135), newest-stale first. Lets the
+     * cockpit show which specific pages have a stale Understand layer rather
+     * than only a site-global max.
+     */
+    perPath: Array<{ pathRef: string; lastSnapshotAt: string; staleDays: number | null }>;
   };
+  /**
+   * PostHog visitor-ID bridge health (Zybit-126). The proxy logs
+   * `experiment_assignment` events keyed by the Zybit visitor id; conversions
+   * only join when the bridge registers `zybit_vid` on PostHog events. If
+   * assignments exist but no conversion shares an assigned visitor id, the
+   * bridge isn't firing and outcomes silently undercount.
+   */
+  bridge: BridgeHealth;
   lastInsightAt: string | null;
+}
+
+export type BridgeHealthState = 'healthy' | 'not-detected' | 'inactive';
+
+export interface BridgeHealth {
+  state: BridgeHealthState;
+  label: string;
+  tone: 'green' | 'amber' | 'gray';
+  /** Distinct visitors assigned to an experiment in the window. */
+  assignedVisitors: number;
+  /** Distinct assigned visitors that also produced a joinable conversion. */
+  bridgedVisitors: number;
 }
 
 const SESSION_DISPLAY_THRESHOLD = 100;
@@ -115,6 +141,50 @@ export function deriveIntegrationHealth(
   return { state: 'watching', label: 'Zybit is watching', tone: 'green' };
 }
 
+/**
+ * Pure: classify bridge health from assignment vs. joined-conversion counts.
+ * `not-detected` only fires once there's enough assignment traffic to expect a
+ * conversion, so a brand-new experiment doesn't flap amber on its first hits.
+ */
+const BRIDGE_MIN_ASSIGNED = 20;
+
+export function deriveBridgeHealth(assignedVisitors: number, bridgedVisitors: number): BridgeHealth {
+  if (assignedVisitors === 0) {
+    return { state: 'inactive', label: 'No experiment traffic yet', tone: 'gray', assignedVisitors, bridgedVisitors };
+  }
+  if (bridgedVisitors === 0 && assignedVisitors >= BRIDGE_MIN_ASSIGNED) {
+    return {
+      state: 'not-detected',
+      label: 'PostHog bridge not detected — conversions may be undercounted',
+      tone: 'amber',
+      assignedVisitors,
+      bridgedVisitors,
+    };
+  }
+  return { state: 'healthy', label: 'Conversion bridge active', tone: 'green', assignedVisitors, bridgedVisitors };
+}
+
+/**
+ * Count distinct assigned visitors and how many of them produced a joinable
+ * conversion (a non-proxy, non-assignment event sharing the assigned visitor
+ * id — i.e. the bridge stamped `zybit_vid` so the cross-provider join lands).
+ */
+function computeBridgeCounts(events: { type: string; source: string; sessionId: string }[]): {
+  assignedVisitors: number;
+  bridgedVisitors: number;
+} {
+  const assigned = new Set<string>();
+  for (const e of events) {
+    if (e.type === 'experiment_assignment') assigned.add(e.sessionId);
+  }
+  const bridged = new Set<string>();
+  for (const e of events) {
+    if (e.type === 'experiment_assignment' || e.source === 'proxy') continue;
+    if (assigned.has(e.sessionId)) bridged.add(e.sessionId);
+  }
+  return { assignedVisitors: assigned.size, bridgedVisitors: bridged.size };
+}
+
 export async function getCockpitData(organizationId: string): Promise<CockpitData> {
   const repository = createPhase1Repository();
   const sites = await repository.listSites({ organizationId, limit: 1 });
@@ -127,7 +197,8 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
       gate: null,
       findings: { openCount: 0, topFinding: null },
       experiments: { runningCount: 0, totalCount: 0, lastComputedAt: null },
-      snapshots: { lastSnapshotAt: null, staleDays: null },
+      snapshots: { lastSnapshotAt: null, staleDays: null, perPath: [] },
+      bridge: deriveBridgeHealth(0, 0),
       lastInsightAt: null,
     };
   }
@@ -147,6 +218,7 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
     experimentRows,
     experimentComputedRows,
     snapshotFreshnessRows,
+    snapshotPerPathRows,
   ] = await Promise.all([
       repository.listIntegrations({ organizationId, siteId: site.id }),
       repository.listEventsInWindow({ organizationId, siteId: site.id, window: window7d }),
@@ -186,6 +258,14 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
         .select({ lastFetchedAt: max(phase2PageSnapshots.fetchedAt) })
         .from(phase2PageSnapshots)
         .where(eq(phase2PageSnapshots.siteId, site.id)),
+      getDb()
+        .select({
+          pathRef: phase2PageSnapshots.pathRef,
+          lastFetchedAt: max(phase2PageSnapshots.fetchedAt),
+        })
+        .from(phase2PageSnapshots)
+        .where(eq(phase2PageSnapshots.siteId, site.id))
+        .groupBy(phase2PageSnapshots.pathRef),
     ]);
 
   const resolvedConfig = config ?? {
@@ -240,6 +320,26 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
   const lastSnapshotAt = lastSnapshotDate ? lastSnapshotDate.toISOString() : null;
   const staleDays = snapshotStaleDays(lastSnapshotDate);
 
+  const perPathSnapshots = snapshotPerPathRows
+    .map((r) => {
+      const d =
+        r.lastFetchedAt instanceof Date
+          ? r.lastFetchedAt
+          : r.lastFetchedAt
+            ? new Date(r.lastFetchedAt)
+            : null;
+      return {
+        pathRef: r.pathRef,
+        lastSnapshotAt: d ? d.toISOString() : '',
+        staleDays: snapshotStaleDays(d),
+      };
+    })
+    .filter((p) => p.lastSnapshotAt !== '')
+    .sort((a, b) => (b.staleDays ?? 0) - (a.staleDays ?? 0));
+
+  const { assignedVisitors, bridgedVisitors } = computeBridgeCounts(events);
+  const bridge = deriveBridgeHealth(assignedVisitors, bridgedVisitors);
+
   const lastInsightAt =
     topFinding
       ? (
@@ -278,7 +378,8 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
     },
     findings: { openCount, topFinding },
     experiments: { runningCount, totalCount, lastComputedAt },
-    snapshots: { lastSnapshotAt, staleDays },
+    snapshots: { lastSnapshotAt, staleDays, perPath: perPathSnapshots },
+    bridge,
     lastInsightAt,
   };
 }

@@ -33,6 +33,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '@/lib/db/schema';
 import { zybitExperiments, zybitFindings, zybitExperimentOutcomes, phase1Sites, appUsers, phase2Integrations } from '@/lib/db/schema';
 import { sendExperimentConcludedEmail } from '@/lib/email/experimentConcludedEmail';
+import { disableExperimentAtEdge } from '@/lib/experiments/proxy/edgeKillSwitch';
 import { isGa4OnlyMeasurementGap } from '@/lib/phase2/connectors/measurementGrain';
 import { logger } from '@/lib/observability/logger';
 import {
@@ -265,6 +266,9 @@ async function concludeExperiment(
       updatedAt: new Date(),
     })
     .where(eq(zybitExperiments.id, experiment.id));
+
+  // Fail closed at the edge as soon as the cron concludes an experiment (Zybit-116).
+  await disableExperimentAtEdge(experiment.id);
 }
 
 // ---------------------------------------------------------------------------
