@@ -79,7 +79,7 @@ A file-existence + behavior audit against the sprint docs found significant docu
   - Layer 2 is now **Lighthouse-verified**, not just unit-verified.
 
 - **Axiom drain verified and documented**:
-  - Token `xaat-f3c5f5b7-b6e8-4ac2-8b15-669b5f78087d` confirmed working against `api.axiom.co`.
+  - Token confirmed working against `api.axiom.co` (token stored in Vercel env vars, not here).
   - Dataset `axiom-audit` confirmed writeable (ingest test: `ingested: 1, failed: 0`).
   - Action needed: set `AXIOM_DATASET=axiom-audit` in Vercel env vars. No code changes required.
   - README env var table updated with all required/optional env vars.
