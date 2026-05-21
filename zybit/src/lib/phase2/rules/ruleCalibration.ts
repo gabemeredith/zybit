@@ -49,6 +49,29 @@ const MIN_CONCLUSIVE_OUTCOMES = 3;
 /** Multiplier within ±this of 1.0 reads as "neutral" for direction/reason. */
 const NEUTRAL_EPSILON = 0.02;
 
+/**
+ * Rules whose detection floor is a genuine *signal-strength* threshold and so
+ * is meaningful to calibrate. Deliberately excludes `hero-hierarchy-inversion`:
+ * its only gate is a sample-size minimum (`MIN_CTA_CLICKS`) — the inversion it
+ * detects is binary and has no magnitude knob, so loosening it would let the
+ * rule fire on under-powered traffic rather than on a weaker-but-real signal.
+ * Calibration is about sensitivity, not traffic-sufficiency, so that rule is
+ * left out.
+ */
+export const CALIBRATED_RULE_IDS: ReadonlySet<string> = new Set([
+  'rage-click-target',
+  'bounce-on-key-page',
+  'error-exposure',
+  'form-abandonment',
+  'help-seeking-spike',
+  'hesitation-pattern',
+  'mobile-engagement-asymmetry',
+  'nav-dispersion',
+  'return-visit-thrash',
+  'cohort-pain-asymmetry',
+  'above-fold-coverage',
+]);
+
 function contributionFor(outcome: ExperimentOutcomeRow): number {
   const lift = clamp(outcome.liftPct ?? 0, -LIFT_CLAMP, LIFT_CLAMP);
   const conf = outcome.confidence ?? 0;
@@ -94,6 +117,7 @@ export function computeRuleCalibrations(
   const byRule = new Map<string, ExperimentOutcomeRow[]>();
   for (const outcome of outcomes) {
     if (!outcome.ruleId) continue;
+    if (!CALIBRATED_RULE_IDS.has(outcome.ruleId)) continue;
     const bucket = byRule.get(outcome.ruleId);
     if (bucket) bucket.push(outcome);
     else byRule.set(outcome.ruleId, [outcome]);

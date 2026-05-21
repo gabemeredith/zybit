@@ -12,7 +12,7 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 ### What shipped
 
 - **Layer 2 calibration engine** (`zybit/src/lib/phase2/rules/ruleCalibration.ts`): pure `computeRuleCalibrations(outcomes)` aggregates a site's experiment outcomes **per `ruleId`** into a detection-floor multiplier. Per-outcome signal reuses Layer 1's shape (`clamp(liftPct, ±20) × confidence × 0.01`, guardrail breach −0.10); net signal clamped to ±0.30 → `multiplier = clamp(1 − netSignal, 0.7, 1.3)`. Gated at `MIN_CONCLUSIVE_OUTCOMES = 3` so one noisy result can't move detection.
-- **All 12 rules calibrated**: each routes its single detection floor through `calibratedFloor` (lower-bound floors) or `calibratedCap` (upper-bound caps — `form-abandonment` submit rate, `nav-dispersion` Gini). Statistical sample-size guards are deliberately left uncalibrated.
+- **11 of 12 rules calibrated** (`CALIBRATED_RULE_IDS`): each routes its single detection floor through `calibratedFloor` (lower-bound floors) or `calibratedCap` (upper-bound caps — `form-abandonment` submit rate, `nav-dispersion` Gini). Statistical sample-size guards are deliberately left uncalibrated. `hero-hierarchy-inversion` is exempt — its only gate is a sample-size minimum, not a signal floor (added on review of the architecture; see below).
 - **Wired into `runInsightsPipeline`**: outcomes fetched once, feed both Layer 2 (`AuditRuleContext.calibration`, before rules run) and Layer 1 (`applyLearnRerank`, after). Active calibrations surface in `AuditRuleDiagnostic.calibration`.
 - 23 new unit tests; `npm run verify` green (37 files, 446 tests).
 
@@ -22,14 +22,22 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 - **No schema change**: calibration is computed on the fly from the same `zybit_experiment_outcomes` rows Layer 1 reads — deterministic, mirrors Layer 1's pattern.
 - **Bounded ±30%** and gated, so calibration shifts sensitivity without ever firing on under-powered samples.
 
+### Architecture review (post-implementation)
+
+- **Lighthouse cannot exercise Layer 2.** `runScenario` deletes outcomes at step 0, runs insights once (step 4), then creates the experiment+outcome (step 4.5). The single insights pass always sees zero prior outcomes → calibration is always neutral. So Layer 2 is **unit-verified, not Lighthouse-verified**. To close this: a second insights pass after the outcome, or seed an outcome history before the first pass. Not wired yet.
+- **Live Lighthouse run blocked here:** the container's network allowlist rejects the Neon host (HTTP 403 "Host not in allowlist"), so no live DB run was possible this session. Ran the 38 Lighthouse unit tests + 446 app tests green instead.
+- **Removed an unprincipled calibration:** `hero-hierarchy-inversion` was calibrating `MIN_CTA_CLICKS`, a pure sample-size gate (the inversion is binary, no magnitude). That contradicts "don't calibrate sample-size guards" and could fire on under-powered data. Exempted it via `CALIBRATED_RULE_IDS`.
+- **No PM-facing surface for Layer 2.** Findings appear/disappear with no "why." Conflicts with the "make learning visible" doctrine (cf. the Zybit-093 LEARNED-entry idea: "threshold now requires stronger signal"). Flagged for a product decision — not silently shipped as done.
+
 ### Blockers
 
-- None.
+- Live Lighthouse/DB e2e blocked by the environment network allowlist (Neon host not allowlisted).
 
 ### What's next
 
+- Decide whether Layer 2 needs a PM-facing surface (LEARNED timeline entry / cockpit note) or whether silent recalibration is acceptable pre-pilot.
+- If we want Lighthouse to verify Layer 2: add a second insights pass (or outcome seeding) to `runScenario`.
 - Live Stripe round-trip verification (Zybit-040) still needs stripe-cli + test keys (can't run in sandbox).
-- Optional: a dedicated "threshold calibrated" surface on `/app/loop` (today calibration is observable via diagnostics; findings appearing/disappearing is the implicit surface).
 - Layer 3 (cross-site priors) stays deferred until 50+ customers.
 
 ---

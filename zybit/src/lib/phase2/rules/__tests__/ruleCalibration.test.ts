@@ -52,6 +52,13 @@ describe('computeRuleCalibrations — gating', () => {
     expect(map.size).toBe(0);
   });
 
+  it('does not calibrate rules outside CALIBRATED_RULE_IDS (e.g. hero-hierarchy-inversion)', () => {
+    const wins = Array.from({ length: 5 }, () =>
+      makeOutcome({ ruleId: 'hero-hierarchy-inversion', result: 'positive', liftPct: 20 }),
+    );
+    expect(computeRuleCalibrations(wins).has('hero-hierarchy-inversion')).toBe(false);
+  });
+
   it('inconclusive outcomes do not count toward the conclusive gate', () => {
     const outcomes = [
       makeOutcome({ result: 'inconclusive', liftPct: 0, confidence: 0.1 }),
