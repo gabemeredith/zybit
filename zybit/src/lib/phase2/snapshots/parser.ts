@@ -11,6 +11,7 @@ import { parse, type HTMLElement } from 'node-html-parser';
 
 import { guessFold } from './foldGuess';
 import { scoreVisualWeight } from './visualWeight';
+import { detectCssSystem, extractClassTokens } from './cssSystemDetector';
 import {
   SnapshotError,
   type CtaCandidate,
@@ -371,6 +372,8 @@ export const parseSnapshot: SnapshotParser = async (input) => {
       await webcrypto.subtle.digest('SHA-256', Buffer.from(normalized, 'utf8')),
     ).toString('hex');
 
+    const cssSystem = detectCssSystem(extractClassTokens(input.html));
+
     return {
       schemaVersion: 1,
       meta,
@@ -380,6 +383,7 @@ export const parseSnapshot: SnapshotParser = async (input) => {
       contentHash: contentHashHex,
       rawByteSize: input.rawByteSize,
       parsedAt: new Date().toISOString(),
+      cssSystem: cssSystem !== 'unknown' ? cssSystem : undefined,
     };
   } catch (err) {
     if (err instanceof SnapshotError) throw err;

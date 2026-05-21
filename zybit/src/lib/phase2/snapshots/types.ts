@@ -106,6 +106,8 @@ export interface PageSnapshotData {
   rawByteSize: number;
   /** ISO timestamp of when parsing completed. */
   parsedAt: string;
+  /** Detected CSS authoring system. Optional — absent on old snapshots. */
+  cssSystem?: import('./cssSystemDetector').CssSystem;
 }
 
 export interface PageSnapshot {

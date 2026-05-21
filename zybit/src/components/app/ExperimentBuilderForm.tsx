@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { saveExperimentBriefAction } from "@/app/app/findings/[id]/experiment/actions";
 import type { ChangeType, SelectorSuggestion } from "@/app/app/findings/[id]/experiment/page";
+import type { CssSystem } from "@/lib/phase2/snapshots/cssSystemDetector";
 
 interface FormDefaults {
   experimentName: string;
@@ -18,7 +19,31 @@ interface Props {
   findingId: string;
   defaults: FormDefaults;
   suggestions: SelectorSuggestion[];
+  cssSystem?: CssSystem;
 }
+
+const CSS_SYSTEM_HINTS: Partial<Record<CssSystem, { label: string; example: string }>> = {
+  tailwind: {
+    label: "Tailwind CSS detected",
+    example: "Use utility classes like bg-blue-600 text-white font-bold px-4 py-2",
+  },
+  "styled-components": {
+    label: "styled-components detected",
+    example: "Class names are hashed at runtime — use data-zybit-ref selectors from the suggestions above",
+  },
+  emotion: {
+    label: "Emotion CSS detected",
+    example: "Class names are generated at runtime — use data-zybit-ref selectors from the suggestions above",
+  },
+  "css-modules": {
+    label: "CSS Modules detected",
+    example: "Class names are hashed per-build — prefer element-level selectors like button or h1",
+  },
+  bootstrap: {
+    label: "Bootstrap detected",
+    example: "Use Bootstrap utility classes like btn-primary d-flex justify-content-center",
+  },
+};
 
 type ValidateStatus = 'ok' | 'invalid_selector' | 'no_snapshot' | 'empty';
 interface ValidateResult {
@@ -131,7 +156,7 @@ function SuggestionsDropdown({
   );
 }
 
-export default function ExperimentBuilderForm({ findingId, defaults, suggestions }: Props) {
+export default function ExperimentBuilderForm({ findingId, defaults, suggestions, cssSystem }: Props) {
   const [experimentName, setExperimentName] = useState(defaults.experimentName);
   const [selector, setSelector] = useState(defaults.selector);
   const [changeType, setChangeType] = useState<ChangeType>(defaults.changeType);
@@ -285,6 +310,18 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
           {CHANGE_TYPE_OPTIONS.find((o) => o.value === changeType)?.hint}
         </p>
       </div>
+
+      {/* CSS system hint — shown when "style" change type is selected */}
+      {changeType === "style" && cssSystem && CSS_SYSTEM_HINTS[cssSystem] && (
+        <div className="bg-sky-50 border border-sky-100 rounded-xl px-4 py-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-sky-700 mb-0.5">
+            {CSS_SYSTEM_HINTS[cssSystem]!.label}
+          </p>
+          <p className="text-xs text-sky-800 leading-relaxed">
+            {CSS_SYSTEM_HINTS[cssSystem]!.example}
+          </p>
+        </div>
+      )}
 
       {/* New value — hidden for "hide" type */}
       {changeType !== "hide" && (
