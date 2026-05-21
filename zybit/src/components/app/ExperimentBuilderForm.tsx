@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { saveExperimentBriefAction } from "@/app/app/findings/[id]/experiment/actions";
 import type { ChangeType, SelectorSuggestion } from "@/app/app/findings/[id]/experiment/page";
 
@@ -20,6 +20,12 @@ interface Props {
   suggestions: SelectorSuggestion[];
 }
 
+type ValidateStatus = 'ok' | 'invalid_selector' | 'no_snapshot' | 'empty';
+interface ValidateResult {
+  count: number | null;
+  status: ValidateStatus;
+}
+
 const CHANGE_TYPE_OPTIONS: Array<{ value: ChangeType; label: string; hint: string }> = [
   { value: "copy", label: "Change text copy", hint: "Replaces element text content" },
   { value: "style", label: "Swap CSS classes", hint: "Adds/removes class names" },
@@ -30,6 +36,56 @@ const INPUT_CLASS =
   "w-full border border-black/[0.1] rounded-lg px-3 py-2 text-sm text-[#111] bg-white focus:outline-none focus:ring-1 focus:ring-black/[0.2] placeholder-[#9B9B9B]";
 
 const SECTION_LABEL = "block text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-2";
+
+function SelectorBadge({ result, loading }: { result: ValidateResult | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/[0.04] text-[#9B9B9B]">
+        <span className="w-1.5 h-1.5 rounded-full bg-[#9B9B9B] animate-pulse" />
+        Checking…
+      </span>
+    );
+  }
+  if (!result || result.status === 'empty') return null;
+  if (result.status === 'invalid_selector') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600 border border-red-100">
+        Invalid selector
+      </span>
+    );
+  }
+  if (result.status === 'no_snapshot') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/[0.04] text-[#9B9B9B]">
+        No snapshot to validate against
+      </span>
+    );
+  }
+  const count = result.count ?? 0;
+  if (count === 0) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600 border border-red-100">
+        <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+        No matches
+      </span>
+    );
+  }
+  if (count === 1) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+        1 match
+      </span>
+    );
+  }
+  const color = count <= 5 ? "amber" : "red";
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-${color}-50 text-${color}-700 border border-${color}-100`}>
+      <span className={`w-1.5 h-1.5 rounded-full bg-${color}-400`} />
+      {count} matches{count > 5 ? " — too broad?" : ""}
+    </span>
+  );
+}
 
 function SuggestionsDropdown({
   suggestions,
@@ -85,6 +141,47 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
   const [hypothesis, setHypothesis] = useState(defaults.hypothesis);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
+  const [validateLoading, setValidateLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const validateSelector = useCallback(async (sel: string) => {
+    if (!sel.trim()) {
+      setValidateResult(null);
+      setValidateLoading(false);
+      return;
+    }
+    setValidateLoading(true);
+    try {
+      const res = await fetch('/api/selector-validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ findingId, selector: sel }),
+      });
+      if (res.ok) {
+        const data = await res.json() as ValidateResult;
+        setValidateResult(data);
+      }
+    } catch {
+      // Network error — silently suppress, don't block the form
+    } finally {
+      setValidateLoading(false);
+    }
+  }, [findingId]);
+
+  function handleSelectorChange(val: string) {
+    setSelector(val);
+    setValidateLoading(!!val.trim());
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => validateSelector(val), 500);
+  }
+
+  // Validate initial selector on mount
+  useEffect(() => {
+    if (defaults.selector) validateSelector(defaults.selector);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -125,16 +222,19 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
 
       {/* CSS selector */}
       <div>
-        <label className={SECTION_LABEL} htmlFor="selector">
-          CSS selector
-        </label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B]" htmlFor="selector">
+            CSS selector
+          </label>
+          <SelectorBadge result={validateResult} loading={validateLoading} />
+        </div>
         <div className="relative">
           <div className="flex gap-2">
             <input
               id="selector"
               type="text"
               value={selector}
-              onChange={(e) => setSelector(e.target.value)}
+              onChange={(e) => handleSelectorChange(e.target.value)}
               placeholder="e.g. .hero h1, button.btn-primary"
               className={`${INPUT_CLASS} font-mono`}
             />
@@ -151,7 +251,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
           {showSuggestions && (
             <SuggestionsDropdown
               suggestions={suggestions}
-              onSelect={setSelector}
+              onSelect={(sel) => { handleSelectorChange(sel); setShowSuggestions(false); }}
               onClose={() => setShowSuggestions(false)}
             />
           )}
