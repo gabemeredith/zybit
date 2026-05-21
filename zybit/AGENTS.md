@@ -57,7 +57,7 @@ zybit/
 
 | Loop Step | Status | Notes |
 |-----------|--------|-------|
-| **Understand** (snapshot audit) | ⚠️ Partial | HTTP + DOM parse works; SPA/JS-rendered pages trigger Browserless fallback (`browserFetcher.ts`). snapshotMethod field on records. CSS system detection (Tailwind/styled-components/Emotion/CSS-Modules/Bootstrap) now runs at parse time and stored as `cssSystem` on `PageSnapshotData` (Zybit-122). |
+| **Understand** (snapshot audit) | ⚠️ Partial | HTTP + DOM parse works; SPA/JS-rendered pages trigger Browserless fallback (`browserFetcher.ts`). snapshotMethod field on records. CSS system detection (Tailwind/styled-components/Emotion/CSS-Modules/Bootstrap) now runs at parse time and stored as `cssSystem` on `PageSnapshotData` (Zybit-122). Scheduled snapshot refresh + HTML drift detection shipped — `refresh-snapshots` cron (daily 03:00 UTC) re-fetches latest snapshot per pathRef, compares `contentHash`; cockpit surfaces `snapshots.staleDays` with an amber banner > 7 days (Zybit-023). |
 | **Watch** (PostHog + Segment + GA4) | ✅ Built | PostHog + Segment built; PostHog visitor-ID bridge shipped; GA4 connector shipped — service-account JWT (Web Crypto), `runReport` offset pagination, cursor, `runGA4PullSyncJob` + `/cron/sync-ga4` every 30m. GA4 is aggregate-grain (Identify/Propose only, not joinable to assignments). |
 | **Identify** (12 audit rules) | ✅ Built | 5 design + 7 pain rules, 193 passing tests — sufficient; do not add more rules |
 | **Propose** (findings + prescriptions) | ✅ Built | Ranked by priority score + revenue impact, PM-readable. Selector validation badge (500ms debounced, Zybit-121). CSS system hint in experiment builder when 'Swap CSS classes' selected (Zybit-122). Dead-state UX shows session progress bar vs threshold (Zybit-125). |
@@ -68,18 +68,17 @@ zybit/
 | **Preview before deploy** | ✅ Built | Side-by-side control/variant iframes on experiment detail page; CSP `frame-ancestors 'self'` on preview response |
 | **GA4 connector** | ✅ Built | `client.ts` (JWT+OAuth+runReport), `secrets.ts`, `cursor.ts`, `mapping.ts`, `sync.ts`, job + cron. 18 unit tests. |
 | **Billing** (Stripe + plan limits) | ⚠️ Partial | Metering + hard enforcement (sites/experiments 402) + events soft-cap shipped. Round-trip code bugs fixed: post-checkout redirect pointed at a non-existent `/dashboard/settings` (→ `/app/settings`); cross-instance-stale plan cache removed so enforcement reads the webhook-written plan immediately; webhook validates planId before persisting. Remaining: live stripe-cli verification of the real checkout→webhook→plan-write round-trip (needs Stripe test keys — see BACKLOG Zybit-040). |
-| **Observability** | ⚠️ Partial | Cronitor + error budget + structured logger built and wired into crons; Axiom drain not yet connected |
+| **Observability** | ✅ Built | Cronitor + error budget + structured logger wired into crons; Axiom drain connected — best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` set; console JSON output preserved for platform drains. |
 | **Integration health (cockpit)** | ✅ Built | `deriveIntegrationHealth()` in `cockpit.ts`; `PipelineHealth` in `CockpitView.tsx` shows "Zybit is watching" / "No data yet" / "Degraded" + last-sync + 7-day event count (Zybit-111) |
 | **Activation (onboarding)** | ⚠️ Partial | MRR/AOV now required to finish onboarding (Zybit-113, no skip). First-insight email exists. |
 | **Auth security** | ✅ Built | Magic-link auth. Rate limiting on `/api/auth/request-link`: 3 req/10min per email, 10 req/10min per IP via `auth_rate_limits` table (Zybit-115). Single active token per email (old tokens invalidated on re-request). |
 
 ## Immediate build order
 
-> **Status (2026-05-21):** Sprint 0 merged (PR #49): auth rate limiting (Zybit-115), experiment overlap warn-and-proceed (Zybit-119). Sprint 1 in progress on `claude/sprint1-selector-insights-WyT3k`: **selector validation badge (Zybit-121)**, **CSS system detector (Zybit-122)**, **findings dead-state UX (Zybit-125)**. CI: 34 test files, 417 tests passing.
+> **Status (2026-05-21):** Sprint 0 (PR #49) + Sprint 1 (PR #51, Zybit-121/122/125) merged to main. Sprint 2 in progress on `claude/zybit-conversion-intelligence-5YFL6`: **snapshot refresh cron (Zybit-023)**, **Lighthouse Phase 2 synthetic experiments + outcomes**, **Axiom drain** — all shipped; folded in the prescription/pathRef Lighthouse bug fixes. CI: 36 test files, 426 tests passing.
 
-1. **Live Stripe round-trip verification** (~1 day): with stripe-cli + test keys, drive checkout → `checkout.session.completed`/`customer.subscription.*` webhooks → confirm `organizations.plan` write → confirm `checkPlanLimit` 402. Code path audited & bugs fixed; only live verification remains. See BACKLOG Zybit-040.
+1. **Live Stripe round-trip verification** (~1 day): with stripe-cli + test keys, drive checkout → `checkout.session.completed`/`customer.subscription.*` webhooks → confirm `organizations.plan` write → confirm `checkPlanLimit` 402. Code path audited & bugs fixed; only live verification remains (cannot run in a sandboxed container — webhook delivery needs a reachable server). Env vars: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`/`_GROWTH`/`_SCALE` (enterprise is custom-priced, no ID). See BACKLOG Zybit-040.
 2. **Learn — Layer 2 (per-site rule-threshold calibration)**: Layer 1 (re-ranking) shipped; Layer 2 would mutate `ruleTuning.ts`-equivalent constants per-site based on outcome history. Layer 3 (cross-site priors) deferred until 50+ customers.
-3. **Axiom drain** for the structured logger (observability is otherwise wired).
 
 **Never build:** sentiment analysis, GitHub PR generation, own event collection SDK / PostHog replacement, more audit rules, cross-site priors before 50+ customers.
 

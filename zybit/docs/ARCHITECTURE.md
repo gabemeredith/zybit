@@ -60,6 +60,7 @@ Static HTML analysis. Fetches pages via HTTP, parses DOM structure.
 | Parser | `parser.ts` | Extracts headings, CTAs (buttons + links), forms, meta tags, landmarks |
 | Visual weight | `visualWeight.ts` | Scores element prominence from Tailwind class tokens (text-2xl, bg-primary, font-bold) |
 | Fold guess | `foldGuess.ts` | Estimates above/below fold from DOM position + landmark proximity |
+| Refresh cron | `refresh.ts` + `cron/refresh-snapshots/route.ts` | Daily 03:00 UTC re-fetch of the latest snapshot per pathRef; compares `contentHash` for HTML drift; cockpit surfaces `snapshots.staleDays` (amber > 7d). Distinct from `refresh-captures` (Playwright artifacts). (Zybit-023) |
 
 **Limitation:** SPA pages return blank HTTP responses. `fetcher.ts` checks `isSpaHtml()` and falls back to `runBrowserSnapshot()` via Browserless.io when a shell is detected (`snapshotMethod: 'browser'`). HTTP-only fallback when `BROWSERLESS_TOKEN` is absent. Visual weight is heuristic (class token matching), not measured pixel positions.
 

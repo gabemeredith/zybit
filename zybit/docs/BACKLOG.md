@@ -57,7 +57,7 @@ Prioritized epics and stories toward commercial launch. See [DOCTRINE.md](../DOC
 | **Zybit-020** | PostHog connector scheduling — cron-triggered sync per integration with backoff on cursor failure. | No manual curl for pilot refresh; dashboard shows last-synced timestamp. | P0 |
 | **Zybit-021** | Idempotent webhook replay — Segment duplicate `messageId` no double-count. | At-least-once safe; surfaced in integration status. | P1 |
 | **Zybit-022** | Backfill tooling — one-command historical window backfill for PostHog. | Support can answer "why did this spike?" from the bundle. | P1 |
-| **Zybit-023** | Page snapshot refresh job — scheduled re-fetch; hash drift alerting. | SPA caveat documented until Epic F. | P1 |
+| **Zybit-023** | Page snapshot refresh job — scheduled re-fetch; hash drift alerting. | **Shipped** — `refresh-snapshots` cron (daily 03:00 UTC) re-fetches latest snapshot per pathRef, compares `contentHash`; cockpit surfaces `snapshots.staleDays` (amber > 7d). | P1 |
 
 ---
 
