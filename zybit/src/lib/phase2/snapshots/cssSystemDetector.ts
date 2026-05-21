@@ -38,7 +38,7 @@ const TAILWIND_PATTERNS = [
 const STYLED_COMPONENTS_PATTERN = /^sc-[a-zA-Z0-9]{4,}$/;
 const EMOTION_PATTERN = /^css-[a-zA-Z0-9]{5,}$/;
 // CSS Modules: _ClassName, BEM __modifier, or CamelCase_hash (underscore-based, not hyphen)
-const CSS_MODULES_PATTERN = /^_[a-zA-Z]|__[a-zA-Z]|[A-Z][a-zA-Z0-9]*_[a-zA-Z0-9]{5,}$/;
+const CSS_MODULES_PATTERN = /^_[a-zA-Z]|^__[a-zA-Z]|[A-Z][a-zA-Z0-9]*_[a-zA-Z0-9]{5,}$/;
 const BOOTSTRAP_CLASSES = new Set([
   'container', 'row', 'col', 'btn', 'card', 'navbar', 'nav', 'modal',
   'alert', 'badge', 'dropdown', 'form-control', 'form-group', 'd-flex',

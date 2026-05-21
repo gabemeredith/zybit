@@ -246,6 +246,7 @@ export default async function ExperimentBuilderPage({
       </div>
 
       <ExperimentBuilderForm
+        key={id}
         findingId={id}
         defaults={formDefaults}
         suggestions={suggestions}

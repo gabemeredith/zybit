@@ -1,12 +1,12 @@
 export const dynamic = "force-dynamic";
 
 import { redirect } from "next/navigation";
-import { desc, eq, and, sql } from "drizzle-orm";
+import { desc, eq, and } from "drizzle-orm";
 import Link from "next/link";
 import { getServerAuth } from "@/lib/auth/serverAuth";
 import { createPhase1Repository } from "@/lib/phase1";
 import { getDb } from "@/lib/db/client";
-import { phase1Events, zybitFindings, zybitSiteMeta } from "@/lib/db/schema";
+import { zybitFindings, zybitSiteMeta } from "@/lib/db/schema";
 import RunInsightsButton from "@/components/app/RunInsightsButton";
 import FindingRowActions from "@/components/app/FindingRowActions";
 
@@ -71,23 +71,16 @@ export default async function FindingsPage({
 
   const db = getDb();
 
-  // Load site meta for session threshold + live session count for dead-state UX
-  const [siteMeta, sessionCountRow] = await Promise.all([
-    db
-      .select({ threshold: zybitSiteMeta.insightThreshold, lastRunCount: zybitSiteMeta.sessionCountAtLastRun })
-      .from(zybitSiteMeta)
-      .where(eq(zybitSiteMeta.siteId, site.id))
-      .limit(1)
-      .then((r) => r[0] ?? null),
-    db
-      .select({ count: sql<string>`COUNT(DISTINCT session_id)` })
-      .from(phase1Events)
-      .where(and(eq(phase1Events.siteId, site.id), eq(phase1Events.organizationId, auth.orgId)))
-      .then((r) => Number(r[0]?.count ?? 0)),
-  ]);
+  // Load site meta for session threshold + session count for dead-state UX
+  const siteMeta = await db
+    .select({ threshold: zybitSiteMeta.insightThreshold, lastRunCount: zybitSiteMeta.sessionCountAtLastRun })
+    .from(zybitSiteMeta)
+    .where(eq(zybitSiteMeta.siteId, site.id))
+    .limit(1)
+    .then((r) => r[0] ?? null);
 
   const sessionThreshold = siteMeta?.threshold ?? 100;
-  const currentSessions = sessionCountRow;
+  const currentSessions = siteMeta?.lastRunCount ?? 0;
 
   // Counts for all statuses (for tab badges)
   const allFindings = await db

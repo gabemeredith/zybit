@@ -103,10 +103,21 @@ function SelectorBadge({ result, loading }: { result: ValidateResult | null; loa
       </span>
     );
   }
-  const color = count <= 5 ? "amber" : "red";
+  const MULTI_MATCH_STYLES = {
+    amber: {
+      badge: "bg-amber-50 text-amber-700 border border-amber-100",
+      dot: "w-1.5 h-1.5 rounded-full bg-amber-400",
+    },
+    red: {
+      badge: "bg-red-50 text-red-700 border border-red-100",
+      dot: "w-1.5 h-1.5 rounded-full bg-red-400",
+    },
+  } as const;
+  const variant = count <= 5 ? "amber" : "red";
+  const s = MULTI_MATCH_STYLES[variant];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-${color}-50 text-${color}-700 border border-${color}-100`}>
-      <span className={`w-1.5 h-1.5 rounded-full bg-${color}-400`} />
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${s.badge}`}>
+      <span className={s.dot} />
       {count} matches{count > 5 ? " — too broad?" : ""}
     </span>
   );
@@ -169,6 +180,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
   const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
   const [validateLoading, setValidateLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const validateSelector = useCallback(async (sel: string) => {
     if (!sel.trim()) {
@@ -176,21 +188,25 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
       setValidateLoading(false);
       return;
     }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setValidateLoading(true);
     try {
       const res = await fetch('/api/selector-validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ findingId, selector: sel }),
+        signal: controller.signal,
       });
       if (res.ok) {
         const data = await res.json() as ValidateResult;
         setValidateResult(data);
       }
     } catch {
-      // Network error — silently suppress, don't block the form
+      // Network error or abort — silently suppress, don't block the form
     } finally {
-      setValidateLoading(false);
+      if (!controller.signal.aborted) setValidateLoading(false);
     }
   }, [findingId]);
 
