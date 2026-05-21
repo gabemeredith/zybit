@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { saveExperimentBriefAction } from "@/app/app/findings/[id]/experiment/actions";
 import type { ChangeType, SelectorSuggestion } from "@/app/app/findings/[id]/experiment/page";
 import type { CssSystem } from "@/lib/phase2/snapshots/cssSystemDetector";
+import { copyHints } from "@/lib/experiments/copyHint";
 
 interface FormDefaults {
   experimentName: string;
@@ -368,6 +369,22 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
               ? "The replacement text the script writes into the element"
               : "Space-separated class names added to the element in the variant"}
           </p>
+          {/* Copy-quality hints (Zybit-125) — advisory, deterministic, non-blocking */}
+          {changeType === "copy" && copyHints(newValue).length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {copyHints(newValue).map((h, i) => (
+                <li
+                  key={i}
+                  className={`flex items-start gap-1.5 text-[11px] ${
+                    h.level === "warn" ? "text-amber-700" : "text-[#6B6B6B]"
+                  }`}
+                >
+                  <span className={`mt-1 h-1 w-1 shrink-0 rounded-full ${h.level === "warn" ? "bg-amber-400" : "bg-[#C9C9C9]"}`} />
+                  {h.message}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
