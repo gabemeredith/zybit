@@ -75,7 +75,14 @@ zybit/
 
 ## Immediate build order
 
-> **Status (2026-05-21):** Sprint 0 (PR #49) + Sprint 1 (PR #51) + Sprint 2 (PR #53) merged to main. Sprint 3 (Layer 2 calibration) on `claude/learn-layer-2-calibration-3A7e9` (PR #54): Layer 2 shipped + PM-visible surface (Zybit-164 equivalent) + Lighthouse Layer 2 exercise. CI: 37 test files, 447 tests passing.
+> **Status (2026-05-21):** A sprint-ticket audit (see `docs/sprints/REMEDIATION.md`) found documentation drift — "Sprint 0/1/2 merged" overstated reality. Actual state:
+> - **Sprint 0:** mostly done — Zybit-116 (Edge Config kill-switch write) and Zybit-120 (full-loop E2E) outstanding.
+> - **Sprint 1:** partial — Zybit-121/122 built; Zybit-125 (copy hints), Zybit-126 (PostHog bridge health probe), Zybit-127/128 (demo seed) not built.
+> - **Sprint 2:** partial — Zybit-133 (selector staleness cron), Zybit-135 (snapshot drift dashboard) not built.
+> - **Sprint 3:** not built — no design capture, AI Variant Advisor, or element picker. (The Layer 2 calibration work is a *Learn* feature, not Sprint 3's design/AI scope.)
+> - **Sprint 4:** Zybit-153 (Axiom), 154 (circuit breaker), 155 (cron alerts), 157 (GA4 gap) shipped. Zybit-156 (operator dashboard) outstanding.
+>
+> CI: 39 test files, 458 tests passing. Full per-ticket build plan in `docs/sprints/REMEDIATION.md`.
 
 ## What's needed before first real customer
 

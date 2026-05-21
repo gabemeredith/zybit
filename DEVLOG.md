@@ -6,10 +6,26 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ## 2026-05-21 (session 3)
 
-**Session:** Sprint compliance audit, Zybit-157 (GA4 measurement-gap warning), customer-readiness verification
+**Session:** Sprint compliance audit, Zybit-157/154/155, Stripe verification, doc consolidation
 **Author:** —
 
-### What shipped
+### What shipped (Sprint 4)
+
+- **Zybit-154 — connector circuit breaker**: sync crons skip `disconnected` integrations (no more 30-min retry-forever); `POST /api/phase2/integrations/:id/resume` clears the breaker; red cockpit banner; `IntegrationStatus` widened to model `degraded`/`disconnected` (the breaker already wrote them).
+- **Zybit-155 — cron failure email**: `withCronAlert` wraps all 5 cron routes; unhandled throw or 5xx → structured log + Resend ops alert. 3 tests.
+- Test suite now 39 files, 458 tests.
+
+### Stripe verification (Zybit-114)
+
+- Stripe CLI v1.41.2 installed in-container; API key works; the code's pinned API version `2026-04-22.dahlia` confirmed valid against the live API.
+- Full checkout→webhook→DB round-trip still **cannot run here** — the webhook's DB writes target Neon, which the container allowlist blocks (same blocker as Lighthouse). Needs a reachable env.
+
+### Doc consolidation
+
+- New `docs/sprints/REMEDIATION.md` — single source of truth: per-ticket audit (sprints 0–5), build plans for the Sprint 0/1/2 gaps and the entirely-unbuilt Sprint 3, and Sprint 4/5 status.
+- `AGENTS.md` "Immediate build order" corrected — it had claimed "Sprint 0/1/2 merged"; sprints 1–2 are only partial, Sprint 3 unbuilt.
+
+### What shipped (earlier this session)
 
 - **Zybit-157 — GA4 "Identify/Propose only" measurement gap**:
   - New pure predicate `isGa4OnlyMeasurementGap` (`src/lib/phase2/connectors/measurementGrain.ts`) — true when every active integration on a site is GA4. Single source of truth, 8 unit tests.
