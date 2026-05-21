@@ -33,6 +33,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '@/lib/db/schema';
 import { zybitExperiments, zybitFindings, zybitExperimentOutcomes, phase1Sites, appUsers } from '@/lib/db/schema';
 import { sendExperimentConcludedEmail } from '@/lib/email/experimentConcludedEmail';
+import { disableExperimentAtEdge } from '@/lib/experiments/proxy/edgeKillSwitch';
 import {
   chiSquaredTwoProportions,
   guardrailOneSidedPValue,
@@ -263,6 +264,9 @@ async function concludeExperiment(
       updatedAt: new Date(),
     })
     .where(eq(zybitExperiments.id, experiment.id));
+
+  // Fail closed at the edge as soon as the cron concludes an experiment (Zybit-116).
+  await disableExperimentAtEdge(experiment.id);
 }
 
 // ---------------------------------------------------------------------------
