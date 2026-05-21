@@ -6,7 +6,8 @@ import Link from "next/link";
 import { getServerAuth } from "@/lib/auth/serverAuth";
 import { createPhase1Repository } from "@/lib/phase1";
 import { getDb } from "@/lib/db/client";
-import { zybitFindings } from "@/lib/db/schema";
+import { zybitFindings, zybitSiteMeta } from "@/lib/db/schema";
+import { countSiteSessions } from "@/lib/phase2/jobs/insightsTrigger";
 import RunInsightsButton from "@/components/app/RunInsightsButton";
 import FindingRowActions from "@/components/app/FindingRowActions";
 
@@ -71,19 +72,24 @@ export default async function FindingsPage({
 
   const db = getDb();
 
-  // Counts for all statuses (for tab badges)
-  const allFindings = await db
-    .select({
-      id: zybitFindings.id,
-      status: zybitFindings.status,
-    })
-    .from(zybitFindings)
-    .where(
-      and(
-        eq(zybitFindings.siteId, site.id),
-        eq(zybitFindings.organizationId, auth.orgId),
-      )
-    );
+  // Fetch site meta, all finding stubs (for tab counts), and live session count in parallel.
+  // countSiteSessions does COUNT(DISTINCT session_id) — only shown when findings list is empty,
+  // so this page is low-traffic at precisely the moment the accurate count matters most.
+  const [siteMeta, allFindings, currentSessions] = await Promise.all([
+    db
+      .select({ threshold: zybitSiteMeta.insightThreshold })
+      .from(zybitSiteMeta)
+      .where(eq(zybitSiteMeta.siteId, site.id))
+      .limit(1)
+      .then((r) => r[0] ?? null),
+    db
+      .select({ id: zybitFindings.id, status: zybitFindings.status })
+      .from(zybitFindings)
+      .where(and(eq(zybitFindings.siteId, site.id), eq(zybitFindings.organizationId, auth.orgId))),
+    countSiteSessions(site.id),
+  ]);
+
+  const sessionThreshold = siteMeta?.threshold ?? 100;
 
   const countsByStatus = ALL_STATUSES.reduce<Record<string, number>>((acc, s) => {
     acc[s] = allFindings.filter((f) => f.status === s).length;
@@ -153,16 +159,41 @@ export default async function FindingsPage({
       </div>
 
       {findings.length === 0 ? (
-        <div className="bg-white border border-black/[0.05] rounded-2xl p-12 text-center">
+        <div className="bg-white border border-black/[0.05] rounded-2xl p-10">
           {allFindings.length === 0 ? (
-            <>
-              <p className="text-[#6B6B6B] mb-6 leading-relaxed">
-                No findings yet. Run the insights pipeline to analyze {site.domain}.
+            <div className="max-w-sm mx-auto text-center">
+              <p className="text-base font-semibold text-[#111] mb-1">
+                Waiting for enough data
               </p>
+              <p className="text-sm text-[#6B6B6B] mb-6 leading-relaxed">
+                Zybit needs ~{sessionThreshold.toLocaleString()} sessions on{" "}
+                <span className="font-medium text-[#111]">{site.domain}</span> before
+                the audit rules have enough signal to surface findings.
+              </p>
+
+              {/* Session progress bar */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between text-xs text-[#9B9B9B] mb-1.5">
+                  <span>{currentSessions.toLocaleString()} sessions recorded</span>
+                  <span>~{sessionThreshold.toLocaleString()} needed</span>
+                </div>
+                <div className="w-full h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[#111] rounded-full transition-all"
+                    style={{ width: `${Math.min(100, Math.round((currentSessions / sessionThreshold) * 100))}%` }}
+                  />
+                </div>
+                {currentSessions >= sessionThreshold && (
+                  <p className="text-xs text-emerald-600 font-medium mt-1.5">
+                    Enough sessions — run the pipeline to generate findings.
+                  </p>
+                )}
+              </div>
+
               <RunInsightsButton siteId={site.id} orgId={auth.orgId} />
-            </>
+            </div>
           ) : (
-            <p className="text-[#6B6B6B] leading-relaxed">
+            <p className="text-[#6B6B6B] leading-relaxed text-center">
               No {activeFilter === "all" ? "" : activeFilter} findings.
             </p>
           )}

@@ -165,8 +165,9 @@ export default async function ExperimentBuilderPage({
   const evidence = (finding.evidence ?? []) as AuditFindingEvidence[];
   const refs = (finding.refs ?? null) as Record<string, string | undefined> | null;
 
-  // Load snapshot for selector suggestions (best-effort — non-fatal if missing)
+  // Load snapshot for selector suggestions and CSS system hint (best-effort)
   let suggestions: SelectorSuggestion[] = [];
+  let cssSystem: import('@/lib/phase2/snapshots/cssSystemDetector').CssSystem | undefined;
   if (finding.pathRef) {
     try {
       const repository = createPhase1Repository();
@@ -180,9 +181,10 @@ export default async function ExperimentBuilderPage({
           snapshot.data.ctas ?? [],
           snapshot.data.headings ?? [],
         );
+        cssSystem = snapshot.data.cssSystem;
       }
     } catch {
-      // no snapshot — suggestions just stay empty
+      // no snapshot — suggestions and cssSystem stay empty
     }
   }
 
@@ -244,9 +246,11 @@ export default async function ExperimentBuilderPage({
       </div>
 
       <ExperimentBuilderForm
+        key={id}
         findingId={id}
         defaults={formDefaults}
         suggestions={suggestions}
+        cssSystem={cssSystem}
       />
     </div>
   );
