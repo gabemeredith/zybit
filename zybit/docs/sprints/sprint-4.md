@@ -32,7 +32,13 @@
 ---
 
 ## Zybit-154 — Connector circuit breaker
-**Estimate:** 2d | **Owner:** —
+**Estimate:** 2d | **Owner:** — | **Status:** ✅ Shipped (2026-05-21)
+
+**Shipped notes — deviations from the spec below, justified:**
+- The failure-tracking half already existed in `src/lib/observability/errorBudget.ts` (`trackSyncResult`): it increments `consecutiveFailures`, marks `degraded` at 3 and `disconnected` at 5, and emails an ops alert. This session kept those thresholds (3/5) rather than the spec's `10`/`paused` — a lower breaker threshold is safer, and the working code already had production data using `degraded`/`disconnected`. `disconnected` **is** the paused state.
+- `IntegrationStatus` was widened to include `degraded` + `disconnected` — `errorBudget.ts` was already writing those strings, but the type didn't model them (pre-existing inconsistency, now fixed).
+- The genuine gap closed this session: the sync crons (`sync-posthog`, `sync-ga4`) now **skip `disconnected` integrations** (`pausedCount` in the response) instead of retrying every 30 min forever; and `POST /api/phase2/integrations/:id/resume` clears the breaker (reuses the `trackSyncResult` success path: `consecutiveFailures = 0`, `status = 'active'`). A red cockpit banner surfaces the paused state.
+- **Remaining:** the resume route does not yet trigger an *immediate* sync (the next 30-min cron resumes it); the cockpit banner is read-only (points to the resume route) rather than an inline button. Both are UI polish — the safety loop (stop retrying + recoverable) is closed.
 
 **What:** A connector with `consecutiveFailures >= 10` should pause automatically rather than retrying every 30 minutes forever. PM is notified and must manually resume.
 
@@ -47,7 +53,13 @@
 ---
 
 ## Zybit-155 — Cron failure email alert
-**Estimate:** 1d | **Owner:** —
+**Estimate:** 1d | **Owner:** — | **Status:** ✅ Shipped (2026-05-21)
+
+**Shipped notes:**
+- `withCronAlert(cronName, handler)` in `src/lib/observability/withCronAlert.ts` wraps a cron handler; on an unhandled throw **or** a 5xx response it logs a structured error and calls `sendCronFailureAlert`.
+- `sendCronFailureAlert` (`src/lib/email/cronFailureEmail.ts`) sends a Resend email — best-effort, uses the same `RESEND_API_KEY` + `ALERT_EMAIL_TO` env contract as the connector disconnect alert (not a hardcoded address, for consistency with `errorBudget.ts`).
+- Applied to all 5 cron routes: `compute-outcomes`, `refresh-captures`, `refresh-snapshots`, `sync-ga4`, `sync-posthog`. (The spec named `health-alert` and `check-selector-staleness` — neither exists as a cron; the 5 above are the actual cron routes.)
+- 3 unit tests on `withCronAlert`.
 
 **What:** When any cron job fails (not just Cronitor timeout — actual error thrown), send an ops alert email. Currently logs to stdout only.
 

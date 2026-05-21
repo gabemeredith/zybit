@@ -17,7 +17,7 @@ import { createPhase1Repository } from '@/lib/phase1';
 import { mapRouteError, unauthorized } from '@/app/api/phase1/_shared';
 import { runGA4PullSyncJob } from '@/lib/phase2/jobs/runGA4PullSyncJob';
 import { maybeRunInsightsForSite } from '@/lib/phase2/jobs/insightsTrigger';
-import { logger, cronitorPing, trackSyncResult } from '@/lib/observability';
+import { logger, cronitorPing, trackSyncResult, withCronAlert } from '@/lib/observability';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -68,10 +68,17 @@ async function runHandler(request: Request) {
       });
     }
 
-    const integrations = await repository.listIntegrationsByProvider({
+    const allIntegrations = await repository.listIntegrationsByProvider({
       provider: 'ga4',
       limit: 50,
     });
+
+    // Zybit-154 circuit breaker: a 'disconnected' integration has tripped the
+    // consecutive-failure threshold (errorBudget.ts). Skip it — retrying every
+    // 30 minutes forever burns provider quota and never self-heals. A PM must
+    // hit the resume route to clear the breaker.
+    const integrations = allIntegrations.filter((i) => i.status !== 'disconnected');
+    const pausedCount = allIntegrations.length - integrations.length;
 
     type IntegrationResult = {
       id: string;
@@ -156,11 +163,11 @@ async function runHandler(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, data: { synced: results.length, results } });
+    return NextResponse.json({ success: true, data: { synced: results.length, pausedCount, results } });
   } catch (error) {
     return mapRouteError(error);
   }
 }
 
-export const GET = runHandler;
-export const POST = runHandler;
+export const GET = withCronAlert('sync-ga4', runHandler);
+export const POST = withCronAlert('sync-ga4', runHandler);

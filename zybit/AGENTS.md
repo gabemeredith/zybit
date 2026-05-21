@@ -83,8 +83,8 @@ zybit/
 |-----|--------|-------|
 | Axiom `AXIOM_DATASET=axiom-audit` env var in Vercel | ⬛ **Action needed** | Token verified, dataset confirmed. One Vercel env var to set. |
 | Live Stripe round-trip verification | ⬛ **Action needed** | Code audited + bugs fixed. Needs stripe-cli + test keys in a reachable server. |
-| Connector circuit breaker (Zybit-154) | ⬛ Not built | Integrations retry silently forever. Pause after 10 consecutive failures. |
-| Cron failure email alerts (Zybit-155) | ⬛ Not built | Ops blind when crons fail. `withCronAlert` wrapper + Resend email. |
+| Connector circuit breaker (Zybit-154) | ✅ Shipped | `errorBudget.ts` degrades at 3 / disconnects at 5 failures + ops email; sync crons now **skip `disconnected` integrations**; `POST /api/phase2/integrations/:id/resume` clears the breaker. |
+| Cron failure email alerts (Zybit-155) | ✅ Shipped | `withCronAlert` wraps all 5 cron routes — unhandled throw or 5xx → structured log + Resend ops email. |
 | Operator dashboard (Zybit-156) | ⬛ Not built | No way to view all org/site sync health remotely. |
 | GA4 measurement limitation warning (Zybit-157) | ✅ Shipped | `isGa4OnlyMeasurementGap` predicate; amber cockpit banner when GA4 is the only connector; `compute-outcomes` skips GA4-only sites with a structured warning instead of producing 0-confidence noise. |
 | Layer 2 calibration needs real outcome history | ⬛ Inert until data | Works mechanically (Lighthouse-verified). Needs 3+ concluded experiments per rule per site before it affects anything. |
@@ -92,8 +92,8 @@ zybit/
 1. **Set `AXIOM_DATASET=axiom-audit` in Vercel** — one env var, zero code. Activates structured log drain (Zybit-153 gate).
 2. **Live Stripe round-trip verification** (~1 day): with stripe-cli + test keys, drive checkout → `checkout.session.completed`/`customer.subscription.*` webhooks → confirm `organizations.plan` write → confirm `checkPlanLimit` 402. Env vars: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`/`_GROWTH`/`_SCALE`. See BACKLOG Zybit-040.
 3. ~~**GA4 limitation warning** (Zybit-157)~~ **Shipped** — amber cockpit banner + `compute-outcomes` skip for GA4-only sites.
-4. **Connector circuit breaker** (Zybit-154, ~2d): After 10 consecutive sync failures → pause + ops email. Prevents silent retry loops that consume quota. (`consecutiveFailures` column already in `phase2_integrations` schema — wiring only.)
-5. **Cron failure email** (Zybit-155, ~1d): `withCronAlert` HOF wrapping all cron handlers.
+4. ~~**Connector circuit breaker** (Zybit-154)~~ **Shipped** — `errorBudget.ts` degrades/disconnects on consecutive failures; sync crons skip `disconnected` integrations; resume route clears the breaker.
+5. ~~**Cron failure email** (Zybit-155)~~ **Shipped** — `withCronAlert` wraps all 5 cron routes.
 6. ~~**Learn — Layer 2**~~ **Shipped + PM-visible** — calibration receipt in `learnAdjustment.calibration` jsonb; "Tuned" backlog badge; detail panel; LEARNED timeline note; Lighthouse step 4.6 verifies end-to-end.
 
 **Never build:** sentiment analysis, GitHub PR generation, own event collection SDK / PostHog replacement, more audit rules, cross-site priors before 50+ customers.
