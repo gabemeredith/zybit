@@ -94,7 +94,7 @@ export default async function FindingDetailPage({
   const learn = finding.learnAdjustment as LearnAdjustment | null;
   const pastOutcomes: ExperimentOutcomeRow[] =
     learn && learn.basedOnOutcomeIds.length > 0
-      ? await createOutcomesRepository().listByIds(finding.siteId, learn.basedOnOutcomeIds)
+      ? await createOutcomesRepository().listByIds(auth.orgId, finding.siteId, learn.basedOnOutcomeIds)
       : [];
 
   return (

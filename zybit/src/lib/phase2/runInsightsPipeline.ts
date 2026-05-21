@@ -87,7 +87,7 @@ export async function runPhase2InsightsPipeline(
   // Past outcomes drive both Learn layers for this site. Fetched once and
   // reused: Layer 2 calibrates rule thresholds before the rules run; Layer 1
   // re-ranks the findings the rules produce.
-  const pastOutcomes = await createOutcomesRepository().listForSite(siteId);
+  const pastOutcomes = await createOutcomesRepository().listForSite(organizationId, siteId);
   const calibration = computeRuleCalibrations(pastOutcomes);
 
   const auditReport = runAuditRules({

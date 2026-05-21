@@ -125,9 +125,13 @@ export function computeRuleCalibrations(
 
   const calibrations = new Map<string, RuleCalibration>();
   for (const [ruleId, matches] of byRule) {
-    const conclusiveCount = matches.filter(
+    // Only conclusive (positive/negative) outcomes drive calibration — both
+    // the gate and the signal. Inconclusives are ignored entirely so a large
+    // volume of slight-lift inconclusives can never nudge a threshold.
+    const conclusive = matches.filter(
       (m) => m.result === 'positive' || m.result === 'negative',
-    ).length;
+    );
+    const conclusiveCount = conclusive.length;
 
     if (conclusiveCount < MIN_CONCLUSIVE_OUTCOMES) {
       calibrations.set(ruleId, {
@@ -137,12 +141,12 @@ export function computeRuleCalibrations(
         netSignal: 0,
         conclusiveCount,
         reason: `${conclusiveCount} conclusive outcome${conclusiveCount === 1 ? '' : 's'} on this site — need ${MIN_CONCLUSIVE_OUTCOMES} to calibrate; threshold unchanged`,
-        basedOnOutcomeIds: matches.map((m) => m.id),
+        basedOnOutcomeIds: conclusive.map((m) => m.id),
       });
       continue;
     }
 
-    const rawSignal = matches.reduce((sum, o) => sum + contributionFor(o), 0);
+    const rawSignal = conclusive.reduce((sum, o) => sum + contributionFor(o), 0);
     const netSignal = clamp(rawSignal, -SIGNAL_CLAMP, SIGNAL_CLAMP);
     // Positive signal (rule wins here) lowers the floor → more sensitive.
     const multiplier = clamp(1 - netSignal, MIN_MULTIPLIER, MAX_MULTIPLIER);
@@ -159,8 +163,8 @@ export function computeRuleCalibrations(
       direction,
       netSignal,
       conclusiveCount,
-      reason: buildReason(matches, direction, multiplier),
-      basedOnOutcomeIds: matches.map((m) => m.id),
+      reason: buildReason(conclusive, direction, multiplier),
+      basedOnOutcomeIds: conclusive.map((m) => m.id),
     });
   }
 
