@@ -255,6 +255,18 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
         </div>
       )}
 
+      {/* GA4-only measurement gap — Zybit-157 */}
+      {pipeline.ga4OnlyMeasurementGap && (
+        <div className="mb-8 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+          <span>
+            GA4 connected — findings and proposals are available, but outcome
+            measurement requires PostHog or Segment. GA4 is aggregate-grain and
+            cannot be joined to A/B test assignments.
+          </span>
+        </div>
+      )}
+
       {/* Top finding */}
       {findings.topFinding && (
         <div className="mb-8">

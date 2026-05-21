@@ -4,6 +4,43 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-21 (session 3)
+
+**Session:** Sprint compliance audit, Zybit-157 (GA4 measurement-gap warning), customer-readiness verification
+**Author:** —
+
+### What shipped
+
+- **Zybit-157 — GA4 "Identify/Propose only" measurement gap**:
+  - New pure predicate `isGa4OnlyMeasurementGap` (`src/lib/phase2/connectors/measurementGrain.ts`) — true when every active integration on a site is GA4. Single source of truth, 8 unit tests.
+  - Amber cockpit banner when GA4 is the only connector: findings work, but outcome measurement needs PostHog/Segment.
+  - `computeAllOutcomes` now skips GA4-only sites with a `logger.warn` structured warning instead of running and producing 0-confidence noise.
+  - Spec step 2 (onboarding note) skipped with justification: GA4 has no UI connection flow — it is API-only; onboarding offers PostHog/Segment exclusively. Documented in `sprint-4.md`.
+  - Test suite: 38 files, 455 tests passing (was 447).
+
+### Sprint compliance audit (sprints 0–3)
+
+A file-existence + behavior audit against the sprint docs found significant documentation drift — several tickets claimed in `AGENTS.md` are not actually built:
+
+- **Sprint 0:** mostly done. Built: Zybit-114, 115, 117, 119. Not built: Zybit-116 (Edge Config kill-switch write), Zybit-120 (E2E smoke test — `scripts/e2e-test.mjs` exists but is not the full-loop spec).
+- **Sprint 1:** partial. Built: Zybit-121 (route is `api/selector-validate`, not `selectorMatcher.ts`), Zybit-122 (CSS detector). Not built: Zybit-125 (copy hints), Zybit-126 (PostHog bridge health probe), Zybit-127/128 (demo seed + synthetic outcomes). Zybit-124 (dead-state) partial — gate logic exists, no `InsightsDeadState` UI component.
+- **Sprint 2:** partial. Zybit-134/137 partial; Zybit-133 (selector staleness cron), Zybit-135 (snapshot drift dashboard) not built.
+- **Sprint 3:** entirely unbuilt — no design capture, no AI Variant Advisor, no element picker, no AI infra.
+
+### Blockers
+
+- **Stripe live round-trip cannot run in this container:** no `stripe` CLI installed, `STRIPE_SECRET_KEY` is not in the sandbox env (set in Vercel only), and the network allowlist blocks external hosts. Needs a reachable environment with stripe-cli + test keys.
+- Live Lighthouse/DB run still blocked (Neon host not in allowlist) — verification via the 455-test unit suite.
+
+### What's next
+
+1. Connector circuit breaker (Zybit-154) — `consecutiveFailures` column already in `phase2_integrations`; wiring only.
+2. Cron failure email (Zybit-155) — `withCronAlert` wrapper.
+3. Live Stripe round-trip — needs stripe-cli + reachable endpoint.
+4. Reconcile `AGENTS.md` claims with the audit above — stop claiming unbuilt Sprint 1–3 tickets as shipped.
+
+---
+
 ## 2026-05-21 (session 2)
 
 **Session:** Layer 2 PM surface, Lighthouse Layer 2 exercise, Axiom verification, readiness assessment

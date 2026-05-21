@@ -79,7 +79,7 @@
 ---
 
 ## Zybit-157 — GA4 "Identify/Propose only" documentation and onboarding gate
-**Estimate:** 0.5d | **Owner:** —
+**Estimate:** 0.5d | **Owner:** — | **Status:** ✅ Shipped (2026-05-21)
 
 **What:** GA4 connector is aggregate-grain only — cannot join to visitor assignments for outcome measurement. If a customer connects only GA4, they will get findings but the measurement loop will silently produce no outcomes. This must be surfaced explicitly.
 
@@ -89,3 +89,8 @@
 3. In `compute-outcomes` cron, if site has only GA4 and no PostHog/Segment: skip compute (no visitor-level data to join) and log structured warning rather than running and producing 0-confidence results
 
 **Files:** `src/components/app/CockpitView.tsx`, integration onboarding UI, `src/lib/experiments/computeOutcomes.ts`
+
+**Shipped notes:**
+- Pure predicate `isGa4OnlyMeasurementGap` lives in `src/lib/phase2/connectors/measurementGrain.ts` — single source of truth, used by both the cockpit and the cron. 8 unit tests.
+- Step 1 (amber cockpit banner) and step 3 (`computeAllOutcomes` skips GA4-only sites with a `logger.warn` structured warning) are done.
+- Step 2 deviation: GA4 has **no UI connection flow** — it is connected via the integrations API only; onboarding offers PostHog/Segment exclusively. There is no "GA4 connection screen" to attach the note to, so the cockpit banner is the catch-all surface. No onboarding change made.

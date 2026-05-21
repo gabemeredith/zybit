@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db/client';
 import { phase2PageSnapshots, zybitExperiments, zybitFindings } from '@/lib/db/schema';
 import { createPhase1Repository } from '@/lib/phase1';
 import { buildInsightInputFromEvents, runInsightInputGate } from '@/lib/phase2';
+import { isGa4OnlyMeasurementGap } from '@/lib/phase2/connectors/measurementGrain';
 import { snapshotStaleDays } from '@/lib/phase2/snapshots/refresh';
 import type { RollupContext } from '@/lib/phase2/types';
 
@@ -31,6 +32,12 @@ export interface CockpitData {
     healthy: boolean;
     /** Canonical events ingested for this site in the last 7 days. */
     eventCount7d: number;
+    /**
+     * True when GA4 is the only connected integration (Zybit-157). GA4 is
+     * aggregate-grain — findings work, but the measurement loop produces no
+     * outcomes. The cockpit surfaces this as an amber banner.
+     */
+    ga4OnlyMeasurementGap: boolean;
   } | null;
   gate: {
     trustworthy: boolean;
@@ -258,6 +265,7 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
       lastSync,
       healthy: integrations.length > 0 && integrations.every((i) => !i.lastErrorCode),
       eventCount7d: events.length,
+      ga4OnlyMeasurementGap: isGa4OnlyMeasurementGap(integrations),
     },
     gate: {
       trustworthy: gate.ok,
