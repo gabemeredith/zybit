@@ -12,6 +12,7 @@ import { parse, type HTMLElement } from 'node-html-parser';
 import { guessFold } from './foldGuess';
 import { scoreVisualWeight } from './visualWeight';
 import { detectCssSystem, extractClassTokens } from './cssSystemDetector';
+import { computeCssSelector } from './cssSelector';
 import {
   SnapshotError,
   type CtaCandidate,
@@ -245,6 +246,7 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
 
     results.push({
       ref: hashCtaRef(tag, href, text, className ?? ''),
+      cssSelector: computeCssSelector(el, tag),
       tag,
       text,
       href,
@@ -334,6 +336,7 @@ function findForms(root: HTMLElement, target: HTMLElement): FormCandidate[] {
     const submit = explicitSubmit ?? bareButton ?? null;
     results.push({
       ref: hashFormRef(action, innerSnippet),
+      cssSelector: computeCssSelector(form, 'form'),
       landmark,
       fieldCount,
       inputs,

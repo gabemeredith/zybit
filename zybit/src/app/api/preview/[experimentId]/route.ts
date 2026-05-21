@@ -80,7 +80,17 @@ export async function GET(
   }
 
   const targetPath = experiment.targetPath ?? '/';
-  const originUrl = `https://${domain}${targetPath}`;
+  // Lighthouse synthetic sites are served by the lighthouse server itself at
+  // `http://localhost:3001/fake-sites/<slug>/<path>`. The seeded `domain` is
+  // just the host, and there's no TLS — so the standard `https://${domain}`
+  // path won't resolve. Detect via the `lighthouse_site_<slug>` id convention
+  // (from `lighthouse/lib/seeder/orgSite.ts`) and rewrite the origin URL.
+  const lighthouseSlug = experiment.siteId.startsWith('lighthouse_site_')
+    ? experiment.siteId.slice('lighthouse_site_'.length)
+    : null;
+  const originUrl = lighthouseSlug
+    ? `http://${domain}/fake-sites/${lighthouseSlug}${targetPath}`
+    : `https://${domain}${targetPath}`;
 
   // TODO: fetch origin HTML with timeout
   let html: string;
@@ -124,11 +134,17 @@ export async function GET(
   // Origin headers are NOT forwarded here — we build fresh headers from scratch.
   // X-Frame-Options from the origin is therefore already stripped.
   // Explicitly set frame-ancestors 'self' so the dashboard iframe can embed this response
-  // even if the browser defaults change in the future.
+  // even if the browser defaults change in the future. For Lighthouse synthetic
+  // sites, the experiment detail page is itself embedded inside the Lighthouse
+  // UI on `:3001`, so the browser's frame-ancestors check walks the whole chain
+  // and fails on `'self'` alone. Allow the Lighthouse origin too in that case.
+  const frameAncestors = lighthouseSlug
+    ? "'self' http://localhost:3001"
+    : "'self'";
   const headers = new Headers({
     'content-type': 'text/html; charset=utf-8',
     'x-robots-tag': 'noindex',
-    'content-security-policy': "frame-ancestors 'self'",
+    'content-security-policy': `frame-ancestors ${frameAncestors}`,
   });
 
   return new NextResponse(outputHtml, { status: 200, headers });

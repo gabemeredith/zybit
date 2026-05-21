@@ -21,10 +21,11 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
-import { zybitExperiments, zybitFindings } from '@/lib/db/schema';
+import { phase2PageSnapshots, zybitExperiments, zybitFindings } from '@/lib/db/schema';
 import { processExperiment } from '@/lib/experiments/computeOutcomes';
 import { minimumSampleSizePerArm } from '@/lib/experiments/stats';
 import type { VariantModification } from '@/lib/experiments/types';
+import type { CtaCandidate, PageSnapshotData } from '@/lib/phase2/snapshots/types';
 import { seededRng } from '../generators/rng';
 import { DirectEventSink } from '../sinks/direct';
 
@@ -67,12 +68,34 @@ export function sizeExperimentArms(baseRate: number): number {
   return Math.ceil(minimumSampleSizePerArm(baseRate) * 1.3) + 100;
 }
 
-/** Deterministic, valid variant modification keyed to the finding's page. */
-function modificationFor(): VariantModification[] {
+/**
+ * Pick a browser-runnable CSS selector for the synthetic experiment, sourced
+ * from the parser's per-CTA `cssSelector`. Tries the finding's referenced
+ * CTA first; falls back to the highest-visual-weight CTA on the same page
+ * that the parser was able to emit a selector for. Returns `null` when
+ * nothing usable exists — the caller bails rather than stamp a hardcoded
+ * convention that won't match the live page (Lighthouse's previous bug).
+ */
+export function pickSelectorForFinding(
+  ctas: CtaCandidate[],
+  findingCtaRef: string | undefined,
+): string | null {
+  if (findingCtaRef) {
+    const matched = ctas.find((c) => c.ref === findingCtaRef);
+    if (matched?.cssSelector) return matched.cssSelector;
+  }
+  const candidates = ctas
+    .filter((c) => c.cssSelector !== null)
+    .sort((a, b) => b.visualWeight - a.visualWeight);
+  return candidates[0]?.cssSelector ?? null;
+}
+
+/** Deterministic, valid variant modification using the picked selector. */
+function modificationFor(selector: string): VariantModification[] {
   return [
     {
       type: 'text-replace',
-      selector: '[data-zybit-ref="primary-cta"]',
+      selector,
       text: 'Get started — free',
     },
   ];
@@ -94,21 +117,44 @@ export async function generateSyntheticExperiment(
       id: zybitFindings.id,
       pathRef: zybitFindings.pathRef,
       title: zybitFindings.title,
+      refs: zybitFindings.refs,
     })
     .from(zybitFindings)
     .where(and(eq(zybitFindings.organizationId, organizationId), eq(zybitFindings.siteId, siteId)))
     .orderBy(desc(zybitFindings.priorityScore))
     .limit(1);
 
-  if (!finding) {
-    return {
-      experimentId: null,
-      findingId: null,
-      action: 'no-finding',
-      participants: 0,
-      conversionEvents: 0,
-    };
-  }
+  const noFinding = {
+    experimentId: null,
+    findingId: null,
+    action: 'no-finding' as const,
+    participants: 0,
+    conversionEvents: 0,
+  };
+
+  if (!finding) return noFinding;
+  // Site-wide findings (null pathRef) have no specific element to target.
+  if (!finding.pathRef) return noFinding;
+
+  // 1b) Load the snapshot for the finding's path and pick a real selector.
+  //     Bail when no CTA on the page has a parser-emitted selector — better
+  //     than stamping a hardcoded convention that won't match the page.
+  const [snapshotRow] = await db
+    .select({ data: phase2PageSnapshots.data })
+    .from(phase2PageSnapshots)
+    .where(
+      and(
+        eq(phase2PageSnapshots.organizationId, organizationId),
+        eq(phase2PageSnapshots.siteId, siteId),
+        eq(phase2PageSnapshots.pathRef, finding.pathRef),
+      ),
+    )
+    .limit(1);
+  if (!snapshotRow) return noFinding;
+  const snapshotData = snapshotRow.data as unknown as PageSnapshotData;
+  const findingRefs = (finding.refs ?? {}) as { ctaRef?: string };
+  const selector = pickSelectorForFinding(snapshotData.ctas, findingRefs.ctaRef);
+  if (!selector) return noFinding;
 
   // 2) Size each arm above the sequential-guard sample floor.
   const visitorsPerArm = sizeExperimentArms(baseRate);
@@ -134,7 +180,7 @@ export async function generateSyntheticExperiment(
       durationDays,
       status: 'running',
       targetPath,
-      modifications: modificationFor(),
+      modifications: modificationFor(selector),
       notes: JSON.stringify({ name: `Synthetic: ${finding.title}`, source: 'lighthouse' }),
       startedAt,
       createdAt: startedAt,

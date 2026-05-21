@@ -13,6 +13,7 @@ import { getScenarios } from './routes/scenarios';
 import { resolveStaticPath, serveStatic } from './static';
 // Side-effect imports: each scenario file calls registerScenario at module load.
 import '../lib/scenarios/acmebank';
+import '../lib/scenarios/wovenbasics';
 
 const PORT = Number.parseInt(process.env.LIGHTHOUSE_PORT ?? '3001', 10);
 

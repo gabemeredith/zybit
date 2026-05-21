@@ -1,6 +1,23 @@
 # Lighthouse Phase 1 — Playwright-driven personas on real OSS sites
 
-> Status: planning. No code yet.
+> **Status (2026-05-21): Deferred. This is NOT what shipped for Phase 1.**
+>
+> Phase 1 shipped instead as: a **direct event sink** + **synthetic fake-sites** served by the Lighthouse http server itself (`lighthouse/fake-sites/<slug>/*.html`). The Playwright + real-OSS-site approach below was deferred because (a) it bundles "real DOM" with "real PostHog round-trip" — two independent fidelity axes — and (b) the synthetic-site rail unblocks Identify → Test → Measure → Learn end-to-end in ~one week with no upstream dependencies.
+>
+> What this doc still describes, and where it lives in the new plan:
+>
+> | This doc | New home |
+> |---|---|
+> | Persona DSL (§5.4) | ✅ Shipped — see `lighthouse/lib/personas/index.ts`. |
+> | Direct vs PostHog ingest (§5.7) | ✅ Both shipped — `--mode direct` (default) writes straight to `phase1_events`; `--mode posthog` pushes via PostHog capture and the existing pull-sync cron picks them up. |
+> | Playwright driver against real OSS sites (§5.5) | **Deferred** — see [`LIGHTHOUSE.md` §7.2 "Optional parallel track"](./LIGHTHOUSE.md#72-reordered-roadmap). The shipped `sessionDriver.ts` is the direct-mode equivalent and has known realism gaps (no funnel direction, binary bounce, path-agnostic CTAs — see [`LIGHTHOUSE.md` §13](./LIGHTHOUSE.md#13-session-driver-realism--known-gaps)). |
+> | Site shortlist (§5.1) — cal.com, supabase, medusa storefront, etc. | **Deferred to the parallel track.** Two synthetic fake-sites instead: `acmebank` (SaaS landing with engineered friction) and `wovenbasics` (well-built DTC funnel, calibration counterpart). |
+> | `npm run lighthouse:phase1` CLI (§3) | **Not built** — generation runs through the GUI at `/lighthouse`. |
+> | File layout under `src/lib/lighthouse/*` (§6) | **Not built** — code lives under the standalone `zybit/lighthouse/` tree, not `src/`. |
+> | Bias controls (§7) | Retained intent; only the persona-uniformity counter (≥3× clickIntent/formSubmitIntent across the five personas) is enforced today (see `lighthouse/lib/personas/personas.test.ts`). |
+>
+> Read the rest of this doc as the **future plan** for closing driver-realism gaps via real DOM, not as a description of current Phase 1 state. The current state lives in [`START.md`](./START.md) and [`LIGHTHOUSE.md`](./LIGHTHOUSE.md).
+
 > Parent doc: [`LIGHTHOUSE.md`](./LIGHTHOUSE.md) — read sections 1–5 first.
 
 ---
