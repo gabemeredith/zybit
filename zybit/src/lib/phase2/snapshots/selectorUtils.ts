@@ -51,6 +51,22 @@ export interface SelectorMatchResult {
   status: SelectorMatchStatus;
 }
 
+export type SelectorStability = 'stable' | 'medium' | 'fragile';
+
+/**
+ * Rank how robust a selector is against page changes (Zybit-134). Stable
+ * selectors (an explicit id or our injected `data-zybit-ref`) survive most
+ * redesigns; positional selectors (`:nth-of-type`/`:nth-child`) break the
+ * moment markup order shifts. Surfaced so PMs pick durable selectors and the
+ * staleness cron (Zybit-133) fires less often. Pure.
+ */
+export function selectorStability(selector: string): SelectorStability {
+  const s = selector.trim();
+  if (/\[data-zybit-ref=|#[A-Za-z]/.test(s)) return 'stable';
+  if (/:nth-(of-type|child)\b|>\s*\*|:first-child|:last-child/.test(s)) return 'fragile';
+  return 'medium';
+}
+
 /** Count how many elements a selector matches in a snapshot. Never throws. */
 export function countSelectorMatches(data: PageSnapshotData, selector: string): SelectorMatchResult {
   const trimmed = selector.trim();

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildMinimalHtml, countSelectorMatches } from '../selectorUtils';
+import { buildMinimalHtml, countSelectorMatches, selectorStability } from '../selectorUtils';
 import { findStaleSelectors } from '@/lib/experiments/selectorStaleness';
 import type { PageSnapshotData } from '../types';
 import type { VariantModification } from '@/lib/experiments/types';
@@ -48,6 +48,23 @@ describe('buildMinimalHtml + countSelectorMatches', () => {
   it('flags empty and invalid selectors distinctly', () => {
     expect(countSelectorMatches(snapshot(), '   ').status).toBe('empty');
     expect(countSelectorMatches(snapshot(), '>>>broken').status).toBe('invalid_selector');
+  });
+});
+
+describe('selectorStability', () => {
+  it('rates id and data-zybit-ref selectors as stable', () => {
+    expect(selectorStability('button[data-zybit-ref="cta-1"]')).toBe('stable');
+    expect(selectorStability('#hero-cta')).toBe('stable');
+  });
+
+  it('rates positional selectors as fragile', () => {
+    expect(selectorStability('h1:nth-of-type(2)')).toBe('fragile');
+    expect(selectorStability('div > :nth-child(3)')).toBe('fragile');
+  });
+
+  it('rates tag/class selectors as medium', () => {
+    expect(selectorStability('button.primary')).toBe('medium');
+    expect(selectorStability('a[href="/pricing"]')).toBe('medium');
   });
 });
 

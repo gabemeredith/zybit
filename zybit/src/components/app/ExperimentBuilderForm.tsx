@@ -160,7 +160,27 @@ function SuggestionsDropdown({
           onClick={() => { onSelect(s.selector); onClose(); }}
           className="w-full text-left px-3 py-2.5 hover:bg-black/[0.03] transition-colors border-b border-black/[0.04] last:border-0"
         >
-          <div className="text-xs font-medium text-[#111] truncate">{s.label}</div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-[#111] truncate">{s.label}</span>
+            <span
+              className={`shrink-0 ml-auto inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                s.stability === "stable"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : s.stability === "fragile"
+                    ? "bg-amber-50 text-amber-700"
+                    : "bg-black/[0.04] text-[#9B9B9B]"
+              }`}
+              title={
+                s.stability === "stable"
+                  ? "Robust selector — survives most redesigns"
+                  : s.stability === "fragile"
+                    ? "Positional selector — breaks if markup order changes"
+                    : "Moderately stable selector"
+              }
+            >
+              {s.stability}
+            </span>
+          </div>
           <div className="font-mono text-[10px] text-[#9B9B9B] truncate mt-0.5">{s.selector}</div>
         </button>
       ))}
