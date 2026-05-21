@@ -59,6 +59,12 @@ export interface CockpitData {
   snapshots: {
     lastSnapshotAt: string | null;
     staleDays: number | null;
+    /**
+     * Per-path snapshot freshness (Zybit-135), newest-stale first. Lets the
+     * cockpit show which specific pages have a stale Understand layer rather
+     * than only a site-global max.
+     */
+    perPath: Array<{ pathRef: string; lastSnapshotAt: string; staleDays: number | null }>;
   };
   /**
    * PostHog visitor-ID bridge health (Zybit-126). The proxy logs
@@ -184,7 +190,7 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
       gate: null,
       findings: { openCount: 0, topFinding: null },
       experiments: { runningCount: 0, totalCount: 0, lastComputedAt: null },
-      snapshots: { lastSnapshotAt: null, staleDays: null },
+      snapshots: { lastSnapshotAt: null, staleDays: null, perPath: [] },
       bridge: deriveBridgeHealth(0, 0),
       lastInsightAt: null,
     };
@@ -205,6 +211,7 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
     experimentRows,
     experimentComputedRows,
     snapshotFreshnessRows,
+    snapshotPerPathRows,
   ] = await Promise.all([
       repository.listIntegrations({ organizationId, siteId: site.id }),
       repository.listEventsInWindow({ organizationId, siteId: site.id, window: window7d }),
@@ -244,6 +251,14 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
         .select({ lastFetchedAt: max(phase2PageSnapshots.fetchedAt) })
         .from(phase2PageSnapshots)
         .where(eq(phase2PageSnapshots.siteId, site.id)),
+      getDb()
+        .select({
+          pathRef: phase2PageSnapshots.pathRef,
+          lastFetchedAt: max(phase2PageSnapshots.fetchedAt),
+        })
+        .from(phase2PageSnapshots)
+        .where(eq(phase2PageSnapshots.siteId, site.id))
+        .groupBy(phase2PageSnapshots.pathRef),
     ]);
 
   const resolvedConfig = config ?? {
@@ -298,6 +313,23 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
   const lastSnapshotAt = lastSnapshotDate ? lastSnapshotDate.toISOString() : null;
   const staleDays = snapshotStaleDays(lastSnapshotDate);
 
+  const perPathSnapshots = snapshotPerPathRows
+    .map((r) => {
+      const d =
+        r.lastFetchedAt instanceof Date
+          ? r.lastFetchedAt
+          : r.lastFetchedAt
+            ? new Date(r.lastFetchedAt)
+            : null;
+      return {
+        pathRef: r.pathRef,
+        lastSnapshotAt: d ? d.toISOString() : '',
+        staleDays: snapshotStaleDays(d),
+      };
+    })
+    .filter((p) => p.lastSnapshotAt !== '')
+    .sort((a, b) => (b.staleDays ?? 0) - (a.staleDays ?? 0));
+
   const { assignedVisitors, bridgedVisitors } = computeBridgeCounts(events);
   const bridge = deriveBridgeHealth(assignedVisitors, bridgedVisitors);
 
@@ -338,7 +370,7 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
     },
     findings: { openCount, topFinding },
     experiments: { runningCount, totalCount, lastComputedAt },
-    snapshots: { lastSnapshotAt, staleDays },
+    snapshots: { lastSnapshotAt, staleDays, perPath: perPathSnapshots },
     bridge,
     lastInsightAt,
   };
