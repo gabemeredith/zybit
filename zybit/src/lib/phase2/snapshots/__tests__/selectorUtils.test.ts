@@ -66,6 +66,17 @@ describe('selectorStability', () => {
     expect(selectorStability('button.primary')).toBe('medium');
     expect(selectorStability('a[href="/pricing"]')).toBe('medium');
   });
+
+  it('does not rate anchor hrefs as stable (regex must not match # inside attribute values)', () => {
+    expect(selectorStability('a[href="#pricing"]')).toBe('medium');
+    expect(selectorStability('a[href="/checkout#tier-pro"]')).toBe('medium');
+  });
+
+  it('still recognises real IDs after a combinator or comma', () => {
+    expect(selectorStability('nav a, #cta')).toBe('stable');
+    expect(selectorStability('main > #hero')).toBe('stable');
+    expect(selectorStability('button + #checkout-cta')).toBe('stable');
+  });
 });
 
 describe('findStaleSelectors', () => {

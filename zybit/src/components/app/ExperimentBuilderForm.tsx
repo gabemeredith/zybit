@@ -390,21 +390,25 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
               : "Space-separated class names added to the element in the variant"}
           </p>
           {/* Copy-quality hints (Zybit-125) — advisory, deterministic, non-blocking */}
-          {changeType === "copy" && copyHints(newValue).length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {copyHints(newValue).map((h, i) => (
-                <li
-                  key={i}
-                  className={`flex items-start gap-1.5 text-[11px] ${
-                    h.level === "warn" ? "text-amber-700" : "text-[#6B6B6B]"
-                  }`}
-                >
-                  <span className={`mt-1 h-1 w-1 shrink-0 rounded-full ${h.level === "warn" ? "bg-amber-400" : "bg-[#C9C9C9]"}`} />
-                  {h.message}
-                </li>
-              ))}
-            </ul>
-          )}
+          {changeType === "copy" && (() => {
+            const hints = copyHints(newValue);
+            if (hints.length === 0) return null;
+            return (
+              <ul className="mt-2 space-y-1">
+                {hints.map((h, i) => (
+                  <li
+                    key={i}
+                    className={`flex items-start gap-1.5 text-[11px] ${
+                      h.level === "warn" ? "text-amber-700" : "text-[#6B6B6B]"
+                    }`}
+                  >
+                    <span className={`mt-1 h-1 w-1 shrink-0 rounded-full ${h.level === "warn" ? "bg-amber-400" : "bg-[#C9C9C9]"}`} />
+                    {h.message}
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
         </div>
       )}
 

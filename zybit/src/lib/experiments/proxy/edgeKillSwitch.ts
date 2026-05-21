@@ -44,6 +44,15 @@ export interface KillSwitchResult {
 
 /**
  * Add an experiment to the edge kill-list. Best-effort and never throws.
+ *
+ * Note: the read-modify-write here is not atomic. If two stops happen inside
+ * the same ~200ms window, both can read the list before either has written
+ * back, and the later write overwrites the earlier one. Accepted because: (1)
+ * concurrent stops do not occur at current product scale; (2) the DB `status`
+ * write is the source of truth, and the in-handler kill switch
+ * (`experiment.status === 'running'`) catches any experiment the edge list
+ * misses on the next config refresh; (3) Vercel Edge Config has no atomic
+ * append. Revisit if a bulk-stop operation ships.
  */
 export async function disableExperimentAtEdge(
   experimentId: string,

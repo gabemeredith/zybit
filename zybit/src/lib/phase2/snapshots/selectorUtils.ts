@@ -11,7 +11,7 @@
  * appears in the rendered text/aria — the snapshot doesn't retain raw classes.
  */
 
-import { parse } from 'node-html-parser';
+import { parse, type HTMLElement } from 'node-html-parser';
 import type { PageSnapshotData } from './types';
 
 export function buildMinimalHtml(data: PageSnapshotData): string {
@@ -62,19 +62,39 @@ export type SelectorStability = 'stable' | 'medium' | 'fragile';
  */
 export function selectorStability(selector: string): SelectorStability {
   const s = selector.trim();
-  if (/\[data-zybit-ref=|#[A-Za-z]/.test(s)) return 'stable';
+  // ID branch is anchored at start-of-string or after a CSS combinator so
+  // `#` inside an attribute value (e.g. `a[href="#pricing"]`) doesn't match.
+  if (/\[data-zybit-ref=|(^|[\s>+~,])#[A-Za-z]/.test(s)) return 'stable';
   if (/:nth-(of-type|child)\b|>\s*\*|:first-child|:last-child/.test(s)) return 'fragile';
   return 'medium';
+}
+
+/**
+ * Parse a snapshot once. Reuse the returned root across many selector matches
+ * to avoid rebuilding+reparsing the same HTML per call (the staleness cron
+ * checks every selector on the same page snapshot).
+ */
+export function buildSelectorRoot(data: PageSnapshotData): HTMLElement {
+  return parse(buildMinimalHtml(data));
+}
+
+/** Match a selector against an already-parsed root. Never throws. */
+export function countSelectorMatchesAgainstRoot(
+  root: HTMLElement,
+  selector: string,
+): SelectorMatchResult {
+  const trimmed = selector.trim();
+  if (!trimmed) return { count: null, status: 'empty' };
+  try {
+    return { count: root.querySelectorAll(trimmed).length, status: 'ok' };
+  } catch {
+    return { count: null, status: 'invalid_selector' };
+  }
 }
 
 /** Count how many elements a selector matches in a snapshot. Never throws. */
 export function countSelectorMatches(data: PageSnapshotData, selector: string): SelectorMatchResult {
   const trimmed = selector.trim();
   if (!trimmed) return { count: null, status: 'empty' };
-  try {
-    const root = parse(buildMinimalHtml(data));
-    return { count: root.querySelectorAll(trimmed).length, status: 'ok' };
-  } catch {
-    return { count: null, status: 'invalid_selector' };
-  }
+  return countSelectorMatchesAgainstRoot(buildSelectorRoot(data), trimmed);
 }

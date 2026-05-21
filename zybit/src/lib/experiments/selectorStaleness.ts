@@ -11,7 +11,10 @@
 
 import type { VariantModification } from './types';
 import type { PageSnapshotData } from '@/lib/phase2/snapshots/types';
-import { countSelectorMatches } from '@/lib/phase2/snapshots/selectorUtils';
+import {
+  buildSelectorRoot,
+  countSelectorMatchesAgainstRoot,
+} from '@/lib/phase2/snapshots/selectorUtils';
 
 export interface StaleSelector {
   selector: string;
@@ -31,11 +34,14 @@ export function findStaleSelectors(
 ): StaleSelector[] {
   const stale: StaleSelector[] = [];
   const seen = new Set<string>();
+  // Parse the snapshot HTML once and reuse the root for every selector lookup;
+  // experiments commonly have several modifications targeting the same page.
+  const root = buildSelectorRoot(data);
   for (const m of modifications) {
     const selector = selectorOf(m)?.trim();
     if (!selector || seen.has(selector)) continue;
     seen.add(selector);
-    const { count, status } = countSelectorMatches(data, selector);
+    const { count, status } = countSelectorMatchesAgainstRoot(root, selector);
     if (status === 'invalid_selector') {
       stale.push({ selector, reason: 'invalid_selector' });
     } else if (count === 0) {
