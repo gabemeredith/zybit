@@ -7,6 +7,7 @@ import { getServerAuth } from "@/lib/auth/serverAuth";
 import { createPhase1Repository } from "@/lib/phase1";
 import { getDb } from "@/lib/db/client";
 import { zybitFindings, zybitSiteMeta } from "@/lib/db/schema";
+import { countSiteSessions } from "@/lib/phase2/jobs/insightsTrigger";
 import RunInsightsButton from "@/components/app/RunInsightsButton";
 import FindingRowActions from "@/components/app/FindingRowActions";
 
@@ -71,30 +72,24 @@ export default async function FindingsPage({
 
   const db = getDb();
 
-  // Load site meta for session threshold + session count for dead-state UX
-  const siteMeta = await db
-    .select({ threshold: zybitSiteMeta.insightThreshold, lastRunCount: zybitSiteMeta.sessionCountAtLastRun })
-    .from(zybitSiteMeta)
-    .where(eq(zybitSiteMeta.siteId, site.id))
-    .limit(1)
-    .then((r) => r[0] ?? null);
+  // Fetch site meta, all finding stubs (for tab counts), and live session count in parallel.
+  // countSiteSessions does COUNT(DISTINCT session_id) — only shown when findings list is empty,
+  // so this page is low-traffic at precisely the moment the accurate count matters most.
+  const [siteMeta, allFindings, currentSessions] = await Promise.all([
+    db
+      .select({ threshold: zybitSiteMeta.insightThreshold })
+      .from(zybitSiteMeta)
+      .where(eq(zybitSiteMeta.siteId, site.id))
+      .limit(1)
+      .then((r) => r[0] ?? null),
+    db
+      .select({ id: zybitFindings.id, status: zybitFindings.status })
+      .from(zybitFindings)
+      .where(and(eq(zybitFindings.siteId, site.id), eq(zybitFindings.organizationId, auth.orgId))),
+    countSiteSessions(site.id),
+  ]);
 
   const sessionThreshold = siteMeta?.threshold ?? 100;
-  const currentSessions = siteMeta?.lastRunCount ?? 0;
-
-  // Counts for all statuses (for tab badges)
-  const allFindings = await db
-    .select({
-      id: zybitFindings.id,
-      status: zybitFindings.status,
-    })
-    .from(zybitFindings)
-    .where(
-      and(
-        eq(zybitFindings.siteId, site.id),
-        eq(zybitFindings.organizationId, auth.orgId),
-      )
-    );
 
   const countsByStatus = ALL_STATUSES.reduce<Record<string, number>>((acc, s) => {
     acc[s] = allFindings.filter((f) => f.status === s).length;
