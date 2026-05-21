@@ -210,29 +210,40 @@ async function concludeExperiment(
     modificationType = (mods[0] as { type: string }).type ?? null;
   }
 
-  // Sequential writes: the app runs on the neon-http driver, which has no
-  // interactive transaction support. Insert the outcome first (the durable
-  // record), then flip experiment status — if the second write fails the
-  // outcome row still exists and the next cron pass reconciles status.
-  await db.insert(zybitExperimentOutcomes).values({
-    id: randomUUID(),
-    organizationId: experiment.organizationId,
-    siteId: experiment.siteId,
-    experimentId: experiment.id,
-    findingId: experiment.findingId ?? null,
-    ruleId,
-    pathRef: pathRef ?? experiment.targetPath,
-    modificationType,
-    result,
-    liftPct,
-    confidence,
-    controlConversions: counts.control.conversions,
-    controlParticipants: counts.control.participants,
-    variantConversions: counts.variant.conversions,
-    variantParticipants: counts.variant.participants,
-    guardrailBreached,
-    concludedAt,
-  });
+  // Idempotency guard: if the status update from a previous run failed,
+  // the experiment is still 'running' and will be processed again. Skip the
+  // insert to avoid a duplicate outcome row; just re-apply the status update.
+  const [existing] = await db
+    .select({ id: zybitExperimentOutcomes.id })
+    .from(zybitExperimentOutcomes)
+    .where(eq(zybitExperimentOutcomes.experimentId, experiment.id))
+    .limit(1);
+
+  if (!existing) {
+    // Sequential writes: the app runs on the neon-http driver, which has no
+    // interactive transaction support. Insert the outcome first (the durable
+    // record), then flip experiment status — if the second write fails the
+    // outcome row still exists and the next cron pass reconciles status.
+    await db.insert(zybitExperimentOutcomes).values({
+      id: randomUUID(),
+      organizationId: experiment.organizationId,
+      siteId: experiment.siteId,
+      experimentId: experiment.id,
+      findingId: experiment.findingId ?? null,
+      ruleId,
+      pathRef: pathRef ?? experiment.targetPath,
+      modificationType,
+      result,
+      liftPct,
+      confidence,
+      controlConversions: counts.control.conversions,
+      controlParticipants: counts.control.participants,
+      variantConversions: counts.variant.conversions,
+      variantParticipants: counts.variant.participants,
+      guardrailBreached,
+      concludedAt,
+    });
+  }
 
   await db
     .update(zybitExperiments)

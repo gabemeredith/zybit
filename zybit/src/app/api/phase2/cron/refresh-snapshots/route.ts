@@ -154,14 +154,15 @@ async function runHandler(request: Request) {
         }),
       );
 
-      for (const outcome of settled) {
+      for (let j = 0; j < settled.length; j++) {
+        const outcome = settled[j];
         if (outcome.status === 'fulfilled') {
           results.push(outcome.value);
-          globalRemaining -= outcome.value.refreshed;
+          globalRemaining -= (outcome.value.refreshed + outcome.value.failed);
         } else {
           const err = outcome.reason;
           results.push({
-            siteId: 'unknown',
+            siteId: chunk[j].siteId,
             refreshed: 0,
             drifted: 0,
             failed: 0,
