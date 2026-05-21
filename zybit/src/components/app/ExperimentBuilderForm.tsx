@@ -201,9 +201,15 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
     debounceRef.current = setTimeout(() => validateSelector(val), 500);
   }
 
-  // Validate initial selector on mount
+  // Validate initial selector on mount (deferred so setState runs outside effect body)
   useEffect(() => {
-    if (defaults.selector) validateSelector(defaults.selector);
+    if (defaults.selector) {
+      const t = setTimeout(() => validateSelector(defaults.selector), 0);
+      return () => {
+        clearTimeout(t);
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+      };
+    }
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
