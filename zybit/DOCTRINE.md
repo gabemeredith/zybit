@@ -152,7 +152,8 @@ The analysis engine and PM dashboard are complete. Zybit can:
 1. **Live Stripe round-trip verification** — The checkout → webhook → plan-write → enforcement code path is implemented and its round-trip bugs fixed (redirect target, cross-instance plan-cache staleness), but it has not been exercised end-to-end with stripe-cli + test keys.
 2. **Learn — Layer 2 calibration** — Layer 1 (re-ranking) shipped: past outcomes adjust new findings' priorityScore and surface as backlog pills, finding-detail "Past tests" panels, and LEARNED timeline entries. Layer 2 would mutate per-site rule thresholds based on outcome history; Layer 3 (cross-site priors) deferred until 50+ customers.
 3. **Proxy SPA handling** — JS-rendered targets are detected and logged but modifications won't apply; `browserFetcher.ts` fallback is unimplemented.
-4. **Observability** — Axiom drain not yet connected.
+
+**Recently completed:** Observability Axiom drain is now connected (best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` are set). Scheduled snapshot refresh + HTML drift detection shipped (`refresh-snapshots` cron, Zybit-023). Lighthouse now generates synthetic experiments + outcomes end-to-end (Phase 2), so the full Understand→…→Learn loop is observable on synthetic data.
 
 **What is deliberately not being built:**
 Sentiment analysis, GitHub PR generation, PostHog replacement / direct SDK, more audit rules, cross-site priors (before 50 customers with outcomes). See "What Zybit is not."

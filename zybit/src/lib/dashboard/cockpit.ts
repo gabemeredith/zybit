@@ -1,8 +1,9 @@
 import { and, count, desc, eq, inArray, max } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
-import { zybitExperiments, zybitFindings } from '@/lib/db/schema';
+import { phase2PageSnapshots, zybitExperiments, zybitFindings } from '@/lib/db/schema';
 import { createPhase1Repository } from '@/lib/phase1';
 import { buildInsightInputFromEvents, runInsightInputGate } from '@/lib/phase2';
+import { snapshotStaleDays } from '@/lib/phase2/snapshots/refresh';
 import type { RollupContext } from '@/lib/phase2/types';
 
 export interface CockpitIntegration {
@@ -49,6 +50,15 @@ export interface CockpitData {
      * pass, so MAX(updatedAt) is the measurement-freshness signal (Zybit-086).
      */
     lastComputedAt: string | null;
+  };
+  /**
+   * Snapshot freshness (Zybit-023). MAX(fetchedAt) across the site's page
+   * snapshots, and whole-days since — surfaced so a stale Understand layer
+   * is visible to the PM. Null when the site has no snapshots yet.
+   */
+  snapshots: {
+    lastSnapshotAt: string | null;
+    staleDays: number | null;
   };
   lastInsightAt: string | null;
 }
@@ -110,6 +120,7 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
       gate: null,
       findings: { openCount: 0, topFinding: null },
       experiments: { runningCount: 0, totalCount: 0, lastComputedAt: null },
+      snapshots: { lastSnapshotAt: null, staleDays: null },
       lastInsightAt: null,
     };
   }
@@ -128,6 +139,7 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
     topFindingRows,
     experimentRows,
     experimentComputedRows,
+    snapshotFreshnessRows,
   ] = await Promise.all([
       repository.listIntegrations({ organizationId, siteId: site.id }),
       repository.listEventsInWindow({ organizationId, siteId: site.id, window: window7d }),
@@ -163,6 +175,10 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
             inArray(zybitExperiments.status, ['running', 'completed', 'stopped']),
           ),
         ),
+      getDb()
+        .select({ lastFetchedAt: max(phase2PageSnapshots.fetchedAt) })
+        .from(phase2PageSnapshots)
+        .where(eq(phase2PageSnapshots.siteId, site.id)),
     ]);
 
   const resolvedConfig = config ?? {
@@ -207,6 +223,16 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
         ? new Date(rawLastComputed).toISOString()
         : null;
 
+  const rawLastSnapshot = snapshotFreshnessRows[0]?.lastFetchedAt ?? null;
+  const lastSnapshotDate =
+    rawLastSnapshot instanceof Date
+      ? rawLastSnapshot
+      : rawLastSnapshot
+        ? new Date(rawLastSnapshot)
+        : null;
+  const lastSnapshotAt = lastSnapshotDate ? lastSnapshotDate.toISOString() : null;
+  const staleDays = snapshotStaleDays(lastSnapshotDate);
+
   const lastInsightAt =
     topFinding
       ? (
@@ -244,6 +270,7 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
     },
     findings: { openCount, topFinding },
     experiments: { runningCount, totalCount, lastComputedAt },
+    snapshots: { lastSnapshotAt, staleDays },
     lastInsightAt,
   };
 }
