@@ -15,6 +15,7 @@ import type { CtaCandidateMeasured, PageCapture } from "@/lib/phase2/capture/typ
 import type { CanonicalEvent } from "@/lib/phase2/types";
 
 import { clamp, formatCount, pct, quote, readScrollFraction } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -98,7 +99,7 @@ function evaluatePage(
   }
   const totalPageviews = pageviews.length;
   const belowFoldShare = totalPageviews > 0 ? lowScrollCount / totalPageviews : 0;
-  if (belowFoldShare <= MIN_BELOW_FOLD_SHARE) return null;
+  if (belowFoldShare <= calibratedFloor(ctx, "above-fold-coverage", MIN_BELOW_FOLD_SHARE)) return null;
 
   const signals = primary.visualWeightSignals.slice(0, 3);
   const signalList = signals.length > 0 ? signals.join(", ") : "no class signals";
@@ -261,7 +262,7 @@ function evaluatePageWithCapture(
   }
   const totalPageviews = pageviews.length;
   const belowFoldShare = totalPageviews > 0 ? lowScrollCount / totalPageviews : 0;
-  if (belowFoldShare <= MIN_BELOW_FOLD_SHARE) return null;
+  if (belowFoldShare <= calibratedFloor(ctx, "above-fold-coverage", MIN_BELOW_FOLD_SHARE)) return null;
 
   const signals = primary.visualWeightSignals.slice(0, 3);
   const signalList = signals.length > 0 ? signals.join(", ") : "no class signals";

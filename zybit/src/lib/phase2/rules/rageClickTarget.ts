@@ -19,6 +19,7 @@ import {
   readStringProp,
   sanitizeIdSegment,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -118,7 +119,7 @@ function evaluateGroup(
     rageSessions.add(event.sessionId);
   }
   const rageRate = rageSessions.size / totalSessionsOnPage;
-  if (rageRate <= MIN_RAGE_RATE) return null;
+  if (rageRate <= calibratedFloor(ctx, "rage-click-target", MIN_RAGE_RATE)) return null;
 
   // Try to upgrade the label by matching a snapshot CTA — gives the
   // finding the page's actual button text instead of the property value.

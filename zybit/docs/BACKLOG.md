@@ -205,7 +205,7 @@ The analysis engine is built. This epic builds the product surface that lets a P
 | **Done** | GA4 connector + integration health | Zybit-110, Zybit-111 (Epic M) — shipped. |
 | **Now** | Live Stripe round-trip verification | Zybit-040 — code fixed; stripe-cli verification with test keys remains. |
 | **Done** | Per-site outcome feedback (Layer 1 re-ranking) | Reranker + repository + UI surfaces + LEARNED timeline entry shipped (Zybit-093). |
-| **Next** | Layer 2 — per-site rule-threshold calibration | Would mutate `ruleTuning.ts`-equivalent constants per-site based on outcome history. New epic. |
+| **Done** | Layer 2 — per-site rule-threshold calibration | `ruleCalibration.ts` derives a per-site, per-rule detection-floor multiplier from accumulated outcomes (loosen on repeated wins, tighten on losses; gated at 3+ conclusive outcomes); all 12 rules calibrated via `calibratedFloor`/`calibratedCap`; wired into `runInsightsPipeline`, surfaced in `AuditRuleDiagnostic.calibration`. |
 | **Polish** | Visible loop enrichment + activation polish | Zybit-093, Zybit-094, Zybit-113 |
 | **Later** | Amplitude / Mixpanel connectors | Same pattern as GA4 — one at a time |
 | **50+ customers** | Cross-site global priors | Zybit from Epic (deferred) |

@@ -129,6 +129,27 @@ export interface LearnAdjustment {
   visible: boolean;
 }
 
+/**
+ * Layer 2 Learn — per-site rule-threshold calibration. Derived purely from a
+ * site's accumulated experiment outcomes for a given `ruleId` and applied to
+ * that rule's detection floor before it runs. `multiplier` scales the floor:
+ * `< 1` loosens (the rule fires on weaker signal because past tests on this
+ * site won), `> 1` tightens (past tests lost). Bounded to ±30%; neutral (1.0)
+ * until enough conclusive outcomes accumulate.
+ */
+export interface RuleCalibration {
+  ruleId: string;
+  /** Scales the rule's detection floor. Clamped to [0.7, 1.3]. */
+  multiplier: number;
+  direction: 'loosen' | 'tighten' | 'neutral';
+  /** Confidence-weighted win/loss signal that produced the multiplier. */
+  netSignal: number;
+  /** Conclusive (positive/negative) outcomes that fed the calibration. */
+  conclusiveCount: number;
+  reason: string;
+  basedOnOutcomeIds: string[];
+}
+
 export interface AuditFinding {
   /** Stable, human-readable id, e.g. `hero-hierarchy-inversion:/pricing`. */
   id: string;
@@ -201,6 +222,13 @@ export interface AuditRuleContext {
    * Rules check this first; fall back to `pageSnapshotsByPath` when absent.
    */
   pageCapturesByPath?: Map<string, PageCapture[]>;
+  /**
+   * Layer 2 Learn — per-site rule-threshold calibration, keyed by `ruleId`.
+   * Computed from past outcomes in `runInsightsPipeline`. Absent in most unit
+   * tests; rules read it through `calibratedFloor`/`calibratedCap`, which
+   * default to the base threshold when no entry exists.
+   */
+  calibration?: Map<string, RuleCalibration>;
 }
 
 export interface AuditRule {
@@ -236,4 +264,13 @@ export interface AuditRuleDiagnostic {
   skippedReason?: string;
   /** How many candidate paths/cohorts/elements the rule considered. */
   candidatesEvaluated?: number;
+  /**
+   * Layer 2 calibration in effect for this rule on this site, when one applied.
+   * Present only when the detection floor was loosened or tightened from base.
+   */
+  calibration?: {
+    multiplier: number;
+    direction: 'loosen' | 'tighten' | 'neutral';
+    reason: string;
+  };
 }

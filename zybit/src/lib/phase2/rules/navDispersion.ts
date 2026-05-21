@@ -9,6 +9,7 @@
  */
 
 import { clamp, formatCount, gini, pct, quote, readStringProp, round, share } from "./helpers";
+import { calibratedCap } from "./ruleCalibration";
 import type {
   AuditFinding,
   AuditFindingEvidence,
@@ -44,7 +45,7 @@ export const navDispersion: AuditRule = {
 
     const countVector = [...counts.values()];
     const giniValue = gini(countVector);
-    if (giniValue >= MAX_GINI_FOR_FINDING) return [];
+    if (giniValue >= calibratedCap(ctx, "nav-dispersion", MAX_GINI_FOR_FINDING)) return [];
 
     const ordered = [...counts.entries()].sort((a, b) => {
       if (b[1] !== a[1]) return b[1] - a[1];

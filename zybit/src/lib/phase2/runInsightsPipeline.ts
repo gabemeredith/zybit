@@ -4,6 +4,7 @@ import { buildInsightInputFromEvents, runInsightInputGate } from '@/lib/phase2';
 import type { Phase2SiteConfig, RollupContext, RunInsightsResponse, TimeWindow } from '@/lib/phase2/types';
 import { runAuditRules } from '@/lib/phase2/rules';
 import { applyLearnRerank } from '@/lib/phase2/rules/learnReranker';
+import { computeRuleCalibrations } from '@/lib/phase2/rules/ruleCalibration';
 import type { PageSnapshot } from '@/lib/phase2/snapshots/types';
 import { buildCaptureIndex, isCaptureV2Enabled } from '@/lib/phase2/capture';
 import { createCaptureRepository } from '@/lib/phase2/capture/repository';
@@ -83,6 +84,12 @@ export async function runPhase2InsightsPipeline(
     ? buildCaptureIndex(recentCaptures)
     : undefined;
 
+  // Past outcomes drive both Learn layers for this site. Fetched once and
+  // reused: Layer 2 calibrates rule thresholds before the rules run; Layer 1
+  // re-ranks the findings the rules produce.
+  const pastOutcomes = await createOutcomesRepository().listForSite(siteId);
+  const calibration = computeRuleCalibrations(pastOutcomes);
+
   const auditReport = runAuditRules({
     organizationId,
     siteId,
@@ -92,12 +99,12 @@ export async function runPhase2InsightsPipeline(
     rollup,
     pageSnapshots,
     pageSnapshotsByPath,
+    calibration,
     ...(pageCapturesByPath ? { pageCapturesByPath } : {}),
   });
 
   // Layer 1 Learn — re-rank by past outcomes for this site. Pure fn, no schema
   // change. Findings still surface — order and learnAdjustment metadata shift.
-  const pastOutcomes = await createOutcomesRepository().listForSite(siteId);
   auditReport.findings = applyLearnRerank(auditReport.findings, pastOutcomes);
 
   // Best-effort: never block or fail an insights run on a usage write.

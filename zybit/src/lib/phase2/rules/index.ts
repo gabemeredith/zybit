@@ -83,7 +83,20 @@ export function runAuditRules(ctx: AuditRuleContext): AuditFindingsReport {
     try {
       const out = rule.evaluate(ctx);
       findings.push(...out);
-      diagnostics.push({ ruleId: rule.id, emitted: out.length });
+      const cal = ctx.calibration?.get(rule.id);
+      diagnostics.push({
+        ruleId: rule.id,
+        emitted: out.length,
+        ...(cal && cal.direction !== 'neutral'
+          ? {
+              calibration: {
+                multiplier: cal.multiplier,
+                direction: cal.direction,
+                reason: cal.reason,
+              },
+            }
+          : {}),
+      });
     } catch (err) {
       diagnostics.push({
         ruleId: rule.id,

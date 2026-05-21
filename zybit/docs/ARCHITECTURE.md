@@ -394,8 +394,16 @@ See Priority 1 (Guardrail Metrics). The proxy side: when `experiment.status = 's
 - UI surfaces: backlog pill (`src/app/app/findings/page.tsx`), "Past tests on your site" panel on finding detail (`src/app/app/findings/[id]/page.tsx`), LEARNED timeline entry on `/app/loop` (`src/app/app/loop/page.tsx`).
 - 16 unit tests in `src/lib/phase2/rules/__tests__/learnReranker.test.ts`.
 
-**Not yet built (Layer 2 and 3):**
-- **Layer 2** — per-site mutation of rule thresholds (effectively per-site `ruleTuning.ts`-equivalent). Today only `priorityScore` is adjusted; the rules themselves remain functionally identical across sites.
+**Layer 2 (per-site rule-threshold calibration) shipped.** Where Layer 1 re-ranks findings *after* the rules run, Layer 2 mutates the rules' detection floors *before* they run, per site, based on accumulated outcomes per `ruleId`. A rule whose experiments repeatedly win on a site has its detection floor loosened (fires on weaker signal); one that repeatedly loses has its floor tightened.
+
+**Architecture:**
+- `src/lib/phase2/rules/ruleCalibration.ts` — pure fn `computeRuleCalibrations(outcomes)`. Aggregates **per ruleId** (site-global — a rule's threshold is one module constant shared across pages, so there's nothing per-path to tune). Per-outcome signal reuses Layer 1's shape: `clamp(liftPct, ±20) × confidence × 0.01`, guardrail breach stacks `−0.10`. Net signal clamped to ±0.30 → multiplier `clamp(1 − netSignal, 0.7, 1.3)`. Gated behind `MIN_CONCLUSIVE_OUTCOMES = 3` (neutral 1.0 below that, so one noisy result can't move detection).
+- `calibratedFloor(ctx, ruleId, base)` scales a **lower-bound** detection floor (signal must exceed it — most rules). `calibratedCap(ctx, ruleId, cap)` scales an **upper-bound** cap (signal must stay below it — `form-abandonment` submit rate, `nav-dispersion` Gini) via the complementary-gap transform `1 − (1 − cap) × multiplier`, clamped to [0, 1]. Both default to the base threshold when no calibration is present, so the rules stay pure and the helper is a no-op in unit tests.
+- All 12 rules route their single detection floor through these helpers; statistical sample-size guards (e.g. `MIN_ENTRIES`, `MIN_FORM_VIEWS`) are deliberately **not** calibrated, so calibration changes sensitivity without firing on under-powered samples.
+- Wired in `runInsightsPipeline`: past outcomes are fetched once and reused — `computeRuleCalibrations` feeds `AuditRuleContext.calibration` before `runAuditRules`, then `applyLearnRerank` (Layer 1) re-ranks the result. Active calibrations surface in `AuditRuleDiagnostic.calibration` for observability.
+- 23 unit tests in `src/lib/phase2/rules/__tests__/ruleCalibration.test.ts` (gating, direction, bounds, per-rule independence, helper math, and an end-to-end firing-change check on `rageClickTarget`).
+
+**Not yet built (Layer 3):**
 - **Layer 3** — cross-site priors. Deferred until 50+ customers have outcome rows. The global prior means nothing at smaller sample sizes. Do not build this early.
 
 ---

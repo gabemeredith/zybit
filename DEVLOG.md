@@ -4,6 +4,36 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-21
+
+**Session:** Learn — Layer 2 (per-site rule-threshold calibration)
+**Author:** —
+
+### What shipped
+
+- **Layer 2 calibration engine** (`zybit/src/lib/phase2/rules/ruleCalibration.ts`): pure `computeRuleCalibrations(outcomes)` aggregates a site's experiment outcomes **per `ruleId`** into a detection-floor multiplier. Per-outcome signal reuses Layer 1's shape (`clamp(liftPct, ±20) × confidence × 0.01`, guardrail breach −0.10); net signal clamped to ±0.30 → `multiplier = clamp(1 − netSignal, 0.7, 1.3)`. Gated at `MIN_CONCLUSIVE_OUTCOMES = 3` so one noisy result can't move detection.
+- **All 12 rules calibrated**: each routes its single detection floor through `calibratedFloor` (lower-bound floors) or `calibratedCap` (upper-bound caps — `form-abandonment` submit rate, `nav-dispersion` Gini). Statistical sample-size guards are deliberately left uncalibrated.
+- **Wired into `runInsightsPipeline`**: outcomes fetched once, feed both Layer 2 (`AuditRuleContext.calibration`, before rules run) and Layer 1 (`applyLearnRerank`, after). Active calibrations surface in `AuditRuleDiagnostic.calibration`.
+- 23 new unit tests; `npm run verify` green (37 files, 446 tests).
+
+### Decisions made
+
+- **Per-`ruleId` aggregation, not per-path**: a rule's threshold is one module constant shared across pages, so there's nothing per-path to tune (Layer 1's path/modType cascade lives at the finding level).
+- **No schema change**: calibration is computed on the fly from the same `zybit_experiment_outcomes` rows Layer 1 reads — deterministic, mirrors Layer 1's pattern.
+- **Bounded ±30%** and gated, so calibration shifts sensitivity without ever firing on under-powered samples.
+
+### Blockers
+
+- None.
+
+### What's next
+
+- Live Stripe round-trip verification (Zybit-040) still needs stripe-cli + test keys (can't run in sandbox).
+- Optional: a dedicated "threshold calibrated" surface on `/app/loop` (today calibration is observable via diagnostics; findings appearing/disappearing is the implicit surface).
+- Layer 3 (cross-site priors) stays deferred until 50+ customers.
+
+---
+
 ## 2026-05-20
 
 **Session:** Architecture review + sprint scaffolding

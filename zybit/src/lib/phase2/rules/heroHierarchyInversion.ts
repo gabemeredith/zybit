@@ -25,6 +25,7 @@ import {
   share,
   topByCount,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -59,8 +60,9 @@ export const heroHierarchyInversion: AuditRule = {
       bucket.push(event);
     }
 
+    const minCtaClicks = calibratedFloor(ctx, "hero-hierarchy-inversion", MIN_CTA_CLICKS);
     for (const [pathRef, clicks] of clicksByPath) {
-      if (clicks.length < MIN_CTA_CLICKS) continue;
+      if (clicks.length < minCtaClicks) continue;
 
       // Prefer PageCapture: excludes hidden/off-screen CTAs from "heaviest" calc
       if (ctx.pageCapturesByPath) {

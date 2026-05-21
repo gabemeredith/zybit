@@ -19,6 +19,7 @@ import type {
 } from "@/lib/phase2/types";
 
 import { clamp, formatCount, modeStringProp, pct } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -54,6 +55,7 @@ export const mobileEngagementAsymmetry: AuditRule = {
       deviceBySession.set(sid, modeStringProp(events, "device_type"));
     }
 
+    const minGap = calibratedFloor(ctx, "mobile-engagement-asymmetry", MIN_GAP);
     const findings: AuditFinding[] = [];
 
     for (let i = 0; i < steps.length - 1; i += 1) {
@@ -85,7 +87,7 @@ export const mobileEngagementAsymmetry: AuditRule = {
       const mobileRate = mobile.completes / mobile.starts;
       const desktopRate = desktop.completes / desktop.starts;
       const gap = desktopRate - mobileRate;
-      if (gap <= MIN_GAP) continue;
+      if (gap <= minGap) continue;
 
       findings.push(
         buildFinding({

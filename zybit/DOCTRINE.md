@@ -44,7 +44,7 @@ Concrete improvement briefs. Each suggestion includes: what to change, why it wo
 One-click A/B deployment to production. PM approves the variant; Zybit manages the test. No engineering ticket required. The change goes live against real traffic.
 
 ### 6. Learn
-Test outcomes — what moved the metric, what didn't — feed back into the model. Every result makes future suggestions sharper. This is what compounds over time. Layer 1 (per-site re-ranking) is shipped: past outcomes adjust the priority of new findings via a cascade match + D-with-guardrails formula, surfaced in the backlog pill, finding-detail "Past tests" panel, and the LEARNED timeline entry on `/app/loop`. Layer 2 (per-site rule-threshold calibration) and Layer 3 (cross-site priors) remain as future work — the latter explicitly deferred until 50+ customers.
+Test outcomes — what moved the metric, what didn't — feed back into the model. Every result makes future suggestions sharper. This is what compounds over time. Layer 1 (per-site re-ranking) is shipped: past outcomes adjust the priority of new findings via a cascade match + D-with-guardrails formula, surfaced in the backlog pill, finding-detail "Past tests" panel, and the LEARNED timeline entry on `/app/loop`. Layer 2 (per-site rule-threshold calibration) is shipped: `ruleCalibration.ts` turns a site's accumulated outcomes per rule into a detection-floor multiplier — rules that repeatedly win on a site fire on weaker signal, rules that repeatedly lose require stronger signal — applied before the rules run. Layer 3 (cross-site priors) remains future work, explicitly deferred until 50+ customers.
 
 ---
 
@@ -150,10 +150,9 @@ The analysis engine and PM dashboard are complete. Zybit can:
 **What is not yet complete (immediate priorities, in order):**
 
 1. **Live Stripe round-trip verification** — The checkout → webhook → plan-write → enforcement code path is implemented and its round-trip bugs fixed (redirect target, cross-instance plan-cache staleness), but it has not been exercised end-to-end with stripe-cli + test keys.
-2. **Learn — Layer 2 calibration** — Layer 1 (re-ranking) shipped: past outcomes adjust new findings' priorityScore and surface as backlog pills, finding-detail "Past tests" panels, and LEARNED timeline entries. Layer 2 would mutate per-site rule thresholds based on outcome history; Layer 3 (cross-site priors) deferred until 50+ customers.
-3. **Proxy SPA handling** — JS-rendered targets are detected and logged but modifications won't apply; `browserFetcher.ts` fallback is unimplemented.
+2. **Proxy SPA handling** — JS-rendered targets are detected and logged but modifications won't apply; `browserFetcher.ts` fallback is unimplemented.
 
-**Recently completed:** Observability Axiom drain is now connected (best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` are set). Scheduled snapshot refresh + HTML drift detection shipped (`refresh-snapshots` cron, Zybit-023). Lighthouse now generates synthetic experiments + outcomes end-to-end (Phase 2), so the full Understand→…→Learn loop is observable on synthetic data.
+**Recently completed:** Learn — Layer 2 (per-site rule-threshold calibration) shipped: `ruleCalibration.ts` derives a per-site, per-rule detection-floor multiplier from accumulated outcomes (loosen on repeated wins, tighten on repeated losses), applied to all 12 rules before they run via `runInsightsPipeline`. Observability Axiom drain is now connected (best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` are set). Scheduled snapshot refresh + HTML drift detection shipped (`refresh-snapshots` cron, Zybit-023). Lighthouse now generates synthetic experiments + outcomes end-to-end (Phase 2), so the full Understand→…→Learn loop is observable on synthetic data.
 
 **What is deliberately not being built:**
 Sentiment analysis, GitHub PR generation, PostHog replacement / direct SDK, more audit rules, cross-site priors (before 50 customers with outcomes). See "What Zybit is not."
