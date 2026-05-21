@@ -25,6 +25,7 @@ import {
   topByCount,
 } from "./helpers";
 import type { SessionTrace } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -97,7 +98,7 @@ export const bounceOnKeyPage: AuditRule = {
       const snapshot = ctx.pageSnapshotsByPath.get(pathRef);
       if (!isKeyPath(pathRef, ctx.config, snapshot)) continue;
       const bounceRate = share(bucket.bounces, bucket.entries) ?? 0;
-      if (bounceRate <= MIN_BOUNCE_RATE) continue;
+      if (bounceRate <= calibratedFloor(ctx, "bounce-on-key-page", MIN_BOUNCE_RATE)) continue;
 
       findings.push(
         buildFinding({

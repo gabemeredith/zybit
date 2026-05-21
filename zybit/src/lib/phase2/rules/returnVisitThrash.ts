@@ -22,6 +22,7 @@ import {
   sanitizeIdSegment,
   topByCount,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -83,12 +84,13 @@ export const returnVisitThrash: AuditRule = {
     }
 
     const windowDays = windowDaysFromTimeWindow(ctx.window);
+    const minThrashRate = calibratedFloor(ctx, "return-visit-thrash", MIN_THRASH_RATE);
     const findings: AuditFinding[] = [];
     const ordered = [...aggregates.values()].sort((a, b) => a.pathRef.localeCompare(b.pathRef));
     for (const agg of ordered) {
       if (agg.pathSessions < MIN_PATH_SESSIONS) continue;
       const thrashRate = agg.thrashSessions / agg.pathSessions;
-      if (thrashRate <= MIN_THRASH_RATE) continue;
+      if (thrashRate <= minThrashRate) continue;
       findings.push(buildFinding(agg, thrashRate, narrativesBySource.get(agg.pathRef), windowDays, ctx.config.goalType, ctx.config.goalConfig));
     }
     return findings;

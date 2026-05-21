@@ -394,8 +394,18 @@ See Priority 1 (Guardrail Metrics). The proxy side: when `experiment.status = 's
 - UI surfaces: backlog pill (`src/app/app/findings/page.tsx`), "Past tests on your site" panel on finding detail (`src/app/app/findings/[id]/page.tsx`), LEARNED timeline entry on `/app/loop` (`src/app/app/loop/page.tsx`).
 - 16 unit tests in `src/lib/phase2/rules/__tests__/learnReranker.test.ts`.
 
-**Not yet built (Layer 2 and 3):**
-- **Layer 2** — per-site mutation of rule thresholds (effectively per-site `ruleTuning.ts`-equivalent). Today only `priorityScore` is adjusted; the rules themselves remain functionally identical across sites.
+**Layer 2 (per-site rule-threshold calibration) shipped.** Where Layer 1 re-ranks findings *after* the rules run, Layer 2 mutates the rules' detection floors *before* they run, per site, based on accumulated outcomes per `ruleId`. A rule whose experiments repeatedly win on a site has its detection floor loosened (fires on weaker signal); one that repeatedly loses has its floor tightened.
+
+**Architecture:**
+- `src/lib/phase2/rules/ruleCalibration.ts` — pure fn `computeRuleCalibrations(outcomes)`. Aggregates **per ruleId** (site-global — a rule's threshold is one module constant shared across pages, so there's nothing per-path to tune). Per-outcome signal reuses Layer 1's shape: `clamp(liftPct, ±20) × confidence × 0.01`, guardrail breach stacks `−0.10`. Net signal clamped to ±0.30 → multiplier `clamp(1 − netSignal, 0.7, 1.3)`. Gated behind `MIN_CONCLUSIVE_OUTCOMES = 3` (neutral 1.0 below that, so one noisy result can't move detection).
+- `calibratedFloor(ctx, ruleId, base)` scales a **lower-bound** detection floor (signal must exceed it — most rules). `calibratedCap(ctx, ruleId, cap)` scales an **upper-bound** cap (signal must stay below it — `form-abandonment` submit rate, `nav-dispersion` Gini) via the complementary-gap transform `1 − (1 − cap) × multiplier`, clamped to [0, 1]. Both default to the base threshold when no calibration is present, so the rules stay pure and the helper is a no-op in unit tests.
+- 11 of the 12 rules route their detection floor through these helpers (the set is enumerated in `CALIBRATED_RULE_IDS`). Statistical sample-size guards (e.g. `MIN_ENTRIES`, `MIN_FORM_VIEWS`) are deliberately **not** calibrated, so calibration changes sensitivity without firing on under-powered samples. `hero-hierarchy-inversion` is **exempt**: its only gate is a sample-size minimum (`MIN_CTA_CLICKS`) and the inversion it detects is binary with no magnitude knob, so there is no signal-strength floor to tune.
+- Wired in `runInsightsPipeline`: past outcomes are fetched once and reused — `computeRuleCalibrations` feeds `AuditRuleContext.calibration` before `runAuditRules`, then `applyLearnRerank` (Layer 1) re-ranks the result. Active calibrations surface in `AuditRuleDiagnostic.calibration` for observability.
+- 24 unit tests in `src/lib/phase2/rules/__tests__/ruleCalibration.test.ts` (gating, direction, bounds, per-rule independence, the hero exemption, helper math, and an end-to-end firing-change check on `rageClickTarget`).
+
+**Verification status (be honest):** Layer 2 is **unit-verified, not Lighthouse-verified.** The Lighthouse runner (`lighthouse/lib/runner/runScenario.ts`) deletes all outcomes for the site at step 0, runs the insights pipeline once (step 4), then creates the synthetic experiment + outcome (step 4.5) — so a run's single insights pass always sees zero prior outcomes and calibration is always neutral. Exercising Layer 2 end-to-end needs either a second insights pass after an outcome exists, or a seeded outcome history before the first pass. Neither is wired today.
+
+**Not yet built (Layer 3):**
 - **Layer 3** — cross-site priors. Deferred until 50+ customers have outcome rows. The global prior means nothing at smaller sample sizes. Do not build this early.
 
 ---

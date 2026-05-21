@@ -22,6 +22,7 @@ import {
   siteBaselineRate,
   topByCount,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -91,6 +92,7 @@ export const helpSeekingSpike: AuditRule = {
     }
     if (siteCtaClicks < MIN_SITE_CTA_CLICKS) return [];
 
+    const minLocalRate = calibratedFloor(ctx, "help-seeking-spike", MIN_LOCAL_RATE);
     const findings: AuditFinding[] = [];
     for (const [pathRef, ctaEvents] of ctaByPath) {
       const pageCtaClicks = ctaEvents.length;
@@ -98,7 +100,7 @@ export const helpSeekingSpike: AuditRule = {
       const helpEvents = helpByPath.get(pathRef) ?? [];
       const pageHelpClicks = helpEvents.length;
       const localRate = share(pageHelpClicks, pageCtaClicks) ?? 0;
-      if (localRate < MIN_LOCAL_RATE) continue;
+      if (localRate < minLocalRate) continue;
       if (localRate < baselineRate * MULTIPLIER) continue;
 
       findings.push(

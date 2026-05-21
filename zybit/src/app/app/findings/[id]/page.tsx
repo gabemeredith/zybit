@@ -91,10 +91,14 @@ export default async function FindingDetailPage({
   if (!finding) notFound();
 
   // Layer 1 Learn — load matched past outcomes for the "Past tests" panel.
-  const learn = finding.learnAdjustment as LearnAdjustment | null;
+  // Layer 2 calibration receipt lives in learnAdjustment.calibration (optional).
+  type StoredLearnAdjustment = LearnAdjustment & {
+    calibration?: { direction: 'loosen' | 'tighten'; multiplier: number; reason: string; conclusiveCount: number };
+  };
+  const learn = finding.learnAdjustment as StoredLearnAdjustment | null;
   const pastOutcomes: ExperimentOutcomeRow[] =
-    learn && learn.basedOnOutcomeIds.length > 0
-      ? await createOutcomesRepository().listByIds(finding.siteId, learn.basedOnOutcomeIds)
+    (learn?.basedOnOutcomeIds?.length ?? 0) > 0
+      ? await createOutcomesRepository().listByIds(auth.orgId, finding.siteId, learn!.basedOnOutcomeIds)
       : [];
 
   return (
@@ -161,8 +165,33 @@ export default async function FindingDetailPage({
         snapshotDiagram={finding.snapshotDiagram as unknown as SnapshotDiagram | null}
       />
 
+      {/* Layer 2 calibration panel — shown when the rule's threshold was tuned for this site */}
+      {learn?.calibration && (
+        <section className="mt-6 bg-white border border-black/[0.05] rounded-2xl px-6 py-5">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B]">
+              Tuned for your site
+            </div>
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${
+                learn.calibration.direction === 'loosen'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                  : 'bg-slate-50 text-slate-600 border-slate-200'
+              }`}
+            >
+              {learn.calibration.direction === 'loosen' ? 'More sensitive' : 'Less sensitive'}
+            </span>
+          </div>
+          <p className="text-sm text-[#6B6B6B] leading-relaxed">{learn.calibration.reason}</p>
+          <p className="text-xs text-[#9B9B9B] mt-1">
+            Based on {learn.calibration.conclusiveCount} concluded experiment{learn.calibration.conclusiveCount === 1 ? '' : 's'} on this site
+            {' · '}threshold ×{learn.calibration.multiplier.toFixed(2)}
+          </p>
+        </section>
+      )}
+
       {/* Past-tests panel (Z-3 / Zybit-093) */}
-      {learn && pastOutcomes.length > 0 && (
+      {learn?.visible && pastOutcomes.length > 0 && (
         <section className="mt-6 bg-white border border-black/[0.05] rounded-2xl px-6 py-5">
           <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1">
             Past tests on your site

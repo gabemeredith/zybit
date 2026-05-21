@@ -23,6 +23,7 @@ import {
   sanitizeIdSegment,
   share,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -95,10 +96,11 @@ export const hesitationPattern: AuditRule = {
       }
     }
 
+    const minHesitationSessions = calibratedFloor(ctx, "hesitation-pattern", MIN_HESITATION_SESSIONS);
     const findings: AuditFinding[] = [];
     for (const [pathRef, bucket] of byPath) {
       const hesitationSessions = bucket.hesitationSessions.size;
-      if (hesitationSessions < MIN_HESITATION_SESSIONS) continue;
+      if (hesitationSessions < minHesitationSessions) continue;
       const longDwellSessions = bucket.longDwellSessions.size;
       const hesitationShare = share(hesitationSessions, longDwellSessions) ?? 0;
       const snapshot = ctx.pageSnapshotsByPath.get(pathRef);

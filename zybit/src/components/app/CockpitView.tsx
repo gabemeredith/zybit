@@ -255,6 +255,34 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
         </div>
       )}
 
+      {/* GA4-only measurement gap — Zybit-157 */}
+      {pipeline.ga4OnlyMeasurementGap && (
+        <div className="mb-8 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+          <span>
+            GA4 connected — findings and proposals are available, but outcome
+            measurement requires PostHog or Segment. GA4 is aggregate-grain and
+            cannot be joined to A/B test assignments.
+          </span>
+        </div>
+      )}
+
+      {/* Circuit breaker tripped — Zybit-154 */}
+      {pipeline.integrations.some((i) => i.status === "disconnected") && (
+        <div className="mb-8 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+          <span>
+            {pipeline.integrations
+              .filter((i) => i.status === "disconnected")
+              .map((i) => i.provider)
+              .join(", ")}{" "}
+            sync is paused after repeated failures — Zybit stopped retrying to
+            avoid burning quota. Resume it once the connection is fixed
+            (POST <code className="font-mono text-xs">/api/phase2/integrations/:id/resume</code>).
+          </span>
+        </div>
+      )}
+
       {/* Top finding */}
       {findings.topFinding && (
         <div className="mb-8">

@@ -12,6 +12,7 @@
  */
 
 import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { getDb } from '@/lib/db/client';
 import {
   phase1Events,
@@ -24,6 +25,7 @@ import { createPhase1Repository } from '@/lib/phase1';
 import { upsertFindings } from '@/lib/phase2/jobs/insightsTrigger';
 import { runPhase2InsightsPipeline } from '@/lib/phase2/runInsightsPipeline';
 import type { AuditFinding } from '@/lib/phase2/rules/types';
+import { CALIBRATED_RULE_IDS } from '@/lib/phase2/rules/ruleCalibration';
 import {
   runSnapshot,
   SnapshotError,
@@ -299,6 +301,82 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     );
   }
 
+  // 4.6) Layer 2 calibration exercise.
+  //
+  // Layer 2 requires MIN_CONCLUSIVE_OUTCOMES (3) before any threshold moves.
+  // Step 4.5 produced 1 outcome. We insert 2 more synthetic positives for the
+  // top finding's rule — if it is in CALIBRATED_RULE_IDS — bringing the total
+  // to 3. Then we re-run the pipeline so the inspector can confirm calibration
+  // is mechanically active. Non-fatal and clearly labelled as synthetic seeds.
+  let layer2Result: GenerateResult['layer2'];
+  {
+    const topRuleId = auditFindings[0]?.ruleId;
+    const topPathRef = auditFindings[0]?.pathRef ?? null;
+    if (topRuleId && CALIBRATED_RULE_IDS.has(topRuleId)) {
+      try {
+        const db = getDb();
+        const syntheticOutcomes = [1, 2].map((i) => ({
+          id: `lh_cal_seed_${siteId}_${topRuleId}_${i}`,
+          organizationId,
+          siteId,
+          experimentId: `lh_cal_exp_${siteId}_${topRuleId}_${i}`,
+          ruleId: topRuleId,
+          pathRef: topPathRef,
+          modificationType: 'copy-change',
+          result: 'positive' as const,
+          liftPct: 12.0,
+          confidence: 0.92,
+          controlConversions: 45,
+          controlParticipants: 300,
+          variantConversions: 58,
+          variantParticipants: 300,
+          guardrailBreached: null,
+          concludedAt: new Date(Date.now() - (i + 1) * 7 * 86_400_000),
+        }));
+        await db
+          .insert(zybitExperimentOutcomes)
+          .values(syntheticOutcomes)
+          .onConflictDoNothing();
+
+        progress(onProgress, 'insights', 'running Layer 2 calibration pass (step 4.6)');
+        const insights2 = await runPhase2InsightsPipeline({
+          organizationId,
+          siteId,
+          window: {
+            start: new Date(sessionStart.getTime() - padMs).toISOString(),
+            end: new Date(sessionEnd.getTime() + padMs).toISOString(),
+          },
+          maxFindings: 50,
+        });
+        const calibratedDiags = (insights2.auditReport?.diagnostics ?? []).filter(
+          (d) => d.calibration && d.calibration.direction !== 'neutral',
+        );
+        layer2Result = {
+          calibrated: calibratedDiags.length > 0,
+          calibratedRuleCount: calibratedDiags.length,
+          calibrationSummary: calibratedDiags.map((d) => ({
+            ruleId: d.ruleId,
+            direction: d.calibration!.direction,
+            multiplier: d.calibration!.multiplier,
+          })),
+        };
+        progress(
+          onProgress,
+          'insights',
+          `layer2: ${calibratedDiags.length} rule(s) calibrated — ${
+            calibratedDiags.map((d) => `${d.ruleId}(×${d.calibration!.multiplier.toFixed(2)})`).join(', ') || 'none'
+          }`,
+        );
+      } catch (err) {
+        progress(
+          onProgress,
+          'insights',
+          `layer2 calibration exercise failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
   // 5) Sample rows for the inspector.
   //
   // Events + snapshots come from the DB so we see the real persisted
@@ -359,6 +437,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     startedAt,
     finishedAt: now(),
     ...(experimentSummary ? { experiment: experimentSummary } : {}),
+    ...(layer2Result ? { layer2: layer2Result } : {}),
     ...(snapshotErrors.length ? { snapshotErrors } : {}),
   };
 }

@@ -31,8 +31,10 @@ const randomUUID = () => globalThis.crypto.randomUUID();
 import { eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '@/lib/db/schema';
-import { zybitExperiments, zybitFindings, zybitExperimentOutcomes, phase1Sites, appUsers } from '@/lib/db/schema';
+import { zybitExperiments, zybitFindings, zybitExperimentOutcomes, phase1Sites, appUsers, phase2Integrations } from '@/lib/db/schema';
 import { sendExperimentConcludedEmail } from '@/lib/email/experimentConcludedEmail';
+import { isGa4OnlyMeasurementGap } from '@/lib/phase2/connectors/measurementGrain';
+import { logger } from '@/lib/observability/logger';
 import {
   chiSquaredTwoProportions,
   guardrailOneSidedPValue,
@@ -490,7 +492,37 @@ export async function computeAllOutcomes(db: DB): Promise<ComputeOutcomesSummary
     results: [],
   };
 
+  // Zybit-157: a site whose only connected integration is GA4 has no
+  // visitor-grain data to join to assignment events. Computing outcomes for
+  // such a site always yields 0 participants — skip it and log a structured
+  // warning instead of producing 0-confidence noise.
+  const measurementBlockedSites = new Set<string>();
+  for (const siteId of new Set(running.map((e) => e.siteId))) {
+    const integrations = await db
+      .select({ provider: phase2Integrations.provider, status: phase2Integrations.status })
+      .from(phase2Integrations)
+      .where(eq(phase2Integrations.siteId, siteId));
+    if (isGa4OnlyMeasurementGap(integrations)) {
+      measurementBlockedSites.add(siteId);
+    }
+  }
+
   for (const experiment of running) {
+    if (measurementBlockedSites.has(experiment.siteId)) {
+      logger.warn('Skipped compute — site has only GA4 connected (aggregate-grain, no visitor join)', {
+        service: 'compute-outcomes',
+        organizationId: experiment.organizationId,
+        siteId: experiment.siteId,
+        experimentId: experiment.id,
+      });
+      summary.results.push({
+        experimentId: experiment.id,
+        action: 'skipped',
+        reason: 'Site has only GA4 connected — GA4 is aggregate-grain and cannot be joined to A/B assignments. Connect PostHog or Segment to measure outcomes.',
+      });
+      summary.skipped++;
+      continue;
+    }
     try {
       const result = await processExperiment(db, experiment);
       summary.results.push(result);

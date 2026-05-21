@@ -26,13 +26,13 @@ export interface ExperimentOutcomeRow {
 }
 
 export interface OutcomesRepository {
-  listForSite(siteId: string, limit?: number): Promise<ExperimentOutcomeRow[]>;
-  listByIds(siteId: string, ids: string[]): Promise<ExperimentOutcomeRow[]>;
+  listForSite(organizationId: string, siteId: string, limit?: number): Promise<ExperimentOutcomeRow[]>;
+  listByIds(organizationId: string, siteId: string, ids: string[]): Promise<ExperimentOutcomeRow[]>;
 }
 
 export function createOutcomesRepository(): OutcomesRepository {
   return {
-    async listForSite(siteId, limit = 200) {
+    async listForSite(organizationId, siteId, limit = 200) {
       const db = getDb();
       const rows = await db
         .select({
@@ -48,7 +48,12 @@ export function createOutcomesRepository(): OutcomesRepository {
           concludedAt: zybitExperimentOutcomes.concludedAt,
         })
         .from(zybitExperimentOutcomes)
-        .where(eq(zybitExperimentOutcomes.siteId, siteId))
+        .where(
+          and(
+            eq(zybitExperimentOutcomes.organizationId, organizationId),
+            eq(zybitExperimentOutcomes.siteId, siteId),
+          ),
+        )
         .orderBy(desc(zybitExperimentOutcomes.concludedAt))
         .limit(limit);
 
@@ -58,7 +63,7 @@ export function createOutcomesRepository(): OutcomesRepository {
       }));
     },
 
-    async listByIds(siteId, ids) {
+    async listByIds(organizationId, siteId, ids) {
       if (ids.length === 0) return [];
       const db = getDb();
       const rows = await db
@@ -77,6 +82,7 @@ export function createOutcomesRepository(): OutcomesRepository {
         .from(zybitExperimentOutcomes)
         .where(
           and(
+            eq(zybitExperimentOutcomes.organizationId, organizationId),
             eq(zybitExperimentOutcomes.siteId, siteId),
             inArray(zybitExperimentOutcomes.id, ids),
           ),

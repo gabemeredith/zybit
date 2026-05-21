@@ -24,7 +24,7 @@ import { unauthorized, mapRouteError } from '@/app/api/phase1/_shared';
 import { createPhase1Repository } from '@/lib/phase1';
 import { capturePageAllBreakpoints, checkBudget, isCaptureV2Enabled, recordCaptureSpend } from '@/lib/phase2/capture';
 import { createCaptureRepository } from '@/lib/phase2/capture/repository';
-import { logger, cronitorPing } from '@/lib/observability';
+import { logger, cronitorPing, withCronAlert } from '@/lib/observability';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -269,5 +269,5 @@ async function runHandler(request: Request) {
   }
 }
 
-export const GET = runHandler;
-export const POST = runHandler;
+export const GET = withCronAlert('refresh-captures', runHandler);
+export const POST = withCronAlert('refresh-captures', runHandler);

@@ -382,6 +382,13 @@ export const zybitFindings = pgTable(
       reason: string;
       basedOnOutcomeIds: string[];
       visible: boolean;
+      /** Layer 2 calibration receipt — present when the rule's threshold was tuned. */
+      calibration?: {
+        direction: 'loosen' | 'tighten';
+        multiplier: number;
+        reason: string;
+        conclusiveCount: number;
+      };
     } | null>(),
     // Lifecycle
     status: text('status').notNull().default('open'), // 'open'|'approved'|'dismissed'|'shipped'|'measured'

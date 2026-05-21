@@ -38,6 +38,14 @@ Open `http://localhost:3000`. Before opening a PR: `npm run verify` (lint + Type
 | `NEXT_PUBLIC_DEFAULT_ORG_ID` | Optional | Fallback org context in dev |
 | `PHASE1_ORG_IDENTITY_MODE` | Optional (`dev`) | `dev` (lenient) \| `header_required` (strict) |
 | `POSTHOG_API_KEY__<TAG>` | For PostHog connector | API key referenced by integration `secretRef` |
+| `AXIOM_TOKEN` | Observability | Axiom ingest token — logs drain to `axiom-audit` dataset |
+| `AXIOM_DATASET` | Observability | Set to `axiom-audit` (token verified 2026-05-21) |
+| `FORGE_CRON_SECRET` | Cron routes | Shared secret for `/api/phase2/cron/*` auth |
+| `STRIPE_SECRET_KEY` | Billing | Stripe secret key (test or live) |
+| `STRIPE_WEBHOOK_SECRET` | Billing | Stripe webhook signing secret |
+| `STRIPE_PRICE_STARTER` / `_GROWTH` / `_SCALE` | Billing | Stripe price IDs for each plan |
+| `BROWSERLESS_API_KEY` | Snapshots | Browserless.io API key for JS-rendered snapshot fallback |
+| `CRONITOR_API_KEY` | Monitoring | Cronitor ping key for cron health monitoring |
 
 To run without Postgres: `PHASE1_STORAGE_DRIVER=blob npm run dev`
 

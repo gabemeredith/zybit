@@ -22,6 +22,7 @@ import {
   sanitizeIdSegment,
   share,
 } from "./helpers";
+import { calibratedCap } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -63,6 +64,7 @@ export const formAbandonment: AuditRule = {
       }
     }
 
+    const maxSubmitRate = calibratedCap(ctx, "form-abandonment", MAX_SUBMIT_RATE);
     for (const snapshot of ctx.pageSnapshots) {
       const pathRef = snapshot.pathRef;
       for (const form of snapshot.data.forms) {
@@ -82,7 +84,7 @@ export const formAbandonment: AuditRule = {
         }
         const formSubmits = submitterSessions.size;
         const submitRate = share(formSubmits, formViews) ?? 0;
-        if (submitRate >= MAX_SUBMIT_RATE) continue;
+        if (submitRate >= maxSubmitRate) continue;
 
         findings.push(
           buildFinding({

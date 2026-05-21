@@ -82,8 +82,33 @@ export function runAuditRules(ctx: AuditRuleContext): AuditFindingsReport {
   for (const rule of ALL_AUDIT_RULES) {
     try {
       const out = rule.evaluate(ctx);
+      const cal = ctx.calibration?.get(rule.id);
+      // Annotate each finding with the calibration that was active when the
+      // rule ran so the PM surface can show "Tuned for your site" receipts.
+      if (cal && cal.direction !== 'neutral') {
+        for (const f of out) {
+          f.calibration = {
+            direction: cal.direction,
+            multiplier: cal.multiplier,
+            reason: cal.reason,
+            conclusiveCount: cal.conclusiveCount,
+          };
+        }
+      }
       findings.push(...out);
-      diagnostics.push({ ruleId: rule.id, emitted: out.length });
+      diagnostics.push({
+        ruleId: rule.id,
+        emitted: out.length,
+        ...(cal && cal.direction !== 'neutral'
+          ? {
+              calibration: {
+                multiplier: cal.multiplier,
+                direction: cal.direction,
+                reason: cal.reason,
+              },
+            }
+          : {}),
+      });
     } catch (err) {
       diagnostics.push({
         ruleId: rule.id,

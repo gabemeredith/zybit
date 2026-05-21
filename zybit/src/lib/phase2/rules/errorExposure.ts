@@ -22,6 +22,7 @@ import {
   share,
   topByCount,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -75,8 +76,9 @@ export const errorExposure: AuditRule = {
       group.events.push(event);
     }
 
+    const minErrorCount = calibratedFloor(ctx, "error-exposure", MIN_ERROR_COUNT);
     const eligible = [...groups.values()]
-      .filter((g) => g.events.length >= MIN_ERROR_COUNT)
+      .filter((g) => g.events.length >= minErrorCount)
       .sort((a, b) => {
         if (b.events.length !== a.events.length) return b.events.length - a.events.length;
         const pathCmp = a.pathRef.localeCompare(b.pathRef);

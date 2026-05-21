@@ -58,7 +58,22 @@ export async function upsertFindings(
     prescription: (f.prescription ?? null) as { whatToChange: string; whyItWorks: string; experimentVariantDescription: string } | null,
     impactEstimate: (f.impactEstimate ?? null) as { value: number; unit: string; period: 'monthly'; formatted: string; basis: string } | null,
     refs: f.refs ?? null,
-    learnAdjustment: f.learnAdjustment ?? null,
+    // Merge Layer 1 re-ranking data with Layer 2 calibration receipt.
+    // Both are stored in the single learnAdjustment jsonb column so the
+    // PM surface (backlog badge, detail panel) has everything in one read.
+    // basedOnOutcomeIds is always present so the detail page's array access
+    // never throws even when only Layer 2 calibration fired.
+    learnAdjustment: f.learnAdjustment || f.calibration
+      ? {
+          delta: f.learnAdjustment?.delta ?? 0,
+          tier: (f.learnAdjustment?.tier ?? 1) as 1 | 2 | 3 | 4,
+          direction: (f.learnAdjustment?.direction ?? 'boost') as 'boost' | 'dampen',
+          reason: f.learnAdjustment?.reason ?? '',
+          basedOnOutcomeIds: f.learnAdjustment?.basedOnOutcomeIds ?? [],
+          visible: f.learnAdjustment?.visible ?? false,
+          ...(f.calibration ? { calibration: f.calibration } : {}),
+        }
+      : null,
     status: 'open' as const,
     lastSeenAt: now,
     insightWindowStart: new Date(windowStart),
