@@ -79,13 +79,30 @@ Events are normalized to a canonical schema (`CanonicalEvent v2`) with deduplica
 
 ### Identify — Audit Rules (`src/lib/phase2/rules/`)
 
-12 deterministic rules. Pure functions. Same input → same output.
+13 deterministic rules. Pure functions. Same input → same output.
 
 **Design rules (5):** hero-hierarchy-inversion, above-fold-coverage, rage-click-target, mobile-engagement-asymmetry, nav-dispersion
 
 **Pain rules (7):** form-abandonment, help-seeking-spike, hesitation-pattern, bounce-on-key-page, error-exposure, return-visit-thrash, cohort-pain-asymmetry
 
+**Flow rules (1):** flow-inter-step-dropoff (PRD Milestone 1) — identifies the mid-flow route with the highest session loss; only fires on nodes with inbound navigation edges (excludes pure landing pages); routed through Layer 2 calibration; emits a `flow-funnel` snapshot diagram.
+
 Each finding includes: severity, confidence, priority score, structured evidence array, text prescription (what to change, why, variant description), and revenue impact estimate.
+
+### Flow-Graph Advisory (`src/lib/phase2/flow/`)
+
+Deterministic per-site route-transition graph derived from canonical events — the product-level complement to the page-level audit (PRD Milestone 1, all 5 scope items complete).
+
+| Component | File | What it does |
+|-----------|------|--------------|
+| Type contracts | `types.ts` | `FlowNode`, `FlowEdge`, `FlowGraph` — pure data shapes |
+| Route normalization | `normalizeRoute.ts` | Strips query/hash, collapses `:id` segments (digits/UUIDs/long hex) |
+| Derivation | `deriveFlowGraph.ts` | Groups events by session, collapses consecutive same-route arrivals, derives nodes + edges with outbound share; capped at 40 nodes / 120 edges |
+| Repository | `repository.ts` | `get(orgId, siteId)` / `upsert(graph, orgId)` — one row per site in `phase2_flow_graph` |
+| Layout engine | `layout.ts` | Deterministic layered SVG layout via longest-path relaxation; `layoutFlowGraph(graph): FlowLayout`; SVG cubic-bezier edge paths |
+| Barrel | `index.ts` | Re-exports `deriveFlowGraph`, `createFlowGraphRepository` |
+
+The derived graph feeds `runInsightsPipeline` (passed to audit rules as `ctx.flowGraph`) and is persisted after each insights run by `maybeRunInsightsForSite`. The `/app/flow` dashboard surface reads the cached graph from `phase2_flow_graph`.
 
 ### Dashboard (`src/app/dashboard/`)
 
@@ -95,7 +112,8 @@ PM-facing product surface. Connected to real APIs and real data.
 |------|--------------|
 | Cockpit | Top 3 findings, integration health, active experiments, data readiness |
 | Findings list | Ranked backlog with status filters (open/approved/dismissed/shipped/measured) |
-| Finding detail | Evidence table, prescription, preview slot, approve/dismiss/measure buttons |
+| Finding detail | Evidence table, prescription, preview slot, approve/dismiss/measure buttons; `flow-funnel` diagram for flow-category findings |
+| Flow advisory (`/app/flow`) | Derived route-transition graph (layered SVG, depth columns, chokepoint highlighted) + ranked open flow findings; reads cached `phase2_flow_graph` row; handles missing table gracefully |
 | Experiments list | All experiments with confidence bars and lift percentages |
 | Experiment detail | Hypothesis, control vs variant rates, confidence meter, result entry |
 | Connect | Guided setup wizard (site URL → PostHog → Segment → GitHub) |
@@ -111,6 +129,7 @@ Single Postgres database (Neon serverless) via Drizzle ORM.
 | `phase2_site_configs` | Per-site cohort/onboarding/CTA/narrative config |
 | `phase2_integrations` | Connector records (PostHog/Segment, status, cursor) |
 | `phase2_page_snapshots` | Page DNA snapshots |
+| `phase2_flow_graph` | Cached derived flow graph per site (one row, upserted each insights run) — migration `0017` |
 | `zybit_findings` | Persisted audit findings with lifecycle |
 | `zybit_experiments` | Experiment metadata and results |
 | `zybit_site_meta` | Site operational metadata (MRR, AOV, session counts) |

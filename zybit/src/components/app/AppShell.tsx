@@ -42,6 +42,18 @@ function ExperimentsIcon() {
   );
 }
 
+function FlowIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="3" cy="8" r="2" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="13" cy="4" r="2" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="13" cy="12" r="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5 7.5C7 7.5 8 5 11 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5 8.5C7 8.5 8 11 11 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -54,6 +66,7 @@ function SettingsIcon() {
 const NAV_ITEMS: NavItem[] = [
   { label: "Cockpit", href: "/app", icon: <GridIcon /> },
   { label: "Findings", href: "/app/findings", icon: <FindingsIcon /> },
+  { label: "Flow", href: "/app/flow", icon: <FlowIcon /> },
   { label: "Experiments", href: "/app/experiments", icon: <ExperimentsIcon /> },
 ];
 
