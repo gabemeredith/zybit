@@ -62,6 +62,13 @@ export default function ExperimentBriefCard({
   const [overlaps, setOverlaps] = useState<Array<{ id: string; name: string }> | null>(null);
   const [spaUrl, setSpaUrl] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  // Track which warnings the PM has actually acknowledged. The overlap and
+  // SPA gates are independent and may surface in sequence; each "Launch
+  // anyway" must carry forward the *other* gate's real ack state rather than
+  // hardcoding it — otherwise acknowledging the SPA warning would silently
+  // skip a fresh overlap check (a concurrent experiment started in between).
+  const [overlapAcked, setOverlapAcked] = useState(false);
+  const [spaAcked, setSpaAcked] = useState(false);
 
   function handleCopy() {
     navigator.clipboard.writeText(toBriefText(brief));
@@ -86,6 +93,19 @@ export default function ExperimentBriefCard({
     } finally {
       setLaunching(false);
     }
+  }
+
+  function acknowledgeOverlapAndLaunch() {
+    setOverlapAcked(true);
+    // Re-run the SPA check unless it was already acknowledged.
+    handleLaunch(true, spaAcked);
+  }
+
+  function acknowledgeSpaAndLaunch() {
+    setSpaAcked(true);
+    // Re-run the overlap check unless it was already acknowledged — catches a
+    // concurrent experiment started while the SPA warning was on screen.
+    handleLaunch(overlapAcked, true);
   }
 
   return (
@@ -156,7 +176,7 @@ export default function ExperimentBriefCard({
             <button
               type="button"
               disabled={launching}
-              onClick={() => handleLaunch(true)}
+              onClick={acknowledgeOverlapAndLaunch}
               className="bg-amber-800 text-white px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity rounded"
             >
               {launching ? "Launching…" : "Launch anyway"}
@@ -190,7 +210,7 @@ export default function ExperimentBriefCard({
             <button
               type="button"
               disabled={launching}
-              onClick={() => handleLaunch(true, true)}
+              onClick={acknowledgeSpaAndLaunch}
               className="bg-amber-800 text-white px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity rounded"
             >
               {launching ? "Launching…" : "Launch anyway"}
