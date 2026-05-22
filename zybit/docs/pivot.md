@@ -236,9 +236,9 @@ year-long platform build):
 5. **Reuse, don't rebuild:** statistical engine, connectors, findings/experiment
    lifecycle, dashboard, rule-calibration framework.
 
-**Next action:** scope this as a concrete Sprint 3 *replacement* — what it must
-do, what to cut, what to reuse from the current codebase — and bring it back for
-ratification of D1–D7.
+**Next action:** ratify D1–D7. A concrete Sprint 3 *replacement* — what it must
+do, what to cut, what to reuse from the current codebase — is drafted in
+[`sprints/sprint-3R.md`](sprints/sprint-3R.md) (also proposed, not ratified).
 
 ---
 
