@@ -37,6 +37,15 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 - Remaining: Zybit-127/128 (demo seed), 143/144/145/146/148 (Sprint 3 AI
   surface), 156 (operator dashboard), 165 (operator calibration view); partial
   118/124/147; 161/162 need a keep-superseded-or-build decision.
+- **New ticket Zybit-149** added to Sprint 3 — client-side variant runtime:
+  an injected, declarative DOM-mutation script (bucket read from the proxy
+  cookie, `MutationObserver` re-apply, anti-flicker, nonce'd CSP) so
+  experiments work on SPA pages and can express changes beyond the six simple
+  server-side types (`element-insert`, `element-move`, `sequence`). It is the
+  deployment-side counterpart to the Zybit-144 AI advisor — without it the
+  advisor can propose richer variants than the engine can deploy. Schema stays
+  declarative (no `eval`/raw JS) to preserve the deterministic, PM-approved
+  doctrine. Spec in `docs/sprints/sprint-3.md`.
 
 ### Findings / blockers
 

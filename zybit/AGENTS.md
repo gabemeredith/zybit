@@ -84,7 +84,9 @@ zybit/
 >   synthetic outcomes) not built.
 > - **Sprint 2:** ✅ 5/5 complete.
 > - **Sprint 3:** Zybit-141/142 in open PR #58 (migration `0016` applied to
->   Neon); Zybit-143–146/148 not built; Zybit-147 partial.
+>   Neon); Zybit-143–146/148/149 not built; Zybit-147 partial. (Zybit-149 —
+>   client-side variant runtime for complex & SPA-safe changes — added
+>   2026-05-22.)
 > - **Sprint 4:** 4/5 done. Zybit-156 (operator dashboard) not built.
 > - **Sprint 5:** 2/5 done (163/164); 161/162 superseded by on-the-fly
 >   calibration; 165 (operator visibility) not built.

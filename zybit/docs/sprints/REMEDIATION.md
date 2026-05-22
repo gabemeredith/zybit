@@ -6,8 +6,9 @@ across sprints 0–5 vs. what remains. Supersedes the stale "all merged" claims
 that `AGENTS.md` once carried. Audited by file-existence + behaviour checks
 and a live end-to-end run against the production Neon DB on 2026-05-22.
 
-There are **38 real tickets** (the ROADMAP ID ranges 129–132, 138–140,
-149–152, 158–160, 166–168 are allocation padding — no specs exist for them).
+There are **39 real tickets** (Zybit-149 added 2026-05-22 — client-side
+variant runtime; see Sprint 3). The ROADMAP ID ranges 129–132, 138–140,
+150–152, 158–160, 166–168 remain allocation padding — no specs exist.
 
 ---
 
@@ -18,10 +19,10 @@ There are **38 real tickets** (the ROADMAP ID ranges 129–132, 138–140,
 | 0 — Verification & Hardening | 7 | 6 | 1 | 0 | — |
 | 1 — Demo Readiness | 8 | 5 | 1 | 2 | — |
 | 2 — Selector Robustness | 5 | 5 | 0 | 0 | — |
-| 3 — Design Capture & AI Advisor | 8 | 0 | 1 | 5 | 2 in open PR #58 |
+| 3 — Design Capture & AI Advisor | 9 | 0 | 1 | 6 | 2 in open PR #58 |
 | 4 — Observability & Multi-Customer Ops | 5 | 4 | 0 | 1 | — |
 | 5 — Learn Layer 2 | 5 | 2 | 0 | 1 | 2 superseded |
-| **Total** | **38** | **22** | **3** | **9** | **4** |
+| **Total** | **39** | **22** | **3** | **10** | **4** |
 
 **The deterministic six-step loop (Understand → Watch → Identify → Propose →
 Test → Measure → Learn) is built, live-verified, and customer-ready.** What
@@ -79,6 +80,7 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 | Zybit-146 | DOM tree element picker + screenshot | ❌ **Not built** |
 | Zybit-147 | Side-by-side live preview while editing | ⚠️ **Partial** — preview iframes exist on experiment detail; ephemeral while-editing route not built |
 | Zybit-148 | Rate limiting + cost guard for AI advisor | ❌ **Not built** |
+| Zybit-149 | Client-side variant runtime (complex & SPA-safe changes) | ❌ **Not built** — added 2026-05-22; deployment-side counterpart to Zybit-144 |
 
 ### Sprint 4 — Observability & Multi-Customer Ops
 
@@ -104,7 +106,7 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 
 ## Remaining work — the definitive list
 
-### ❌ Not built (9 tickets)
+### ❌ Not built (10 tickets)
 
 | Ticket | Feature | Est. | Customer-blocking? |
 |--------|---------|------|--------------------|
@@ -115,6 +117,7 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 | Zybit-145 | AI Variant Advisor UI | ~1d | No — Sprint 3 surface |
 | Zybit-146 | DOM tree element picker + screenshot thumbnail | ~2d | No — Sprint 3 surface |
 | Zybit-148 | AI advisor rate limiting + cost guard | ~0.5d | No — gates Zybit-144 |
+| Zybit-149 | Client-side variant runtime (complex & SPA-safe changes) | ~6d | No — unlocks SPA experiments + richer variants beyond the six simple types |
 | Zybit-156 | Operator org dashboard (`/app/operator`) | ~2d | **Soft** — needed to support customers remotely |
 | Zybit-165 | Operator calibration visibility | ~1d | No — depends on Zybit-156 |
 
@@ -170,7 +173,9 @@ The core loop is customer-ready. Remaining sequencing:
 3. **Sprint 1 demo polish** — Zybit-127/128 (demo seed + synthetic outcomes)
    and Zybit-124 finish, if a populated demo environment is wanted for sales.
 4. **Sprint 3 proper** — Zybit-143 → 144 → 145 → 146 → 148, in dependency
-   order. Prerequisites: `GEMINI_API_KEY` + a Vercel Blob plan tier.
+   order, then **Zybit-149** (client-side variant runtime — unlocks SPA
+   experiments and complex changes; the deployment-side counterpart to the
+   AI advisor). Prerequisites: `GEMINI_API_KEY` + a Vercel Blob plan tier.
 5. **Zybit-118 / Zybit-147** — smaller hardening, any time.
 6. **Decide Zybit-161/162** — keep superseded, or build the persisted override
    table; that decision also unblocks Zybit-165.
