@@ -22,7 +22,7 @@ genuinely shipped vs. outstanding, and the build plan for the gaps.
 | Zybit-120 | Full-loop E2E smoke test | ⚠️ Partial — `scripts/e2e-test.mjs` + `pipeline.e2e.test.ts` exist; not the full spec'd loop |
 | Zybit-121 | Selector validation | ✅ Built (`api/selector-validate`) |
 | Zybit-122 | CSS system detector | ✅ Built |
-| Zybit-123 | SPA/hybrid auto-detection | ❌ Not built |
+| Zybit-123 | SPA/hybrid auto-detection | ✅ Built — re-scoped (see note below) |
 | Zybit-124 | Insights dead-state UX | ⚠️ Partial — `WelcomeState` shows progress vs threshold; gate logic exists |
 | Zybit-125 | Copy-hint heuristic | ❌ Not built |
 | Zybit-126 | PostHog bridge health probe | ❌ Not built |
@@ -67,8 +67,18 @@ them into one unverified commit.
    for a populated demo org. Useful for sales, not customer-blocking.
 7. **Zybit-135 — snapshot drift dashboard** (~1d). Surface per-path snapshot
    health in the cockpit. `snapshots.staleDays` already exists — extend it.
-8. **Zybit-123 — SPA/hybrid auto-detection** (~0.5d), **Zybit-124 finish**,
-   **Zybit-134 stability tiers**, **Zybit-137 finish** — smaller hardening.
+8. **Zybit-124 finish**, **Zybit-134 stability tiers**, **Zybit-137 finish**
+   — smaller hardening.
+
+**Note on Zybit-123 (built, re-scoped):** the sprint-1.md spec assumed the
+onboarding wizard had a binary SSR/SPA toggle to replace — it never did, and
+the snapshot fetcher (`fetcher.ts`) already auto-detects SPAs and falls back
+to Browserless. The genuine live gap was the *Test* phase: the proxy detected
+an SPA shell but only logged a warning, then served unmodified control HTML
+to variant-bucket traffic — a silent no-op experiment that pollutes outcome
+history. Zybit-123 shipped as a launch-time guard instead: `targetPageIsSpaShell`
+fetches the target page, `launchExperimentAction` returns a `spa_warning`, and
+`ExperimentBriefCard` shows a warn-and-acknowledge banner.
 
 ---
 

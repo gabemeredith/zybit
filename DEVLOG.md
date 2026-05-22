@@ -4,6 +4,54 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-22
+
+**Session:** Live Lighthouse verification, PR #58/#59 review, Zybit-123
+**Author:** —
+
+### What shipped
+
+- **Zybit-123 — SPA-shell launch guard (re-scoped).** The ticketed spec
+  (replace an onboarding SSR/SPA toggle) was obsolete — no such toggle exists
+  and `fetcher.ts` already auto-detects SPAs for snapshots. The real live gap
+  was in *Test*: the proxy detected an SPA shell (`handler.ts`) but only
+  logged a warning, then served unmodified control HTML to variant traffic —
+  a silent no-op experiment that pollutes outcome history. Shipped instead as
+  a launch-time guard: `targetPageIsSpaShell` (new `spaGuard.ts`) fetches the
+  target page and runs `isSpaHtml`; `launchExperimentAction` returns a
+  `spa_warning`; `ExperimentBriefCard` shows a warn-and-acknowledge banner
+  (mirrors the Zybit-119 overlap pattern). Fails open on fetch error. 4 tests.
+  Suite: 46 files, 523 tests.
+
+### Verification (first live run)
+
+- **The Neon network-allowlist blocker is gone.** Every prior session logged
+  "Neon host not in allowlist"; this session the host is reachable and
+  `DATABASE_URL` is in the container env. Node 22 is present.
+- Ran live Lighthouse end-to-end for **both** scenarios against Neon:
+  AcmeBank (300 sessions → 1890 events → 2 findings → experiment +8.4% →
+  Layer 2 calibrated `return-visit-thrash ×0.70`) and WovenBasics (300 →
+  3635 events → 1 finding → +7.7% → calibrated). The full loop and Layer 2
+  are now genuinely Lighthouse-verified, not just unit-verified.
+- `npm run verify` green; app suite 519→523, Lighthouse suite 43.
+
+### PR review
+
+- **PR #58** (Sprint 3 Zybit-141/142 — design snapshot schema + writer):
+  safe to merge — additive table, non-fatal cron writes. Apply migration
+  `0016` to Neon after merge.
+- **PR #59** (empty-selector → variant=control loophole): safe to merge —
+  closes the sibling bug to Zybit-123 in the no-op-experiment family. Minor
+  open item: launch gate doesn't `.trim()` DB-sourced selectors.
+
+### What's next
+
+- Merge #59 → #58, apply migration `0016`.
+- Live Stripe round-trip (`STRIPE_SECRET_KEY` now in env — newly unblocked).
+- Sprint 3 continues: Zybit-143 (token extraction) onward.
+
+---
+
 ## 2026-05-21 (session 3)
 
 **Session:** Sprint compliance audit, Zybit-157/154/155, Stripe verification, doc consolidation

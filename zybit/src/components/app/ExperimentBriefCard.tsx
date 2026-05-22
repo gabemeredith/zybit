@@ -60,6 +60,7 @@ export default function ExperimentBriefCard({
   const [copied, setCopied] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [overlaps, setOverlaps] = useState<Array<{ id: string; name: string }> | null>(null);
+  const [spaUrl, setSpaUrl] = useState<string | null>(null);
 
   function handleCopy() {
     navigator.clipboard.writeText(toBriefText(brief));
@@ -67,12 +68,16 @@ export default function ExperimentBriefCard({
     setTimeout(() => setCopied(false), 1500);
   }
 
-  async function handleLaunch(acknowledge = false) {
+  async function handleLaunch(acknowledgeOverlap = false, acknowledgeSpa = false) {
     setLaunching(true);
     try {
-      const result = await launchExperimentAction(findingId, acknowledge);
+      const result = await launchExperimentAction(findingId, acknowledgeOverlap, acknowledgeSpa);
       if (result?.type === "overlap_warning") {
+        setSpaUrl(null);
         setOverlaps(result.overlaps);
+      } else if (result?.type === "spa_warning") {
+        setOverlaps(null);
+        setSpaUrl(result.targetUrl);
       }
     } finally {
       setLaunching(false);
@@ -163,6 +168,40 @@ export default function ExperimentBriefCard({
         </div>
       )}
 
+      {/* SPA-shell warning (Zybit-123) — shown before the user acknowledges */}
+      {spaUrl && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <p className="text-sm font-bold text-amber-900 mb-1">
+            This page appears to render client-side.
+          </p>
+          <p className="text-xs text-amber-700 mb-2 break-all font-mono">{spaUrl}</p>
+          <p className="text-xs text-amber-700 mb-3">
+            Zybit applies variant changes to the page&apos;s server-rendered HTML. On a
+            client-side-rendered page the target element may not exist yet, so the variant
+            could render identical to control — and the experiment would record no real
+            difference. Launch only if your selector targets an element present in the
+            initial HTML.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={launching}
+              onClick={() => handleLaunch(true, true)}
+              className="bg-amber-800 text-white px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity rounded"
+            >
+              {launching ? "Launching…" : "Launch anyway"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSpaUrl(null)}
+              className="text-sm text-amber-700 hover:text-amber-900 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-3 pt-4 border-t border-black/[0.04]">
         <button
           type="button"
@@ -181,11 +220,11 @@ export default function ExperimentBriefCard({
         >
           Edit
         </Link>
-        {!overlaps && (
+        {!overlaps && !spaUrl && (
           <button
             type="button"
             disabled={launching}
-            onClick={() => handleLaunch(false)}
+            onClick={() => handleLaunch(false, false)}
             className="ml-auto bg-[#111] text-[#FAFAF8] px-5 py-2.5 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
           >
             {launching ? "Launching…" : "Launch experiment"}
