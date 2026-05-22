@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db/client";
 import { phase1Sites, zybitExperiments, zybitFindings } from "@/lib/db/schema";
 import ExperimentControls from "@/components/app/ExperimentControls";
 import type { VariantModification } from "@/lib/experiments/types";
+import { describeModification } from "@/lib/experiments/describeModification";
 
 function timeAgo(d: Date | string): string {
   const diff = Date.now() - new Date(d).getTime();
@@ -27,60 +28,6 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const SECTION_LABEL = "text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1";
-
-/**
- * Render a `VariantModification` for the experiment detail panel: the
- * selector or parentSelector it targets, the payload it writes, and a
- * `noOp` flag set when the modification would be a silent no-op at
- * preview/proxy time (empty selector, or empty payload for the types
- * that need one). The detail page renders the flag as a banner so a
- * PM looking at the preview iframes can tell why variant === control.
- */
-function describeModification(mod: VariantModification): {
-  selector: string;
-  payloadLabel: string | null;
-  payloadValue: string | null;
-  noOp: boolean;
-} {
-  switch (mod.type) {
-    case "text-replace":
-      return {
-        selector: mod.selector,
-        payloadLabel: "text",
-        payloadValue: mod.text,
-        noOp: mod.selector.length === 0 || mod.text.length === 0,
-      };
-    case "css-inject":
-      return {
-        selector: mod.selector,
-        payloadLabel: "css",
-        payloadValue: mod.css,
-        noOp: mod.selector.length === 0 || mod.css.length === 0,
-      };
-    case "attribute-set":
-      return {
-        selector: mod.selector,
-        payloadLabel: `${mod.attr}=`,
-        payloadValue: mod.value,
-        noOp: mod.selector.length === 0 || mod.attr.length === 0,
-      };
-    case "element-hide":
-    case "element-show":
-      return {
-        selector: mod.selector,
-        payloadLabel: null,
-        payloadValue: null,
-        noOp: mod.selector.length === 0,
-      };
-    case "element-reorder":
-      return {
-        selector: mod.parentSelector,
-        payloadLabel: "order",
-        payloadValue: mod.childOrder.join(", "),
-        noOp: mod.parentSelector.length === 0 || mod.childOrder.length === 0,
-      };
-  }
-}
 
 function lift(control: number, variant: number): string {
   if (control === 0) return "—";

@@ -7,6 +7,10 @@ import { getServerAuth } from "@/lib/auth/serverAuth";
 import { getDb } from "@/lib/db/client";
 import { zybitExperiments, zybitFindings } from "@/lib/db/schema";
 import type { VariantModification } from "@/lib/experiments/types";
+import {
+  validateBriefShape,
+  type ValidationError as BriefValidationError,
+} from "@/lib/experiments/validateBrief";
 
 const VALID_CHANGE_TYPES = ["copy", "style", "hide"] as const;
 type ChangeType = (typeof VALID_CHANGE_TYPES)[number];
@@ -22,43 +26,7 @@ interface SaveBriefInput {
   hypothesis: string;
 }
 
-export type ValidationError = {
-  type: "validation_error";
-  field: "selector" | "newValue" | "changeType";
-  message: string;
-};
-
-/**
- * Reject briefs whose modifications would be silent no-ops at preview/proxy
- * time: an empty selector (querySelector("") returns null), or an empty
- * replacement value for copy/style change types. The form's `required`
- * attribute and the SelectorBadge gate catch this client-side; this is
- * defense-in-depth for API callers and stale briefs.
- */
-function validateBriefShape(
-  changeType: ChangeType,
-  selector: string,
-  newValue: string,
-): ValidationError | null {
-  if (selector.length === 0) {
-    return {
-      type: "validation_error",
-      field: "selector",
-      message: "CSS selector is required.",
-    };
-  }
-  if ((changeType === "copy" || changeType === "style") && newValue.length === 0) {
-    return {
-      type: "validation_error",
-      field: "newValue",
-      message:
-        changeType === "copy"
-          ? "Variant copy is required for a copy change."
-          : "CSS classes are required for a style change.",
-    };
-  }
-  return null;
-}
+export type ValidationError = BriefValidationError;
 
 export async function saveExperimentBriefAction(
   input: SaveBriefInput,
