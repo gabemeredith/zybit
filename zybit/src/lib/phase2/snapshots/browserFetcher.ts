@@ -9,14 +9,14 @@
  *   const result = await runBrowserSnapshot(url, { timeoutMs: 10_000 });
  *
  * Prerequisite:
- *   Add BROWSERLESS_TOKEN to Vercel env vars:
- *   `vercel env add BROWSERLESS_TOKEN`
+ *   Add BROWSERLESS_KEY to Vercel env vars:
+ *   `vercel env add BROWSERLESS_KEY`
  *
  * Browserless.io docs: https://docs.browserless.io
- * API: wss://chrome.browserless.io?token={BROWSERLESS_TOKEN}
+ * API: wss://chrome.browserless.io?token={BROWSERLESS_KEY}
  *
  * Cost: ~$0.005/session at pay-as-you-go. Cap at top 50 paths/site/day.
- * Fallback: if BROWSERLESS_TOKEN is absent or Browserless is unavailable,
+ * Fallback: if BROWSERLESS_KEY is absent or Browserless is unavailable,
  *           returns null and caller should use HTTP fetcher result.
  *
  * TODO: Implement this module.
@@ -46,7 +46,7 @@
  *
  * Add snapshotMethod: 'http-only' | 'browser' to SnapshotFetchResult type.
  * Store snapshotMethod in phase2_page_snapshots.data (already JSONB).
- * Surface 'http-only' as a warning in the cockpit when BROWSERLESS_TOKEN is set
+ * Surface 'http-only' as a warning in the cockpit when BROWSERLESS_KEY is set
  * but a SPA was detected (means the audit may be incomplete).
  */
 
@@ -81,14 +81,14 @@ export function isSpaHtml(html: string): boolean {
 /**
  * Fetch a JS-rendered page via Browserless.io and return the rendered HTML.
  *
- * Returns null if BROWSERLESS_TOKEN is not set or if the fetch fails.
+ * Returns null if BROWSERLESS_KEY is not set or if the fetch fails.
  * Callers should always fall back to the HTTP fetcher result when this returns null.
  */
 export async function runBrowserSnapshot(
   url: string,
   options: BrowserSnapshotOptions = {},
 ): Promise<BrowserSnapshotResult | null> {
-  const token = process.env.BROWSERLESS_TOKEN;
+  const token = process.env.BROWSERLESS_KEY;
   if (!token) return null;
 
   const { chromium } = await import('playwright-core');

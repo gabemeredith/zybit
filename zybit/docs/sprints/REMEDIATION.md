@@ -40,7 +40,7 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 | Zybit-114 | Live Stripe round-trip | ✅ **Done** — verified end-to-end 2026-05-22 (18/18 checks: checkout → webhook → plan write → `checkPlanLimit` 402) |
 | Zybit-115 | Auth rate limiting | ✅ Done — `rateLimit.ts`; `auth_rate_limits` table (migration 0014) applied to Neon 2026-05-22 |
 | Zybit-116 | Edge Config kill-switch write | ✅ Done |
-| Zybit-117 | Browserless live verification | ✅ Done — runbook (`CAPTURE_RUNBOOK.md`); live capture needs `BROWSERLESS_TOKEN` |
+| Zybit-117 | Browserless live verification | ✅ Done — runbook (`CAPTURE_RUNBOOK.md`); live capture needs `BROWSERLESS_KEY` |
 | Zybit-118 | Snapshot refresh cadence policy | ⚠️ **Partial** — `refresh-snapshots` cron exists; per-site dormancy/cadence policy not implemented |
 | Zybit-119 | Experiment overlap warn-and-proceed | ✅ Done |
 | Zybit-120 | Full-loop E2E smoke test | ✅ Done — `pipeline.e2e.test.ts` regression net |
@@ -183,8 +183,12 @@ The core loop is customer-ready. Remaining sequencing:
 ### Environment / ops actions (no code)
 
 - Set `AXIOM_DATASET=axiom-audit` in Vercel — activates the Zybit-153 log drain.
+- Set `BROWSERLESS_KEY` in Vercel — gates the SPA snapshot fallback. Token
+  live-verified 2026-05-22 (a client-rendered SPA rendered via Browserless).
 - Provision `GEMINI_API_KEY` + Vercel Blob tier before Sprint 3.
+- Migration `0017_phase2_flow_graph` applied to Neon 2026-05-22 (table +
+  `phase2_flow_graph_org_idx` verified live).
 - Migration journal (`drizzle/meta/_journal.json`) is stale — it lists only
-  0000–0002 though 0000–0016 are applied, and there is no
+  0000–0002 though 0000–0017 are applied, and there is no
   `drizzle.__drizzle_migrations` tracking table (migrations applied manually).
   Reconcile before relying on `drizzle-kit migrate`.
