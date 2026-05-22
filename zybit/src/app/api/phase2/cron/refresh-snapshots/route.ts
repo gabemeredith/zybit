@@ -66,6 +66,11 @@ async function refreshSiteSnapshots(
 ): Promise<Omit<SiteResult, 'siteId'>> {
   const repository = createPhase1Repository();
   const designRepo = createDesignSnapshotRepository();
+  // Pre-load existing design snapshots in one query so the per-path check
+  // below is O(1) instead of N round-trips.
+  const existingDesign = new Map(
+    (await designRepo.listForSite(organizationId, siteId)).map((row) => [row.pathRef, row]),
+  );
 
   const snapshots = await repository.listPageSnapshots({
     organizationId,
@@ -105,7 +110,7 @@ async function refreshSiteSnapshots(
       // row written by refresh-captures. Non-fatal: a write failure logs but
       // does not break the snapshot refresh.
       try {
-        const existing = await designRepo.findBySitePath(organizationId, siteId, pathRef);
+        const existing = existingDesign.get(pathRef) ?? null;
         if (shouldUpsertStructural(existing)) {
           await designRepo.upsert(
             buildStructuralDesignSnapshot({

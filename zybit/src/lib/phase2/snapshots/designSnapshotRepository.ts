@@ -6,9 +6,11 @@
  * Read methods scope by `organizationId` for tenant isolation.
  */
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, type InferInsertModel } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import { phase2SiteDesignSnapshot } from '@/lib/db/schema';
+
+type DesignSnapshotInsert = InferInsertModel<typeof phase2SiteDesignSnapshot>;
 
 export type DesignCaptureMethod = 'full' | 'structural';
 
@@ -70,6 +72,14 @@ export function createDesignSnapshotRepository(): DesignSnapshotRepository {
   return {
     async upsert(input) {
       const db = getDb();
+      // Cast jsonb payloads to the schema's inferred shape so the repo's
+      // looser `Record<string, unknown>` interface lines up with Drizzle's
+      // narrower `$type<...>()` inference.
+      const computedStyles =
+        input.computedStyles as DesignSnapshotInsert['computedStyles'];
+      const designTokens =
+        input.designTokens as DesignSnapshotInsert['designTokens'];
+
       await db
         .insert(phase2SiteDesignSnapshot)
         .values({
@@ -80,8 +90,8 @@ export function createDesignSnapshotRepository(): DesignSnapshotRepository {
           capturedAt: input.capturedAt,
           captureMethod: input.captureMethod,
           screenshotUrl: input.screenshotUrl,
-          computedStyles: input.computedStyles as never,
-          designTokens: input.designTokens as never,
+          computedStyles,
+          designTokens,
           cssSystem: input.cssSystem,
         })
         .onConflictDoUpdate({
@@ -90,10 +100,10 @@ export function createDesignSnapshotRepository(): DesignSnapshotRepository {
             capturedAt: input.capturedAt,
             captureMethod: input.captureMethod,
             screenshotUrl: input.screenshotUrl,
-            computedStyles: input.computedStyles as never,
+            computedStyles,
             // Preserve designTokens on upserts that don't compute them
             // (Zybit-143 writes them in a separate pass).
-            ...(input.designTokens !== null && { designTokens: input.designTokens as never }),
+            ...(input.designTokens !== null && { designTokens }),
             cssSystem: input.cssSystem,
           },
         });
