@@ -24,6 +24,7 @@ import {
 import { createPhase1Repository } from '@/lib/phase1';
 import { upsertFindings } from '@/lib/phase2/jobs/insightsTrigger';
 import { runPhase2InsightsPipeline } from '@/lib/phase2/runInsightsPipeline';
+import { createFlowGraphRepository } from '@/lib/phase2/flow';
 import type { AuditFinding } from '@/lib/phase2/rules/types';
 import { CALIBRATED_RULE_IDS } from '@/lib/phase2/rules/ruleCalibration';
 import {
@@ -153,6 +154,8 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
       rng,
       siteId,
       paths: scenario.siteManifest.primaryFunnelPaths,
+      transitionWeights: scenario.siteManifest.transitionWeights,
+      exitHazard: scenario.siteManifest.exitHazard,
       primaryCta: scenario.siteManifest.primaryCtaSelector
         ? { ctaId: 'primary', selector: scenario.siteManifest.primaryCtaSelector }
         : undefined,
@@ -232,6 +235,36 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     'insights',
     `auditReport: ${auditFindings.length} findings (legacy ${insights.findings.length})`,
   );
+
+  // Persist the flow graph so /app/flow renders without re-deriving.
+  // Best-effort — a cache write never blocks the run.
+  let flowGraphResult: GenerateResult['flowGraph'];
+  if (insights.flowGraph) {
+    const fg = insights.flowGraph;
+    try {
+      await createFlowGraphRepository().upsert(fg, organizationId);
+      const flowFinding = auditFindings.find((f) => f.ruleId === 'flow-inter-step-dropoff');
+      flowGraphResult = {
+        nodes: fg.nodes.length,
+        edges: fg.edges.length,
+        sessionCount: fg.sessionCount,
+        flowFindingFired: !!flowFinding,
+        chokepointRoute: flowFinding?.pathRef ?? null,
+      };
+      progress(
+        onProgress,
+        'insights',
+        `flow graph: ${fg.nodes.length} routes, ${fg.edges.length} edges` +
+          (flowFinding ? ` — chokepoint: ${flowFinding.pathRef}` : ' — no chokepoint finding'),
+      );
+    } catch (err) {
+      progress(
+        onProgress,
+        'insights',
+        `flow graph persist failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   // Persist findings to forge_findings so /app/loop (and the embedded
   // PM view) has something to render. Reuses the cron's upsert helper
@@ -436,6 +469,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     },
     startedAt,
     finishedAt: now(),
+    ...(flowGraphResult ? { flowGraph: flowGraphResult } : {}),
     ...(experimentSummary ? { experiment: experimentSummary } : {}),
     ...(layer2Result ? { layer2: layer2Result } : {}),
     ...(snapshotErrors.length ? { snapshotErrors } : {}),

@@ -70,6 +70,7 @@ export const CALIBRATED_RULE_IDS: ReadonlySet<string> = new Set([
   'return-visit-thrash',
   'cohort-pain-asymmetry',
   'above-fold-coverage',
+  'flow-inter-step-dropoff',
 ]);
 
 function contributionFor(outcome: ExperimentOutcomeRow): number {

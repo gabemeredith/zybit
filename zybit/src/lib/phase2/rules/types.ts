@@ -21,6 +21,7 @@
 import type { CanonicalEvent, Phase2SiteConfig, RollupResult, TimeWindow } from '@/lib/phase2/types';
 import type { PageSnapshot } from '@/lib/phase2/snapshots/types';
 import type { PageCapture } from '@/lib/phase2/capture/types';
+import type { FlowGraph } from '@/lib/phase2/flow/types';
 
 export type AuditFindingSeverity = 'info' | 'warn' | 'critical';
 
@@ -38,7 +39,9 @@ export type AuditFindingCategory =
   | 'hesitation'       // long active dwell with no follow-up click
   | 'bounce'           // single-page sessions on a key page
   | 'error'            // JS exception clusters
-  | 'thrash';          // return-visit loops without progression
+  | 'thrash'           // return-visit loops without progression
+  // Flow-shaped
+  | 'flow';            // inter-step drop-off across the product flow graph
 
 /**
  * One named piece of structured evidence the rule used to make its
@@ -104,8 +107,12 @@ export interface SnapshotFunnelStep {
 }
 
 export interface SnapshotDiagram {
-  /** 'page-structure' renders a wireframe with a fold line; 'form-funnel' renders a funnel. */
-  type: 'page-structure' | 'form-funnel';
+  /**
+   * 'page-structure' renders a wireframe with a fold line; 'form-funnel' and
+   * 'flow-funnel' render a stepped funnel ('flow-funnel' carries the
+   * predecessor → chokepoint → continued steps of a flow-graph finding).
+   */
+  type: 'page-structure' | 'form-funnel' | 'flow-funnel';
   pathRef: string;
   items?: SnapshotDiagramItem[];
   /** Index in `items` after which the fold line is drawn. */
@@ -240,6 +247,12 @@ export interface AuditRuleContext {
    * default to the base threshold when no entry exists.
    */
   calibration?: Map<string, RuleCalibration>;
+  /**
+   * Derived route-transition flow graph for the window (PRD Milestone 1).
+   * Present when the insights pipeline derived one; flow-aware rules read it.
+   * Page-level rules ignore it.
+   */
+  flowGraph?: FlowGraph;
 }
 
 export interface AuditRule {

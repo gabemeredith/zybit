@@ -10,6 +10,7 @@ import { buildCaptureIndex, isCaptureV2Enabled } from '@/lib/phase2/capture';
 import { createCaptureRepository } from '@/lib/phase2/capture/repository';
 import type { PageCapture } from '@/lib/phase2/capture/types';
 import { createOutcomesRepository } from '@/lib/phase2/outcomes/repository';
+import { deriveFlowGraph } from '@/lib/phase2/flow';
 
 export interface RunPhase2InsightsArgs {
   organizationId: string;
@@ -90,6 +91,16 @@ export async function runPhase2InsightsPipeline(
   const pastOutcomes = await createOutcomesRepository().listForSite(organizationId, siteId);
   const calibration = computeRuleCalibrations(pastOutcomes);
 
+  // Flow graph (PRD Milestone 1) — derived deterministically from the same
+  // windowed events. Feeds the flow-aware audit rule and the /app/flow view.
+  const flowGraph = deriveFlowGraph({
+    siteId,
+    windowStart: window.start,
+    windowEnd: window.end,
+    events,
+    generatedAt,
+  });
+
   const auditReport = runAuditRules({
     organizationId,
     siteId,
@@ -100,6 +111,7 @@ export async function runPhase2InsightsPipeline(
     pageSnapshots,
     pageSnapshotsByPath,
     calibration,
+    flowGraph,
     ...(pageCapturesByPath ? { pageCapturesByPath } : {}),
   });
 
@@ -118,6 +130,7 @@ export async function runPhase2InsightsPipeline(
     warnings: gate.warnings,
     diagnostics: rollup.diagnostics,
     trustworthy: gate.ok,
+    flowGraph,
     auditReport,
   };
 }

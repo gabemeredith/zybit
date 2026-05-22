@@ -13,6 +13,7 @@ import { eq, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import { zybitSiteMeta, zybitFindings } from '@/lib/db/schema';
 import { runPhase2InsightsPipeline } from '@/lib/phase2';
+import { createFlowGraphRepository } from '@/lib/phase2/flow';
 import type { AuditFinding } from '@/lib/phase2/rules/types';
 
 /** Deterministic finding PK (mirrors /api/dashboard/findings/route.ts). */
@@ -160,6 +161,14 @@ export async function maybeRunInsightsForSite(args: {
       startMs,
       endMs,
     );
+
+    // Persist the derived flow graph so /app/flow renders without
+    // re-aggregating events. Best-effort: a cache write never blocks the run.
+    if (insightsResult.flowGraph) {
+      await createFlowGraphRepository()
+        .upsert(insightsResult.flowGraph, organizationId)
+        .catch(() => {});
+    }
 
     await db
       .insert(zybitSiteMeta)

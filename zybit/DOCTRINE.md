@@ -134,7 +134,7 @@ The analysis engine and PM dashboard are complete. Zybit can:
 
 - Audit any product's visual hierarchy via static page snapshots (HTTP fetch + DOM parse; SPA/JS-rendered sites not yet supported)
 - Ingest behavioral data from PostHog (pull-sync), Segment (webhook), and GA4 (Data API v1beta pull-sync — aggregate-grain, Identify/Propose only)
-- Run 12 deterministic audit rules (5 design + 7 pain) across combined behavioral and design signals
+- Run 13 deterministic audit rules (5 design + 7 pain + 1 flow) across combined behavioral and design signals
 - Surface specific findings with A/B prescriptions, evidence arrays, and revenue impact estimates
 - Display findings, experiments, and lifecycle status in a wired PM dashboard
 - Assign visitors to control/variant via deterministic bucketing and apply HTML modifications via the proxy layer
@@ -151,9 +151,9 @@ The analysis engine and PM dashboard are complete. Zybit can:
 
 **What is not yet complete (immediate priorities, in order):**
 
-The product direction is set by `docs/PRD.md` — deliberately **one milestone**, not a platform build:
+The product direction is set by `docs/PRD.md` — deliberately **one milestone**, not a platform build.
 
-1. **Flow-graph advisory (PRD Milestone 1)** — derive how users move through the product from analytics data already ingested, and surface ranked findings on that graph. Read-only: no SDK, no write access, no install. This is the only committed build. Everything beyond it (client runtime, journey experiments, one-click in-app deploy, full AI advisor, element picker) is **deferred until a customer pulls it** — see `docs/PRD.md` §4.
+1. ~~**Flow-graph advisory (PRD Milestone 1)**~~ ✅ **Complete** — all 5 PRD scope items shipped: derivation, data model, `/app/flow` graph view, `flow-inter-step-dropoff` rule, `flow-funnel` credibility slice in EvidencePanel. Migration `0017` created (not yet applied to Neon). Everything beyond the committed milestone (client runtime, journey experiments, one-click in-app deploy, full AI advisor, element picker) is **deferred until a customer pulls it** — see `docs/PRD.md` §4.
 2. **Operator org dashboard (Zybit-156)** — no `/app/operator` route yet; needed to support a paying customer remotely.
 
 For the definitive per-ticket status across sprints 0–5, see `docs/sprints/REMEDIATION.md`.

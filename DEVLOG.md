@@ -4,6 +4,49 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-22 (session 3)
+
+**Session:** PRD Milestone 1 — Flow-graph advisory (all 5 scope items)
+**Author:** —
+
+### What shipped
+
+- **Flow types** (`src/lib/phase2/flow/types.ts`) — `FlowNode`, `FlowEdge`, `FlowGraph` data contracts
+- **Route normalization** (`normalizeRoute.ts`) — strips query/hash, collapses `:id` segments (digits/UUIDs/long hex), 8 tests
+- **Flow graph derivation** (`deriveFlowGraph.ts`) — groups events by session, collapses consecutive same-route arrivals, computes nodes + edges with outbound share; capped at 40 nodes / 120 edges, 8 tests
+- **Flow repository** (`repository.ts`) — `get`/`upsert` against `phase2_flow_graph` table (migration `0017`)
+- **Migration `0017`** (`drizzle/0017_phase2_flow_graph.sql`) — `phase2_flow_graph` table with site-keyed upsert — **NOT YET APPLIED TO NEON**
+- **`runInsightsPipeline`** updated — derives flow graph from the same windowed events, passes as `ctx.flowGraph` to audit rules, returns it in `RunInsightsResponse`
+- **`insightsTrigger`** updated — caches the flow graph to DB (best-effort, `.catch(() => {})`) after each insights run
+- **`flow-inter-step-dropoff` rule** (`src/lib/phase2/rules/flowInterStepDropoff.ts`) — 13th audit rule; identifies the mid-flow step losing the most sessions; excludes pure landing pages; emits `flow-funnel` snapshot diagram; 8 tests; wired into `ALL_AUDIT_RULES` + Layer 2 calibration
+- **Layout engine** (`src/lib/phase2/flow/layout.ts`) — deterministic layered SVG layout via longest-path relaxation + cycle-breaking cap; `layoutFlowGraph(graph): FlowLayout`; cubic-bezier edge paths; 9 tests
+- **`FlowGraphView` component** (`src/components/app/FlowGraphView.tsx`) — client SVG component; amber chokepoint highlight; depth columns; edge weight by transitions
+- **`/app/flow` page** (`src/app/app/flow/page.tsx`) — server component; loads cached flow graph + open flow findings; handles missing DB table gracefully; empty states
+- **AppShell** — "Flow" nav item added between Findings and Experiments
+- **EvidencePanel** — `flow-funnel` rendering added alongside `form-funnel` (reuses `FormFunnel` function)
+
+### Test count
+592 tests across 53 files. All passing. `npm run verify` clean.
+
+### Decisions made
+
+- Flow graph derivation is a pure function over the same windowed events `runInsightsPipeline` already loads — no extra DB read.
+- Repository writes are best-effort so they never block an insights run if migration `0017` isn't applied yet.
+- `FlowGraphView` is a `"use client"` SVG component; no canvas, no layout library.
+- Layout uses longest-path relaxation capped at `nodes.length` iterations to break cycles deterministically.
+- `flow-funnel` diagram reuses the existing `FormFunnel` function in EvidencePanel — structurally identical.
+
+### Blockers
+
+- **Migration `0017` not applied to Neon.** The `/app/flow` page and flow graph caching will silently degrade (`.catch(() => null/[])`) until it's applied. Apply manually with `psql $DATABASE_URL < drizzle/0017_phase2_flow_graph.sql` or via the Drizzle migration runner.
+
+### What's next
+
+- Apply migration `0017` to Neon (needs explicit approval from operator)
+- Operator dashboard (Zybit-156) — next highest-priority gap
+
+---
+
 ## 2026-05-22 (session 2)
 
 **Session:** Stripe round-trip verification, migrations 0014/0016, full sprint audit

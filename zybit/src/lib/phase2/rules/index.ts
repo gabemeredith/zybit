@@ -39,6 +39,9 @@ import { helpSeekingSpike } from "./helpSeekingSpike";
 import { hesitationPattern } from "./hesitationPattern";
 import { returnVisitThrash } from "./returnVisitThrash";
 
+// Flow rules
+import { flowInterStepDropoff } from "./flowInterStepDropoff";
+
 export { aboveFoldCoverage } from "./aboveFoldCoverage";
 export { heroHierarchyInversion } from "./heroHierarchyInversion";
 export { mobileEngagementAsymmetry } from "./mobileEngagementAsymmetry";
@@ -51,6 +54,7 @@ export { formAbandonment } from "./formAbandonment";
 export { helpSeekingSpike } from "./helpSeekingSpike";
 export { hesitationPattern } from "./hesitationPattern";
 export { returnVisitThrash } from "./returnVisitThrash";
+export { flowInterStepDropoff } from "./flowInterStepDropoff";
 
 export const ALL_AUDIT_RULES: readonly AuditRule[] = [
   // Design (Layer C)
@@ -67,6 +71,8 @@ export const ALL_AUDIT_RULES: readonly AuditRule[] = [
   hesitationPattern,
   returnVisitThrash,
   cohortPainAsymmetry,
+  // Flow (Layer E)
+  flowInterStepDropoff,
 ];
 
 const SEVERITY_RANK: Record<AuditFindingSeverity, number> = {

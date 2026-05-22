@@ -59,8 +59,12 @@ export async function postImpersonateStart(
   } catch {
     return jsonError(res, 400, 'bad_json');
   }
-  const params = (body ?? {}) as { siteId?: unknown };
+  const params = (body ?? {}) as { siteId?: unknown; redirectPath?: unknown };
   const siteId = typeof params.siteId === 'string' ? params.siteId : '';
+  const redirectPath =
+    typeof params.redirectPath === 'string' && params.redirectPath.startsWith('/app/')
+      ? params.redirectPath
+      : '/app/loop';
   if (!siteId) return jsonError(res, 400, 'missing_siteId');
   if (!siteId.startsWith(LIGHTHOUSE_SITE_PREFIX)) {
     return jsonError(res, 400, 'not_a_lighthouse_site', siteId);
@@ -91,7 +95,7 @@ export async function postImpersonateStart(
 
   const token = await createSession(userId);
   const base = process.env.ZYBIT_APP_BASE_URL ?? 'http://localhost:3000';
-  const embedUrl = `${base.replace(/\/$/, '')}/app/loop?siteId=${encodeURIComponent(siteId)}`;
+  const embedUrl = `${base.replace(/\/$/, '')}${redirectPath}?siteId=${encodeURIComponent(siteId)}`;
 
   res.writeHead(200, {
     'content-type': 'application/json',

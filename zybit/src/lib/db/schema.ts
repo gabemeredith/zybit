@@ -377,6 +377,33 @@ export const phase2SiteDesignSnapshot = pgTable(
   }),
 );
 
+/**
+ * Persisted flow-graph advisory (PRD Milestone 1). One row per site holding
+ * the derived route-transition graph — nodes are normalized routes, edges are
+ * observed session transitions with per-edge drop-off. Upserted by the
+ * insights pipeline; read by `/app/flow`. The graph is a deterministic
+ * derivation of canonical events, so this table is a render cache, not a
+ * source of truth.
+ */
+export const phase2FlowGraph = pgTable(
+  'phase2_flow_graph',
+  {
+    siteId: text('site_id').primaryKey(),
+    organizationId: text('organization_id').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    windowEnd: timestamp('window_end', { withTimezone: true }).notNull(),
+    sessionCount: integer('session_count').notNull().default(0),
+    /** Serialized FlowGraph (nodes + edges). */
+    graph: jsonb('graph').$type<Record<string, unknown>>().notNull(),
+    generatedAt: timestamp('generated_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    orgIdx: index('phase2_flow_graph_org_idx').on(table.organizationId),
+  }),
+);
+
 export const zybitApiKeys = pgTable(
   'forge_api_keys',
   {

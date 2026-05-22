@@ -414,8 +414,9 @@ export default function EvidencePanel({
         <RecommendationFallback recommendation={recommendation} />
       )}
 
-      {/* 4. Snapshot diagram */}
-      {snapshotDiagram?.type === "form-funnel" && (
+      {/* 4. Snapshot diagram — form funnel or flow funnel */}
+      {(snapshotDiagram?.type === "form-funnel" ||
+        snapshotDiagram?.type === "flow-funnel") && (
         <FormFunnel diagram={snapshotDiagram} />
       )}
     </div>

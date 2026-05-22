@@ -13,6 +13,7 @@ import type {
   NarrativePathAggregate,
   OnboardingStepAggregate,
 } from "@/lib/phase1/insights/types";
+import type { FlowGraph } from "@/lib/phase2/flow/types";
 
 export type ISODateString = string;
 
@@ -278,6 +279,13 @@ export interface RunInsightsResponse {
   diagnostics: RollupDiagnostics;
   /** Whether engine output meets the gate's minimum bar. */
   trustworthy: boolean;
+  /**
+   * Derived route-transition flow graph for the window (PRD Milestone 1).
+   * Always present — empty (no nodes/edges) when the window carried no
+   * usable route data. Persisted by `maybeRunInsightsForSite` and read by
+   * the `/app/flow` view.
+   */
+  flowGraph?: FlowGraph;
   /**
    * Phase 2 design-rule output (Layer B+C). Optional in v1 — empty when
    * no page snapshots are available or when rules find nothing actionable.
