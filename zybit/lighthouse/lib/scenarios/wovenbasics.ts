@@ -28,14 +28,44 @@ export const wovenbasics: Scenario = {
     displayName: 'WovenBasics',
     stack: 'static HTML served by Lighthouse',
     baseUrl: 'http://localhost:3001/fake-sites/wovenbasics',
-    primaryFunnelPaths: ['/product'],
+    // Full funnel: home → product → cart → checkout.
+    // The transition matrix directs sessions forward through the funnel so
+    // /cart accumulates real inbound transitions (not a random walk).
+    // exitHazard on /cart models checkout abandonment — the majority of
+    // sessions that reach the cart abandon there, which should fire the
+    // flow-inter-step-dropoff rule and surface /cart as the chokepoint.
+    primaryFunnelPaths: ['/', '/product', '/cart', '/checkout'],
+    transitionWeights: {
+      '/': [
+        { path: '/product', weight: 0.70 },
+        { path: '/', weight: 0.30 },
+      ],
+      '/product': [
+        { path: '/cart', weight: 0.55 },
+        { path: '/product', weight: 0.25 },
+        { path: '/', weight: 0.20 },
+      ],
+      '/cart': [
+        { path: '/checkout', weight: 0.30 },
+        { path: '/product', weight: 0.40 },
+        { path: '/', weight: 0.30 },
+      ],
+      '/checkout': [
+        { path: '/', weight: 0.50 },
+        { path: '/product', weight: 0.30 },
+        { path: '/checkout', weight: 0.20 },
+      ],
+    },
+    // 65% of sessions that reach /cart exit there (cart abandonment).
+    // 80% of sessions that reach /checkout exit there (post-purchase).
+    exitHazard: { '/cart': 0.65, '/checkout': 0.80 },
     primaryCtaSelector: '[data-testid=add-to-cart]',
     expectedConversionEvent: 'form_submit',
     requiresTunnel: false,
     isSpa: false,
     businessProfile: { mrr: null, aov: 9500 },
     biasNotes:
-      'Realistic well-built DTC funnel. No deliberate flaws — calibration test for false-positive rate and marginal-hypothesis surfacing.',
+      'DTC funnel with directed transitions and cart-abandonment exit hazard. /cart should surface as flow-inter-step-dropoff chokepoint.',
   },
   personaMix: [
     // E-commerce skew: lots of casual browsers, modest evaluators, a

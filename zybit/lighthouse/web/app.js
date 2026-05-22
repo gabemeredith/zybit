@@ -190,7 +190,7 @@ function renderRunState(runPane, state) {
   ]);
 
   if (state.status === 'done' && state.result) {
-    const { counts, sample, organizationId, siteId, snapshotErrors, experiment } = state.result;
+    const { counts, sample, organizationId, siteId, snapshotErrors, experiment, flowGraph } = state.result;
     left.appendChild(el('h3', { class: 'subhead' }, 'results'));
     left.appendChild(
       el('p', {}, [
@@ -217,6 +217,21 @@ function renderRunState(runPane, state) {
           el('tr', {}, [el('th', {}, 'lift'), el('td', {}, liftLabel)]),
           el('tr', {}, [el('th', {}, 'confidence'), el('td', {}, confLabel)]),
           el('tr', {}, [el('th', {}, 'participants'), el('td', {}, String(experiment.participants))]),
+        ]),
+      );
+    }
+    if (flowGraph) {
+      left.appendChild(
+        el('table', { class: 'counts' }, [
+          el('tr', {}, [el('th', {}, 'flow routes'), el('td', {}, String(flowGraph.nodes))]),
+          el('tr', {}, [el('th', {}, 'flow edges'), el('td', {}, String(flowGraph.edges))]),
+          el('tr', {}, [el('th', {}, 'flow sessions'), el('td', {}, String(flowGraph.sessionCount))]),
+          el('tr', {}, [
+            el('th', {}, 'chokepoint'),
+            el('td', {}, flowGraph.flowFindingFired
+              ? `${flowGraph.chokepointRoute ?? '?'} ← flow-inter-step-dropoff fired ✓`
+              : 'none (rule did not fire)'),
+          ]),
         ]),
       );
     }
@@ -267,42 +282,45 @@ function buildPmView(siteId) {
   const status = el(
     'p',
     { class: 'pm-status' },
-    'embed /app/loop as the synthetic PM for this site.',
+    'embed /app as the synthetic PM for this site.',
   );
-  const openBtn = el(
-    'button',
-    { type: 'button', class: 'primary' },
-    'open as PM',
-  );
-  openBtn.addEventListener('click', async () => {
-    openBtn.setAttribute('disabled', 'disabled');
-    status.textContent = 'minting session…';
-    try {
-      const r = await api('/lighthouse/api/impersonate/start', {
-        method: 'POST',
-        body: JSON.stringify({ siteId }),
-      });
-      if (!r.ok) {
-        const msg = (r.body && (r.body.detail || r.body.error)) || `http ${r.status}`;
-        throw new Error(msg);
+
+  function makeOpenBtn(label, appPath) {
+    const btn = el('button', { type: 'button', class: 'primary' }, label);
+    btn.addEventListener('click', async () => {
+      btn.setAttribute('disabled', 'disabled');
+      status.textContent = 'minting session…';
+      try {
+        const r = await api('/lighthouse/api/impersonate/start', {
+          method: 'POST',
+          body: JSON.stringify({ siteId, redirectPath: appPath }),
+        });
+        if (!r.ok) {
+          const msg = (r.body && (r.body.detail || r.body.error)) || `http ${r.status}`;
+          throw new Error(msg);
+        }
+        // Swap the buttons for the iframe.
+        clear(wrap);
+        wrap.appendChild(
+          el('iframe', {
+            src: r.body.embedUrl,
+            class: 'pm-iframe',
+            sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups',
+            title: `PM view — ${appPath} (synthetic)`,
+          }),
+        );
+      } catch (err) {
+        status.textContent = `error: ${err.message}`;
+        btn.removeAttribute('disabled');
       }
-      // Swap the button for the iframe. Sandbox is permissive on purpose:
-      // /app/* needs scripts, same-origin cookies, forms, and popups.
-      clear(wrap);
-      wrap.appendChild(
-        el('iframe', {
-          src: r.body.embedUrl,
-          class: 'pm-iframe',
-          sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups',
-          title: 'PM view (synthetic)',
-        }),
-      );
-    } catch (err) {
-      status.textContent = `error: ${err.message}`;
-      openBtn.removeAttribute('disabled');
-    }
-  });
-  wrap.appendChild(openBtn);
+    });
+    return btn;
+  }
+
+  wrap.appendChild(el('div', { class: 'pm-btn-row' }, [
+    makeOpenBtn('open loop view', '/app/loop'),
+    makeOpenBtn('open flow view', '/app/flow'),
+  ]));
   wrap.appendChild(status);
   return wrap;
 }

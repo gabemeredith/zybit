@@ -34,6 +34,18 @@ export interface RunSessionOpts {
    */
   paths: string[];
   /**
+   * Per-path outbound transition weights (LIGHTHOUSE.md §13 #1).
+   * When present and the current path has an entry, the driver samples the
+   * next path from these weights instead of uniform persona-weighted random.
+   */
+  transitionWeights?: Record<string, Array<{ path: string; weight: number }>>;
+  /**
+   * Per-path exit hazard (LIGHTHOUSE.md §13 #2).
+   * Probability [0,1] that a session ends AFTER visiting this path instead
+   * of continuing. Only fires when the session still has remaining pages.
+   */
+  exitHazard?: Record<string, number>;
+  /**
    * Selector or ctaId that "clicking the primary CTA" emits as a property
    * on cta_click events. Optional — null means clicks don't get a CTA tag.
    */
@@ -63,9 +75,22 @@ const MAX_DWELL_MS = 60_000;
 const MIN_DWELL_MS = 200;
 const MAX_PAGES_HARD_CAP = 50;
 
-function pickPath(persona: Persona, paths: string[], rng: Rng): string {
+function pickPath(
+  persona: Persona,
+  paths: string[],
+  rng: Rng,
+  currentPath?: string,
+  transitionWeights?: Record<string, Array<{ path: string; weight: number }>>,
+): string {
   if (paths.length === 0) return '/';
-  // 2x weight on persona.preferredPaths that appear in `paths`.
+  // Use transition matrix when the current path has defined outbound weights.
+  if (currentPath && transitionWeights?.[currentPath]) {
+    const candidates = transitionWeights[currentPath].filter((t) => paths.includes(t.path));
+    if (candidates.length > 0) {
+      return weightedSample(candidates.map((t) => ({ item: t.path, weight: t.weight })), rng);
+    }
+  }
+  // Fall back to persona-weighted uniform random over all paths.
   const weighted = paths.map((p) => ({
     item: p,
     weight: persona.preferredPaths.includes(p) ? 2 : 1,
@@ -112,6 +137,8 @@ export async function runSession(
     rng,
     siteId,
     paths,
+    transitionWeights,
+    exitHazard,
     primaryCta,
     sink,
     sessionId,
@@ -189,7 +216,15 @@ export async function runSession(
     }
 
     advance(Math.round(dwell * 0.3));
-    path = pickPath(persona, paths, rng);
+
+    // Per-path exit hazard: end the session early at this path if the roll hits.
+    // Only fires when there are still planned pages remaining so single-page
+    // bounce sessions (pagesCount=1) are unaffected.
+    if (i < pagesCount - 1 && exitHazard?.[path] != null) {
+      if (rng.next() < (exitHazard[path] as number)) break;
+    }
+
+    path = pickPath(persona, paths, rng, path, transitionWeights);
   }
 
   return {

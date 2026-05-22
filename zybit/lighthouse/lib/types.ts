@@ -38,6 +38,21 @@ export interface SiteManifest {
    */
   baseUrl: string;
   primaryFunnelPaths: string[];
+  /**
+   * Per-path outbound transition weights for directed funnel modeling (LIGHTHOUSE.md §13 #1).
+   * When a session is at path P, the driver samples the next path from
+   * transitionWeights[P] instead of drawing uniformly over primaryFunnelPaths.
+   * Weights need not sum to 1 — the driver normalises them. Falls back to
+   * uniform persona-weighted random when the current path has no entry.
+   */
+  transitionWeights?: Record<string, Array<{ path: string; weight: number }>>;
+  /**
+   * Per-path exit hazard: probability a session ends AFTER visiting this path
+   * instead of continuing to the next page (LIGHTHOUSE.md §13 #2).
+   * Applied on each page visit; 0 = never exit here early, 1 = always exit.
+   * Only affects sessions that still have remaining planned pages.
+   */
+  exitHazard?: Record<string, number>;
   expectedConversionEvent?: string;
   primaryCtaSelector?: string;
   requiresTunnel: boolean;
@@ -108,6 +123,19 @@ export interface GenerateResult {
     conversionEvents: number;
   };
   snapshotErrors?: Array<{ path: string; code: string; message: string }>;
+  /**
+   * Flow-graph advisory summary (PRD Milestone 1). Present when the insights
+   * pipeline derived a non-empty graph. Confirms derivation + persistence ran.
+   */
+  flowGraph?: {
+    nodes: number;
+    edges: number;
+    sessionCount: number;
+    /** True when flow-inter-step-dropoff fired and named a chokepoint route. */
+    flowFindingFired: boolean;
+    /** The chokepoint route named by the rule, when it fired. */
+    chokepointRoute?: string | null;
+  };
   /**
    * Layer 2 calibration exercise result. Present when the runner seeded
    * enough prior outcomes to trigger threshold calibration and re-ran the
