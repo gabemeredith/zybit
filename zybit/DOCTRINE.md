@@ -31,6 +31,8 @@ Zybit runs a repeating six-step cycle. The loop is the product — every feature
 ### 1. Understand
 Full-product audit via headless browser. Zybit reads your brand DNA: visual hierarchy, heading structure, CTA inventory, form complexity, messaging. It doesn't impose a template — it learns what makes your product yours, so it can identify deviations from your own intent, not from some generic rulebook.
 
+Understanding is two-level: **each page** (structure, hierarchy, brand DNA) **and the whole product** (how pages connect into flows, and how real users move between them). The page-level audit is built; the product-level flow graph is the next layer — see `docs/PRD.md`.
+
 ### 2. Watch
 Behavioral data collection from your analytics stack (PostHog, Segment, or direct). Zybit tracks how real users move: where they hesitate, where they abandon, which cohorts convert differently, what gets rage-clicked.
 
@@ -85,7 +87,7 @@ Four things, in order. Nothing else.
 
 2. **The visible loop view.** A timeline that shows: we detected this, we deployed this variant, it moved the metric by X%, and here is what we learned that changed the next recommendation. This is what every demo runs on and what every renewal renews on.
 
-3. **Proxy reliability.** SPA support and fail-open behavior before any paid pilot routes real production traffic. One outage equals a dead pilot.
+3. **Delivery reliability + the SPA substrate.** Fail-open behavior before any paid pilot routes real production traffic — one outage equals a dead pilot. Server-rendered HTML sites are delivered via the edge proxy (built); SPAs and authenticated products are delivered via a client-side runtime that is a *sibling* to the proxy, not a replacement. The runtime is Milestone 1 in `docs/PRD.md`.
 
 4. **Preview before deploy.** PM sees the modified page in an iframe before activating it on real traffic. Two days. Removes a trust blocker on every demo.
 
@@ -149,8 +151,13 @@ The analysis engine and PM dashboard are complete. Zybit can:
 
 **What is not yet complete (immediate priorities, in order):**
 
-1. **Sprint 3 — Design Capture & AI Variant Advisor** — the next product surface. Zybit-141/142 (design-snapshot schema + writer) are in open PR #58; Zybit-143–148 (token extraction, AI advisor, element picker) are not built. Needs `GEMINI_API_KEY` + a Vercel Blob tier.
-2. **Operator org dashboard (Zybit-156)** — no `/app/operator` route yet; needed to support a paying customer remotely.
+The product direction is set by `docs/PRD.md` — a synthesis: page-level understanding is the foundation, product-level (flow graph, client runtime, journey experiments) layers on top, both on one shared spine. Build sequence:
+
+1. **Client runtime (PRD Milestone 1)** — an embeddable SDK that applies experiments client-side after SPA hydration, a sibling to the edge proxy. Unblocks SPAs and authenticated products. Tracked as Zybit-149.
+2. **Flow graph (PRD Milestone 2)** — derive how pages connect and how users move, from canonical events Zybit already ingests.
+3. **Journey experiments + flow-aware rules (PRD Milestone 3)** — a flow becomes the unit of optimization, measured on end-to-end conversion.
+4. **Brand DNA capture + AI Variant Advisor + preview (PRD Milestone 4)** — the original Sprint 3 surface, kept (not scrapped). Zybit-141/142 in open PR #58; Zybit-143–148 not built. Needs `GEMINI_API_KEY` + a Vercel Blob tier.
+5. **Operator org dashboard (Zybit-156)** — no `/app/operator` route yet; needed to support a paying customer remotely.
 
 For the definitive per-ticket status across sprints 0–5, see `docs/sprints/REMEDIATION.md`.
 
@@ -200,6 +207,8 @@ zybit/
 | Document | Purpose |
 |----------|---------|
 | `DOCTRINE.md` (this file) | What Zybit is, who it's for, how we build it |
+| `docs/PRD.md` | Ratified product direction: the page-level + flow-level synthesis and its build sequence |
+| `docs/pivot.md` | Superseded by `docs/PRD.md`; retained as the strategic-discussion record |
 | `docs/ARCHITECTURE.md` | Technical architecture: system design, what's built, what's not, scaling |
 | `docs/BACKLOG.md` | Prioritized epics and stories toward commercial launch |
 | `docs/PHASE2_EVIDENCE_MODEL.md` | Technical reference: event schema, audit rules, connector contracts |

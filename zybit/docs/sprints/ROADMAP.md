@@ -32,7 +32,20 @@
 
 ## Architectural decisions — locked
 
-**Proxy mechanism:** Mutate origin HTML in-flight via Vercel Middleware. No git involvement, no source-code changes ever.
+> **Reconciled with `docs/PRD.md` (2026-05-22).** The PRD ratifies a synthesis:
+> page-level understanding is the foundation, product-level (flow graph, client
+> runtime, journey experiments) layers on top. The "Proxy mechanism — locked"
+> decision below is amended accordingly. All other decisions in this section
+> stand.
+
+**Delivery mechanism:** Two substrates of one delivery layer, chosen per site by
+how the customer's pages render. (1) **Edge proxy** — mutate origin HTML
+in-flight via Vercel Middleware, for server-rendered HTML/marketing sites; no git
+involvement, no source-code changes. (2) **Client runtime** — an embeddable
+script-tag SDK that applies experiments after SPA hydration, for SPAs and
+authenticated products (PRD Milestone 1, Zybit-149). Both consume the same
+`VariantModification` schema and the same bucketing logic. The proxy is not
+deprecated; it remains the delivery path for HTML sites.
 
 **Visual element picker (Sprint 3):** DOM tree view + Browserless screenshot thumbnail stored in Vercel Blob. No iframe embedding — CSP and CORS make that path 12+ days for a broken result. PM clicks element in the tree → selector populates → thumbnail highlights it. 7 days, reliable.
 
