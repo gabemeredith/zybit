@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db/client";
 import { phase1Sites, zybitExperiments, zybitFindings } from "@/lib/db/schema";
 import ExperimentControls from "@/components/app/ExperimentControls";
 import type { VariantModification } from "@/lib/experiments/types";
+import { describeModification } from "@/lib/experiments/describeModification";
 
 function timeAgo(d: Date | string): string {
   const diff = Date.now() - new Date(d).getTime();
@@ -210,14 +211,54 @@ export default async function ExperimentDetailPage({
           {modifications.length > 0 && (
             <div className="mt-5 pt-5 border-t border-black/[0.04]">
               <div className={`${SECTION_LABEL} mb-3`}>Variant modifications (proxy path)</div>
-              <div className="space-y-2">
-                {modifications.map((mod, i) => (
-                  <div key={i} className="bg-[#F5F5F3] rounded-xl px-4 py-3 font-mono text-xs text-[#333]">
-                    <span className="text-[#6B6B6B]">{mod.type}</span>{" "}
-                    {"selector" in mod && <span>{mod.selector}</span>}
-                  </div>
-                ))}
-              </div>
+              {(() => {
+                const described = modifications.map(describeModification);
+                const anyNoOp = described.some((d) => d.noOp);
+                const allNoOp = described.every((d) => d.noOp);
+                return (
+                  <>
+                    {anyNoOp && (
+                      <div className="mb-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-800">
+                        {allNoOp
+                          ? "All modifications below are no-ops — the variant iframe will render identical HTML to control. Edit the brief to give the modification a real selector and value."
+                          : "One or more modifications below are no-ops (empty selector or empty value). They will be silently skipped at proxy time."}
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      {described.map((d, i) => {
+                        const mod = modifications[i];
+                        return (
+                          <div
+                            key={i}
+                            className={`rounded-xl px-4 py-3 font-mono text-xs ${
+                              d.noOp
+                                ? "bg-amber-50 border border-amber-200 text-amber-900"
+                                : "bg-[#F5F5F3] text-[#333]"
+                            }`}
+                          >
+                            <div>
+                              <span className="text-[#6B6B6B]">{mod.type}</span>{" "}
+                              <span>{d.selector || <em className="not-italic text-red-600">(empty selector)</em>}</span>
+                            </div>
+                            {d.payloadLabel && (
+                              <div className="mt-1 text-[#6B6B6B]">
+                                <span>{d.payloadLabel} </span>
+                                <span className="text-[#333]">
+                                  {d.payloadValue && d.payloadValue.length > 0 ? (
+                                    `"${d.payloadValue}"`
+                                  ) : (
+                                    <em className="not-italic text-red-600">(empty)</em>
+                                  )}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Side-by-side preview iframes — control left, variant right */}
               <div className="mt-4">

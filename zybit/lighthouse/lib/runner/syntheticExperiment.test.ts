@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { minimumSampleSizePerArm } from '@/lib/experiments/stats';
 import type { CtaCandidate } from '@/lib/phase2/snapshots/types';
-import { pickSelectorForFinding, sizeExperimentArms } from './syntheticExperiment';
+import { pickSelectorForFinding } from '@/lib/phase2/snapshots/pickSelector';
+import { sizeExperimentArms } from './syntheticExperiment';
 
 function makeCta(overrides: Partial<CtaCandidate> = {}): CtaCandidate {
   return {

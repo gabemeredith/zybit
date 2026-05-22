@@ -7,6 +7,10 @@ import { getServerAuth } from "@/lib/auth/serverAuth";
 import { getDb } from "@/lib/db/client";
 import { zybitExperiments, zybitFindings } from "@/lib/db/schema";
 import type { VariantModification } from "@/lib/experiments/types";
+import {
+  validateBriefShape,
+  type ValidationError as BriefValidationError,
+} from "@/lib/experiments/validateBrief";
 
 const VALID_CHANGE_TYPES = ["copy", "style", "hide"] as const;
 type ChangeType = (typeof VALID_CHANGE_TYPES)[number];
@@ -22,17 +26,32 @@ interface SaveBriefInput {
   hypothesis: string;
 }
 
-export async function saveExperimentBriefAction(input: SaveBriefInput): Promise<void> {
+export type ValidationError = BriefValidationError;
+
+export async function saveExperimentBriefAction(
+  input: SaveBriefInput,
+): Promise<ValidationError | void> {
   const auth = await getServerAuth();
   if (!auth.ok) redirect("/sign-in");
 
-  if (!VALID_CHANGE_TYPES.includes(input.changeType)) return;
+  if (!VALID_CHANGE_TYPES.includes(input.changeType)) {
+    return {
+      type: "validation_error",
+      field: "changeType",
+      message: "Unknown change type.",
+    };
+  }
+
+  const selector = input.selector.trim().slice(0, 500);
+  const newValue = input.newValue.trim();
+  const validation = validateBriefShape(input.changeType, selector, newValue);
+  if (validation) return validation;
 
   const experimentBrief = {
     experimentName: input.experimentName.trim().slice(0, 200),
-    selector: input.selector.trim().slice(0, 500),
+    selector,
     changeType: input.changeType,
-    newValue: input.newValue.trim(),
+    newValue,
     variantDescription: input.variantDescription.trim(),
     primaryMetric: input.primaryMetric.trim().slice(0, 200),
     hypothesis: input.hypothesis.trim() || null,
@@ -82,7 +101,7 @@ export type OverlapWarning = {
 export async function launchExperimentAction(
   findingId: string,
   acknowledgeOverlap = false,
-): Promise<OverlapWarning | void> {
+): Promise<OverlapWarning | ValidationError | void> {
   const auth = await getServerAuth();
   if (!auth.ok) redirect("/sign-in");
 
@@ -102,6 +121,16 @@ export async function launchExperimentAction(
 
   const finding = rows[0];
   if (!finding || !finding.experimentBrief) return;
+
+  // Re-validate the loaded brief: it may have been saved before the form
+  // grew its required/no-match gates, or written by a non-form caller.
+  // Refuse to launch a brief that would produce no-op modifications.
+  const briefValidation = validateBriefShape(
+    finding.experimentBrief.changeType,
+    finding.experimentBrief.selector,
+    finding.experimentBrief.newValue,
+  );
+  if (briefValidation) return briefValidation;
 
   // Check for running experiments on the same site (overlap detection).
   // Policy: overlap-allowed with mandatory acknowledgment (DOCTRINE.md).
