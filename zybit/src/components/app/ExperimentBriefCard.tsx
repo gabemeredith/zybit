@@ -259,7 +259,7 @@ export default function ExperimentBriefCard({
           <button
             type="button"
             disabled={launching}
-            onClick={() => handleLaunch([], false)}
+            onClick={() => handleLaunch(acknowledgedOverlapIds, spaAcked)}
             className="ml-auto bg-[#111] text-[#FAFAF8] px-5 py-2.5 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
           >
             {launching ? "Launching…" : "Launch experiment"}
