@@ -62,12 +62,13 @@ export default function ExperimentBriefCard({
   const [overlaps, setOverlaps] = useState<Array<{ id: string; name: string }> | null>(null);
   const [spaUrl, setSpaUrl] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
-  // Track which warnings the PM has actually acknowledged. The overlap and
-  // SPA gates are independent and may surface in sequence; each "Launch
-  // anyway" must carry forward the *other* gate's real ack state rather than
-  // hardcoding it — otherwise acknowledging the SPA warning would silently
-  // skip a fresh overlap check (a concurrent experiment started in between).
-  const [overlapAcked, setOverlapAcked] = useState(false);
+  // Track which warnings the PM has actually acknowledged. The overlap and SPA
+  // gates are independent and may surface in sequence; each "Launch anyway"
+  // must carry forward the *other* gate's real ack state. Overlap acks are
+  // tracked by experiment id, not a boolean — acknowledging "skip overlaps"
+  // wholesale would miss an experiment that starts after the PM acknowledged
+  // the original set (e.g. while a follow-up SPA warning is on screen).
+  const [acknowledgedOverlapIds, setAcknowledgedOverlapIds] = useState<string[]>([]);
   const [spaAcked, setSpaAcked] = useState(false);
 
   function handleCopy() {
@@ -76,11 +77,11 @@ export default function ExperimentBriefCard({
     setTimeout(() => setCopied(false), 1500);
   }
 
-  async function handleLaunch(acknowledgeOverlap = false, acknowledgeSpa = false) {
+  async function handleLaunch(overlapIds: string[] = [], acknowledgeSpa = false) {
     setLaunching(true);
     setLaunchError(null);
     try {
-      const result = await launchExperimentAction(findingId, acknowledgeOverlap, acknowledgeSpa);
+      const result = await launchExperimentAction(findingId, overlapIds, acknowledgeSpa);
       if (result?.type === "overlap_warning") {
         setSpaUrl(null);
         setOverlaps(result.overlaps);
@@ -96,16 +97,20 @@ export default function ExperimentBriefCard({
   }
 
   function acknowledgeOverlapAndLaunch() {
-    setOverlapAcked(true);
-    // Re-run the SPA check unless it was already acknowledged.
-    handleLaunch(true, spaAcked);
+    // Acknowledge exactly the overlaps currently shown — not a blanket skip —
+    // so an experiment that starts later is still surfaced. The server re-runs
+    // the SPA check unless it was already acknowledged.
+    const ackedIds = overlaps?.map((o) => o.id) ?? [];
+    setAcknowledgedOverlapIds(ackedIds);
+    handleLaunch(ackedIds, spaAcked);
   }
 
   function acknowledgeSpaAndLaunch() {
     setSpaAcked(true);
-    // Re-run the overlap check unless it was already acknowledged — catches a
-    // concurrent experiment started while the SPA warning was on screen.
-    handleLaunch(overlapAcked, true);
+    // Carry forward only the overlaps actually acknowledged. The server re-runs
+    // the overlap check and re-warns if a new experiment started while the SPA
+    // warning was on screen.
+    handleLaunch(acknowledgedOverlapIds, true);
   }
 
   return (
@@ -254,7 +259,7 @@ export default function ExperimentBriefCard({
           <button
             type="button"
             disabled={launching}
-            onClick={() => handleLaunch(false, false)}
+            onClick={() => handleLaunch(acknowledgedOverlapIds, spaAcked)}
             className="ml-auto bg-[#111] text-[#FAFAF8] px-5 py-2.5 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
           >
             {launching ? "Launching…" : "Launch experiment"}

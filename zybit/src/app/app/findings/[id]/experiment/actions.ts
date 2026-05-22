@@ -108,7 +108,7 @@ export type SpaWarning = {
 
 export async function launchExperimentAction(
   findingId: string,
-  acknowledgeOverlap = false,
+  acknowledgedOverlapIds: string[] = [],
   acknowledgeSpa = false,
 ): Promise<OverlapWarning | SpaWarning | ValidationError | void> {
   const auth = await getServerAuth();
@@ -158,7 +158,15 @@ export async function launchExperimentAction(
       )
     );
 
-  if (runningOnSite.length > 0 && !acknowledgeOverlap) {
+  // Warn if any currently-running overlap has not been explicitly
+  // acknowledged. Tracking acknowledgment by experiment id — rather than a
+  // blanket boolean — means an experiment that starts after the PM acknowledged
+  // the original set (e.g. while a follow-up SPA warning is on screen) is still
+  // surfaced for acknowledgment.
+  const unacknowledgedOverlaps = runningOnSite.filter(
+    (e) => !acknowledgedOverlapIds.includes(e.id),
+  );
+  if (unacknowledgedOverlaps.length > 0) {
     return {
       type: "overlap_warning",
       overlaps: runningOnSite.map((e) => {
