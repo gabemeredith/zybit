@@ -9,8 +9,12 @@ const SSR_HTML =
   'Open a checking account today and start saving. '.repeat(10) +
   '</p></body></html>';
 
-function htmlResponse(body: string, contentType = 'text/html; charset=utf-8'): Response {
-  return new Response(body, { headers: { 'content-type': contentType } });
+function htmlResponse(
+  body: string,
+  contentType = 'text/html; charset=utf-8',
+  status = 200,
+): Response {
+  return new Response(body, { status, headers: { 'content-type': contentType } });
 }
 
 describe('targetPageIsSpaShell', () => {
@@ -33,6 +37,11 @@ describe('targetPageIsSpaShell', () => {
 
   it('fails open (false) when the fetch throws', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+    expect(await targetPageIsSpaShell('https://example.test/')).toBe(false);
+  });
+
+  it('fails open (false) for a non-2xx response, even if the body looks like a SPA shell', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(htmlResponse(SPA_HTML, 'text/html', 503)));
     expect(await targetPageIsSpaShell('https://example.test/')).toBe(false);
   });
 });

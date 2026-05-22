@@ -26,7 +26,9 @@ export async function targetPageIsSpaShell(url: string): Promise<boolean> {
       redirect: 'follow',
       signal: AbortSignal.timeout(LAUNCH_CHECK_TIMEOUT_MS),
     });
-    if (!(res.headers.get('content-type') || '').includes('text/html')) {
+    // A non-2xx response (401/503/…) may return a minimal error page that
+    // looks like a SPA shell — fail open rather than raise a false warning.
+    if (!res.ok || !(res.headers.get('content-type') || '').includes('text/html')) {
       return false;
     }
     return isSpaHtml(await res.text());
