@@ -138,9 +138,14 @@ async function refreshSite(
 
       // Zybit-142: write `full` design snapshot from the desktop capture.
       // Non-fatal: a write failure logs and continues so the capture run is
-      // not lost. Falls through gracefully when there is no desktop capture.
+      // not lost. Falls through gracefully when there is no desktop capture,
+      // OR when the screenshot upload failed (null screenshotBlobUrl) — in
+      // that case we leave the row absent and let the next refresh-snapshots
+      // tick write a structural fallback. Writing a `full` row without a
+      // screenshot would permanently block the structural path because
+      // `shouldUpsertStructural` refuses to downgrade.
       const desktopCapture = summary.captures.find(c => c.breakpoint === 'desktop');
-      if (desktopCapture) {
+      if (desktopCapture?.assets.screenshotBlobUrl) {
         try {
           await designRepo.upsert(
             buildFullDesignSnapshot({

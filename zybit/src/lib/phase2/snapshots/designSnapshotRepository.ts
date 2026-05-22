@@ -97,6 +97,9 @@ export function createDesignSnapshotRepository(): DesignSnapshotRepository {
         .onConflictDoUpdate({
           target: [phase2SiteDesignSnapshot.siteId, phase2SiteDesignSnapshot.pathRef],
           set: {
+            // organizationId must move with the row — without this, a site
+            // transferred between orgs would be invisible to org-scoped reads.
+            organizationId: input.organizationId,
             capturedAt: input.capturedAt,
             captureMethod: input.captureMethod,
             screenshotUrl: input.screenshotUrl,
