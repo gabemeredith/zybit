@@ -200,6 +200,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
   const [saving, setSaving] = useState(false);
   const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
   const [validateLoading, setValidateLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -251,11 +252,21 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Block submit when the validator has confirmed the selector matches nothing
+  // or is malformed. `no_snapshot` is *not* blocking — we can't verify without
+  // a snapshot, so trust the PM. `null` (validator hasn't returned yet) is
+  // also not blocking; the server-side check is the backstop.
+  const selectorBlocked =
+    validateResult?.status === 'invalid_selector' ||
+    (validateResult?.status === 'ok' && (validateResult.count ?? 0) === 0);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (selectorBlocked) return;
+    setServerError(null);
     setSaving(true);
     try {
-      await saveExperimentBriefAction({
+      const result = await saveExperimentBriefAction({
         findingId,
         experimentName,
         selector,
@@ -265,6 +276,10 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
         primaryMetric,
         hypothesis,
       });
+      if (result?.type === "validation_error") {
+        setServerError(result.message);
+        return;
+      }
     } finally {
       setSaving(false);
     }
@@ -304,6 +319,8 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
               value={selector}
               onChange={(e) => handleSelectorChange(e.target.value)}
               placeholder="e.g. .hero h1, button.btn-primary"
+              required
+              aria-invalid={selectorBlocked}
               className={`${INPUT_CLASS} font-mono`}
             />
             {suggestions.length > 0 && (
@@ -382,6 +399,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
                 ? "e.g. Get started — free"
                 : "e.g. bg-blue-600 text-white font-bold"
             }
+            required
             className={changeType === "style" ? `${INPUT_CLASS} font-mono` : INPUT_CLASS}
           />
           <p className="text-[11px] text-[#9B9B9B] mt-1.5">
@@ -469,11 +487,21 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
       <div className="pt-2">
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || selectorBlocked}
           className="bg-[#111] text-[#FAFAF8] px-5 py-2.5 font-bold text-sm uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
         >
           {saving ? "Saving…" : "Save brief"}
         </button>
+        {selectorBlocked && (
+          <p className="text-[11px] text-red-600 mt-2">
+            {validateResult?.status === 'invalid_selector'
+              ? "Selector is malformed — fix it before saving."
+              : "Selector matches no element on the snapshot — pick one that does."}
+          </p>
+        )}
+        {serverError && (
+          <p className="text-[11px] text-red-600 mt-2">{serverError}</p>
+        )}
       </div>
     </form>
   );

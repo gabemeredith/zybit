@@ -314,6 +314,69 @@ export const phase2PageSnapshots = pgTable(
   })
 );
 
+/**
+ * Full-fidelity design capture per (site, path). One row per pathRef.
+ *
+ * `captureMethod = 'full'` → Browserless captured a screenshot + computed
+ * styles; `screenshotUrl` + `computedStyles` populated.
+ * `captureMethod = 'structural'` → degraded mode (Browserless/Blob
+ * unavailable). Token extraction still possible from structural parse.
+ *
+ * Read by the AI Variant Advisor (Zybit-144) and element picker (Zybit-146).
+ */
+export const phase2SiteDesignSnapshot = pgTable(
+  'phase2_site_design_snapshot',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id').notNull(),
+    siteId: text('site_id').notNull(),
+    pathRef: text('path_ref').notNull(),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).notNull(),
+    /** 'full' | 'structural' */
+    captureMethod: text('capture_method').notNull(),
+    /** Vercel Blob URL — null in structural mode. */
+    screenshotUrl: text('screenshot_url'),
+    /** Per-element computed styles keyed by data-zybit-ref. */
+    computedStyles: jsonb('computed_styles').$type<Record<
+      string,
+      {
+        color?: string;
+        backgroundColor?: string;
+        fontSize?: string;
+        fontWeight?: string;
+        fontFamily?: string;
+        padding?: string;
+        margin?: string;
+        borderRadius?: string;
+        boxShadow?: string;
+        boundingBox?: { x: number; y: number; width: number; height: number };
+      }
+    > | null>(),
+    /** Extracted design tokens (primaryColor, fontFamily, typeScale, etc). */
+    designTokens: jsonb('design_tokens').$type<{
+      primaryColor?: string;
+      secondaryColor?: string;
+      accentColor?: string;
+      fontFamily?: string;
+      typeScale?: number[];
+      borderRadius?: string;
+      spacingUnit?: number;
+      ctaVocabulary?: string[];
+    } | null>(),
+    /** Passed through from the structural parser. */
+    cssSystem: text('css_system'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    orgIdx: index('phase2_site_design_snapshot_org_idx').on(table.organizationId),
+    siteIdx: index('phase2_site_design_snapshot_site_idx').on(table.siteId),
+    sitePathIdx: uniqueIndex('phase2_site_design_snapshot_site_path_idx').on(
+      table.siteId,
+      table.pathRef,
+    ),
+  }),
+);
+
 export const zybitApiKeys = pgTable(
   'forge_api_keys',
   {

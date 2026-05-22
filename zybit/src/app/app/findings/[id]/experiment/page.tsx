@@ -13,6 +13,7 @@ import type {
   AuditFindingPrescription,
 } from "@/lib/phase2/rules/types";
 import type { CtaCandidate, HeadingItem } from "@/lib/phase2/snapshots/types";
+import { pickSelectorForFinding } from "@/lib/phase2/snapshots/pickSelector";
 import { selectorStability, type SelectorStability } from "@/lib/phase2/snapshots/selectorUtils";
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,7 @@ function defaultSelector(
   category: string,
   evidence: AuditFindingEvidence[],
   refs: Record<string, string | undefined> | null,
+  ctas: CtaCandidate[],
 ): string {
   // Use stored ref if available
   if (refs?.elementRef) return `[data-ref="${refs.elementRef}"]`;
@@ -74,7 +76,14 @@ function defaultSelector(
   if (category === "abandonment") {
     return "form button[type=submit], form button:last-of-type";
   }
-  return "";
+
+  // Snapshot-driven fallback for every other category (thrash, bounce,
+  // copy-fatigue, hesitation, help-seeking, mobile, nav-dispersion, …).
+  // Picks the highest-visual-weight CTA on the page whose parser-emitted
+  // selector reads as stable. Same path Lighthouse's synthetic generator
+  // uses, so the form opens pre-loaded with a selector that actually
+  // matches the live page instead of an empty string the PM might miss.
+  return pickSelectorForFinding(ctas, refs?.ctaRef) ?? "";
 }
 
 function defaultNewValue(
@@ -176,6 +185,7 @@ export default async function ExperimentBuilderPage({
 
   // Load snapshot for selector suggestions and CSS system hint (best-effort)
   let suggestions: SelectorSuggestion[] = [];
+  let ctas: CtaCandidate[] = [];
   let cssSystem: import('@/lib/phase2/snapshots/cssSystemDetector').CssSystem | undefined;
   if (finding.pathRef) {
     try {
@@ -186,14 +196,15 @@ export default async function ExperimentBuilderPage({
         pathRef: finding.pathRef,
       });
       if (snapshot?.data) {
+        ctas = snapshot.data.ctas ?? [];
         suggestions = buildSuggestions(
-          snapshot.data.ctas ?? [],
+          ctas,
           snapshot.data.headings ?? [],
         );
         cssSystem = snapshot.data.cssSystem;
       }
     } catch {
-      // no snapshot — suggestions and cssSystem stay empty
+      // no snapshot — suggestions, ctas, and cssSystem stay empty
     }
   }
 
@@ -201,7 +212,7 @@ export default async function ExperimentBuilderPage({
 
   const freshDefaults = {
     experimentName: `${finding.title} — Variant B`,
-    selector: defaultSelector(finding.category, evidence, refs),
+    selector: defaultSelector(finding.category, evidence, refs, ctas),
     changeType,
     newValue: defaultNewValue(changeType, finding.category, evidence),
     variantDescription: prescription.experimentVariantDescription,

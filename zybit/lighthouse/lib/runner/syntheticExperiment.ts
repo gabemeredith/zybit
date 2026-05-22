@@ -25,7 +25,8 @@ import { phase2PageSnapshots, zybitExperiments, zybitFindings } from '@/lib/db/s
 import { processExperiment } from '@/lib/experiments/computeOutcomes';
 import { minimumSampleSizePerArm } from '@/lib/experiments/stats';
 import type { VariantModification } from '@/lib/experiments/types';
-import type { CtaCandidate, PageSnapshotData } from '@/lib/phase2/snapshots/types';
+import type { PageSnapshotData } from '@/lib/phase2/snapshots/types';
+import { pickSelectorForFinding } from '@/lib/phase2/snapshots/pickSelector';
 import { seededRng } from '../generators/rng';
 import { DirectEventSink } from '../sinks/direct';
 
@@ -66,28 +67,6 @@ export interface SyntheticExperimentResult {
  */
 export function sizeExperimentArms(baseRate: number): number {
   return Math.ceil(minimumSampleSizePerArm(baseRate) * 1.3) + 100;
-}
-
-/**
- * Pick a browser-runnable CSS selector for the synthetic experiment, sourced
- * from the parser's per-CTA `cssSelector`. Tries the finding's referenced
- * CTA first; falls back to the highest-visual-weight CTA on the same page
- * that the parser was able to emit a selector for. Returns `null` when
- * nothing usable exists — the caller bails rather than stamp a hardcoded
- * convention that won't match the live page (Lighthouse's previous bug).
- */
-export function pickSelectorForFinding(
-  ctas: CtaCandidate[],
-  findingCtaRef: string | undefined,
-): string | null {
-  if (findingCtaRef) {
-    const matched = ctas.find((c) => c.ref === findingCtaRef);
-    if (matched?.cssSelector) return matched.cssSelector;
-  }
-  const candidates = ctas
-    .filter((c) => c.cssSelector !== null)
-    .sort((a, b) => b.visualWeight - a.visualWeight);
-  return candidates[0]?.cssSelector ?? null;
 }
 
 /** Deterministic, valid variant modification using the picked selector. */
