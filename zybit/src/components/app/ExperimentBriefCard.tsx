@@ -60,6 +60,7 @@ export default function ExperimentBriefCard({
   const [copied, setCopied] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [overlaps, setOverlaps] = useState<Array<{ id: string; name: string }> | null>(null);
+  const [launchError, setLaunchError] = useState<string | null>(null);
 
   function handleCopy() {
     navigator.clipboard.writeText(toBriefText(brief));
@@ -69,10 +70,13 @@ export default function ExperimentBriefCard({
 
   async function handleLaunch(acknowledge = false) {
     setLaunching(true);
+    setLaunchError(null);
     try {
       const result = await launchExperimentAction(findingId, acknowledge);
       if (result?.type === "overlap_warning") {
         setOverlaps(result.overlaps);
+      } else if (result?.type === "validation_error") {
+        setLaunchError(`${result.message} Edit the brief to fix.`);
       }
     } finally {
       setLaunching(false);
@@ -160,6 +164,12 @@ export default function ExperimentBriefCard({
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {launchError && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-4">
+          <p className="text-sm text-red-700">{launchError}</p>
         </div>
       )}
 

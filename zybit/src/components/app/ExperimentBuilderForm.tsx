@@ -200,6 +200,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
   const [saving, setSaving] = useState(false);
   const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
   const [validateLoading, setValidateLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -262,9 +263,10 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (selectorBlocked) return;
+    setServerError(null);
     setSaving(true);
     try {
-      await saveExperimentBriefAction({
+      const result = await saveExperimentBriefAction({
         findingId,
         experimentName,
         selector,
@@ -274,6 +276,10 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
         primaryMetric,
         hypothesis,
       });
+      if (result?.type === "validation_error") {
+        setServerError(result.message);
+        return;
+      }
     } finally {
       setSaving(false);
     }
@@ -492,6 +498,9 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
               ? "Selector is malformed — fix it before saving."
               : "Selector matches no element on the snapshot — pick one that does."}
           </p>
+        )}
+        {serverError && (
+          <p className="text-[11px] text-red-600 mt-2">{serverError}</p>
         )}
       </div>
     </form>
