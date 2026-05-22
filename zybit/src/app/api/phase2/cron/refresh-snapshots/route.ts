@@ -22,6 +22,11 @@ import { unauthorized, mapRouteError } from '@/app/api/phase1/_shared';
 import { createPhase1Repository } from '@/lib/phase1';
 import { normalizePathRef, runSnapshot, SnapshotError } from '@/lib/phase2/snapshots';
 import { didDrift, latestSnapshotPerPath } from '@/lib/phase2/snapshots/refresh';
+import {
+  buildStructuralDesignSnapshot,
+  shouldUpsertStructural,
+} from '@/lib/phase2/snapshots/designCapture';
+import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
 import { logger, cronitorPing, withCronAlert } from '@/lib/observability';
 
 export const runtime = 'nodejs';
@@ -60,6 +65,12 @@ async function refreshSiteSnapshots(
   maxPaths: number,
 ): Promise<Omit<SiteResult, 'siteId'>> {
   const repository = createPhase1Repository();
+  const designRepo = createDesignSnapshotRepository();
+  // Pre-load existing design snapshots in one query so the per-path check
+  // below is O(1) instead of N round-trips.
+  const existingDesign = new Map(
+    (await designRepo.listForSite(organizationId, siteId)).map((row) => [row.pathRef, row]),
+  );
 
   const snapshots = await repository.listPageSnapshots({
     organizationId,
@@ -94,6 +105,31 @@ async function refreshSiteSnapshots(
         data: fetched.data,
         fetchedAt: new Date(fetched.data.parsedAt),
       });
+
+      // Zybit-142: structural-mode design snapshot. Never downgrades a `full`
+      // row written by refresh-captures. Non-fatal: a write failure logs but
+      // does not break the snapshot refresh.
+      try {
+        const existing = existingDesign.get(pathRef) ?? null;
+        if (shouldUpsertStructural(existing)) {
+          await designRepo.upsert(
+            buildStructuralDesignSnapshot({
+              organizationId,
+              siteId,
+              pathRef,
+              cssSystem: fetched.data.cssSystem ?? null,
+            }),
+          );
+        }
+      } catch (designErr) {
+        logger.warn('snapshot.refresh.design_write_failed', {
+          service: 'snapshot-cron',
+          siteId,
+          pathRef,
+          error: designErr instanceof Error ? designErr.message : String(designErr),
+        });
+      }
+
       refreshed++;
     } catch (err) {
       failed++;
