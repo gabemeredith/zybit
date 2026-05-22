@@ -61,13 +61,13 @@ zybit/
 | **Watch** (PostHog + Segment + GA4) | ✅ Built | PostHog + Segment built; PostHog visitor-ID bridge shipped; GA4 connector shipped — service-account JWT (Web Crypto), `runReport` offset pagination, cursor, `runGA4PullSyncJob` + `/cron/sync-ga4` every 30m. GA4 is aggregate-grain (Identify/Propose only, not joinable to assignments). Segment webhook has a batch schema guard (`guardSegmentBatch` — rejects malformed/oversized payloads, Zybit-137). PostHog bridge health probe surfaces an amber "bridge not detected" cockpit banner when experiment assignments exist but no conversion joins (Zybit-126). |
 | **Identify** (12 audit rules) | ✅ Built | 5 design + 7 pain rules, 193 passing tests — sufficient; do not add more rules |
 | **Propose** (findings + prescriptions) | ✅ Built | Ranked by priority score + revenue impact, PM-readable. Selector validation badge (500ms debounced, Zybit-121). CSS system hint in experiment builder when 'Swap CSS classes' selected (Zybit-122). Dead-state UX shows session progress bar vs threshold (Zybit-124). Deterministic copy-quality hints on the variant-copy field (`copyHints`, Zybit-125). Selector suggestions carry stability tiers (stable/medium/fragile, sorted stable-first) so PMs pick durable selectors (Zybit-134). |
-| **Test** (variant deployment) | ⚠️ Partial | Bucketing + HTML modifier + proxy routes built. Network-error fail-open, modification-error fail-open, kill switch (`experiment.status === 'running'`), origin timeout (10s) all shipped in `handler.ts`. SPA shell detection logs warning. DNS verify now probes HTTPS after CNAME check (`proxyLive` flag) to distinguish CNAME-only from fully-live proxy. Overlap warn-and-proceed (Zybit-119): running experiments on same site trigger acknowledgment banner; `overlappingExperimentIds` stored for audit. Draft→running "Launch experiment" button added to ExperimentControls. Edge Config kill-switch (Zybit-116): stopping/concluding an experiment writes a `disabledExperiments` key the proxy honors at the edge, failing closed without a DB round-trip. Daily `check-selectors` cron re-validates running experiments' selectors against the latest snapshot and emails the PM on a miss (Zybit-133). |
+| **Test** (variant deployment) | ⚠️ Partial | Bucketing + HTML modifier + proxy routes built. Network-error fail-open, modification-error fail-open, kill switch (`experiment.status === 'running'`), origin timeout (10s) all shipped in `handler.ts`. SPA shell detection logs a warning at proxy time; **launch-time SPA guard (Zybit-123)** — `launchExperimentAction` fetches the target page, runs `isSpaHtml`, and a client-side-rendered page triggers a warn-and-acknowledge banner before launch (the proxy modifies server-rendered HTML, so a SPA variant would silently render identical to control and pollute outcomes). Fails open on fetch error. DNS verify now probes HTTPS after CNAME check (`proxyLive` flag) to distinguish CNAME-only from fully-live proxy. Overlap warn-and-proceed (Zybit-119): running experiments on same site trigger acknowledgment banner; `overlappingExperimentIds` stored for audit. Draft→running "Launch experiment" button added to ExperimentControls. Edge Config kill-switch (Zybit-116): stopping/concluding an experiment writes a `disabledExperiments` key the proxy honors at the edge, failing closed without a DB round-trip. Daily `check-selectors` cron re-validates running experiments' selectors against the latest snapshot and emails the PM on a miss (Zybit-133). |
 | **Measure** (outcome computation) | ✅ Built | OBF alpha-spending (`stats.ts`), daily cron. PostHog visitor-ID bridge + auto-stop/guardrail PM email shipped. "Last computed at" surfaced in cockpit (Zybit-086, `MAX(experiment.updatedAt)`). **neon-http driver fix** (caught by live Lighthouse Phase 2): `queryBucketCounts` reads `result.rows` (neon-http returns a result object, not an array); `concludeExperiment` uses sequential writes instead of `db.transaction` (unsupported on neon-http). Verified end-to-end. **GA4-only sites skipped (Zybit-157):** `computeAllOutcomes` checks `isGa4OnlyMeasurementGap` per site and skips compute with a structured warning — GA4 is aggregate-grain and cannot be joined to assignments. |
 | **Learn** (outcome feedback loop) | ✅ Built (L1+L2, PM-visible) | Layer 1 — per-site re-ranking via `applyLearnRerank`; persisted as `learn_adjustment` jsonb, surfaced as backlog pill, finding-detail "Past tests" panel, LEARNED timeline entry. **Layer 2** — per-site rule-threshold calibration (`ruleCalibration.ts`): `computeRuleCalibrations` aggregates outcomes per `ruleId` into `clamp(1 − netSignal, 0.7, 1.3)` multiplier (gated at 3+ conclusive outcomes); 11/12 rules route through `calibratedFloor`/`calibratedCap` (`hero-hierarchy-inversion` exempt — sample-size-only gate). **PM-visible (Zybit-164 equivalent):** calibration receipt stored in `learnAdjustment.calibration` jsonb; "Tuned" badge on findings backlog; "Tuned for your site" panel on finding detail (direction + multiplier + basis count); calibration note on LEARNED timeline entries. **Lighthouse-verified:** runner now seeds 3 prior outcomes after step 4.5 and re-runs the pipeline (step 4.6) to confirm calibration fires; `GenerateResult.layer2` carries the diagnostic. Security: `listForSite`/`listByIds` scope by `organizationId`. Layer 3 (cross-site priors) deferred until 50+ customers. |
 | **Visible loop view** | ✅ Built | Timeline merge + per-entry rendering + empty state + detail links; guardrail-breach amber badge (Zybit-091), multi-site pill selector (Zybit-092), and LEARNED entries (Zybit-093) all shipped. |
 | **Preview before deploy** | ✅ Built | Side-by-side control/variant iframes on experiment detail page; CSP `frame-ancestors 'self'` on preview response |
 | **GA4 connector** | ✅ Built | `client.ts` (JWT+OAuth+runReport), `secrets.ts`, `cursor.ts`, `mapping.ts`, `sync.ts`, job + cron. 18 unit tests. |
-| **Billing** (Stripe + plan limits) | ⚠️ Partial | Metering + hard enforcement (sites/experiments 402) + events soft-cap shipped. Round-trip code bugs fixed: post-checkout redirect pointed at a non-existent `/dashboard/settings` (→ `/app/settings`); cross-instance-stale plan cache removed so enforcement reads the webhook-written plan immediately; webhook validates planId before persisting. Remaining: live stripe-cli verification of the real checkout→webhook→plan-write round-trip (needs Stripe test keys — see BACKLOG Zybit-040). |
+| **Billing** (Stripe + plan limits) | ✅ Built | Metering + hard enforcement (sites/experiments 402) + events soft-cap shipped. Round-trip code bugs fixed: post-checkout redirect pointed at a non-existent `/dashboard/settings` (→ `/app/settings`); cross-instance-stale plan cache removed so enforcement reads the webhook-written plan immediately; webhook validates planId before persisting. **Round trip verified end-to-end 2026-05-22** — 18/18 checks against the live test API + real webhook handler + Neon (checkout → `checkout.session.completed`/`subscription.updated`/`subscription.deleted` → `organizations.plan` write → bad-signature 400 → `checkPlanLimit` 402). Production env still needs `STRIPE_WEBHOOK_SECRET` + `STRIPE_PRICE_*` set in Vercel. |
 | **Observability** | ✅ Built | Cronitor + error budget + structured logger wired into crons; Axiom drain connected — best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` set; console JSON output preserved for platform drains. **Axiom verified (2026-05-21):** token confirmed working; dataset `axiom-audit` confirmed writeable. Set `AXIOM_DATASET=axiom-audit` in Vercel env vars to activate (Zybit-153 gate criteria met). |
 | **Integration health (cockpit)** | ✅ Built | `deriveIntegrationHealth()` in `cockpit.ts`; `PipelineHealth` in `CockpitView.tsx` shows "Zybit is watching" / "No data yet" / "Degraded" + last-sync + 7-day event count (Zybit-111) |
 | **Activation (onboarding)** | ⚠️ Partial | MRR/AOV now required to finish onboarding (Zybit-113, no skip). First-insight email exists. |
@@ -75,21 +75,32 @@ zybit/
 
 ## Immediate build order
 
-> **Status (2026-05-21):** A sprint-ticket audit (see `docs/sprints/REMEDIATION.md`) identified documentation drift and laid out the per-ticket build plan. This branch (`claude/learn-layer-2-calibration-3A7e9`, PR #57) lands the Sprint 0/1/2 remediation on top of the Layer 2 calibration work:
-> - **Sprint 0:** Zybit-116 (Edge Config kill-switch) + Zybit-120 (full-loop E2E) shipped on this branch. Live Stripe round-trip still outstanding.
-> - **Sprint 1:** Zybit-125 (copy hints) + Zybit-126 (PostHog bridge health probe) shipped on this branch. Zybit-123 (SPA auto-detection) + Zybit-127/128 (demo seed) outstanding.
-> - **Sprint 2:** Zybit-133 (selector staleness cron) + Zybit-134 (stability tiers) + Zybit-135 (snapshot drift) + Zybit-137 (Segment schema guard) shipped on this branch.
-> - **Sprint 3:** not built — no design capture, AI Variant Advisor, or element picker. (The Layer 2 calibration work is a *Learn* feature, not Sprint 3's design/AI scope.)
-> - **Sprint 4:** Zybit-153 (Axiom), 154 (circuit breaker), 155 (cron alerts), 157 (GA4 gap) shipped. Zybit-156 (operator dashboard) outstanding.
+> **Status (2026-05-22):** Full sprint audit + live verification — see
+> `docs/sprints/REMEDIATION.md` for the definitive per-ticket list. **22/38
+> tickets done, 3 partial, 9 not built, 2 in open PR #58, 2 superseded.**
+> - **Sprint 0:** 6/7 done. Zybit-114 (Stripe) **verified live end-to-end**;
+>   Zybit-118 (snapshot cadence) partial.
+> - **Sprint 1:** 5/8 done. Zybit-124 partial; Zybit-127/128 (demo seed +
+>   synthetic outcomes) not built.
+> - **Sprint 2:** ✅ 5/5 complete.
+> - **Sprint 3:** Zybit-141/142 in open PR #58 (migration `0016` applied to
+>   Neon); Zybit-143–146/148/149 not built; Zybit-147 partial. (Zybit-149 —
+>   client-side variant runtime for complex & SPA-safe changes — added
+>   2026-05-22.)
+> - **Sprint 4:** 4/5 done. Zybit-156 (operator dashboard) not built.
+> - **Sprint 5:** 2/5 done (163/164); 161/162 superseded by on-the-fly
+>   calibration; 165 (operator visibility) not built.
 >
-> Full per-ticket build plan in `docs/sprints/REMEDIATION.md`.
+> The deterministic six-step loop is built and live-verified. Remaining work
+> is concentrated in Sprint 3 plus Zybit-156. Definitive list and build order:
+> `docs/sprints/REMEDIATION.md`.
 
 ## What's needed before first real customer
 
 | Gap | Status | Notes |
 |-----|--------|-------|
-| Axiom `AXIOM_DATASET=axiom-audit` env var in Vercel | ⬛ **Action needed** | Token verified, dataset confirmed. One Vercel env var to set. |
-| Live Stripe round-trip verification | ⬛ **Action needed** | Code audited + bugs fixed. Needs stripe-cli + test keys in a reachable server. |
+| Axiom `AXIOM_DATASET=axiom-audit` env var in Vercel | ⬛ **Action needed** | Token verified and present in env; dataset confirmed. One Vercel env var to set. |
+| Live Stripe round-trip verification | ✅ **Verified (2026-05-22)** | Full round trip exercised end-to-end against the live test API + real webhook handler + Neon: checkout → `checkout.session.completed`/`subscription.updated`/`subscription.deleted` → `organizations.plan` write → bad-signature 400 → `checkPlanLimit` 402. 18/18 checks passed, scoped to a throwaway org. |
 | Connector circuit breaker (Zybit-154) | ✅ Shipped | `errorBudget.ts` degrades at 3 / disconnects at 5 failures + ops email; sync crons now **skip `disconnected` integrations**; `POST /api/phase2/integrations/:id/resume` clears the breaker. |
 | Cron failure email alerts (Zybit-155) | ✅ Shipped | `withCronAlert` wraps all 5 cron routes — unhandled throw or 5xx → structured log + Resend ops email. |
 | Operator dashboard (Zybit-156) | ⬛ Not built | No way to view all org/site sync health remotely. |
@@ -97,7 +108,7 @@ zybit/
 | Layer 2 calibration needs real outcome history | ⬛ Inert until data | Works mechanically (Lighthouse-verified). Needs 3+ concluded experiments per rule per site before it affects anything. |
 
 1. **Set `AXIOM_DATASET=axiom-audit` in Vercel** — one env var, zero code. Activates structured log drain (Zybit-153 gate).
-2. **Live Stripe round-trip verification** (~1 day): with stripe-cli + test keys, drive checkout → `checkout.session.completed`/`customer.subscription.*` webhooks → confirm `organizations.plan` write → confirm `checkPlanLimit` 402. Env vars: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`/`_GROWTH`/`_SCALE`. See BACKLOG Zybit-040.
+2. ~~**Live Stripe round-trip verification**~~ **Verified 2026-05-22** — 18/18 checks end-to-end (checkout → webhooks → plan write → `checkPlanLimit` 402). Production env still needs `STRIPE_WEBHOOK_SECRET` + `STRIPE_PRICE_STARTER`/`_GROWTH`/`_SCALE` set in Vercel for the real checkout flow.
 3. ~~**GA4 limitation warning** (Zybit-157)~~ **Shipped** — amber cockpit banner + `compute-outcomes` skip for GA4-only sites.
 4. ~~**Connector circuit breaker** (Zybit-154)~~ **Shipped** — `errorBudget.ts` degrades/disconnects on consecutive failures; sync crons skip `disconnected` integrations; resume route clears the breaker.
 5. ~~**Cron failure email** (Zybit-155)~~ **Shipped** — `withCronAlert` wraps all 5 cron routes.

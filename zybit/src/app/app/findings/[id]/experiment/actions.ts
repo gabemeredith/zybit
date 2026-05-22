@@ -5,8 +5,9 @@ import { redirect } from "next/navigation";
 import { eq, and } from "drizzle-orm";
 import { getServerAuth } from "@/lib/auth/serverAuth";
 import { getDb } from "@/lib/db/client";
-import { zybitExperiments, zybitFindings } from "@/lib/db/schema";
+import { phase1Sites, zybitExperiments, zybitFindings } from "@/lib/db/schema";
 import type { VariantModification } from "@/lib/experiments/types";
+import { targetPageIsSpaShell } from "@/lib/experiments/spaGuard";
 import {
   validateBriefShape,
   type ValidationError as BriefValidationError,
@@ -98,10 +99,18 @@ export type OverlapWarning = {
   overlaps: Array<{ id: string; name: string }>;
 };
 
+// Zybit-123: surfaced when the target page renders client-side. The proxy
+// modifies server-rendered HTML, so a SPA variant would be a silent no-op.
+export type SpaWarning = {
+  type: "spa_warning";
+  targetUrl: string;
+};
+
 export async function launchExperimentAction(
   findingId: string,
   acknowledgeOverlap = false,
-): Promise<OverlapWarning | ValidationError | void> {
+  acknowledgeSpa = false,
+): Promise<OverlapWarning | SpaWarning | ValidationError | void> {
   const auth = await getServerAuth();
   if (!auth.ok) redirect("/sign-in");
 
@@ -160,6 +169,32 @@ export async function launchExperimentAction(
         return { id: e.id, name };
       }),
     };
+  }
+
+  // Zybit-123: SPA-shell guard. The proxy applies variant modifications to
+  // server-rendered HTML; a client-side-rendered page has no target nodes at
+  // request time, so the variant would render identical to control and the
+  // experiment would conclude on data that was never a real variant. Fetch
+  // the target page once and warn before launch. Fails open — a fetch error
+  // never blocks a launch (see targetPageIsSpaShell).
+  if (!acknowledgeSpa) {
+    const siteRows = await db
+      .select({ domain: phase1Sites.domain })
+      .from(phase1Sites)
+      .where(
+        and(
+          eq(phase1Sites.id, finding.siteId),
+          eq(phase1Sites.organizationId, auth.orgId),
+        )
+      )
+      .limit(1);
+    const domain = siteRows[0]?.domain;
+    if (domain) {
+      const targetUrl = `https://${domain}${finding.pathRef ?? "/"}`;
+      if (await targetPageIsSpaShell(targetUrl)) {
+        return { type: "spa_warning", targetUrl };
+      }
+    }
   }
 
   const brief = finding.experimentBrief;

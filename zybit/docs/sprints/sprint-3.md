@@ -234,3 +234,89 @@ Return JSON only — no explanation, no markdown.
 - If over limit: return 429 with "AI suggestion limit reached for today — build manually or try again tomorrow"
 
 **Files:** `src/app/api/dashboard/experiments/ai-suggest/route.ts`, `src/lib/observability/logger.ts`
+
+---
+
+## Zybit-149 — Client-side variant runtime for complex & SPA-safe changes
+**Estimate:** 6d | **Owner:** —
+
+**Context:** Today the proxy applies `VariantModification[]` to the origin's
+**server-rendered HTML in-flight** (`htmlModifier.ts` → `applyModifications`).
+That path is reliable for SSR/static pages and the six simple modification
+types (text-replace, css-inject, element-hide/show, attribute-set,
+element-reorder), but it has a hard ceiling:
+
+- **SPA shells have no target DOM at request time** — modifications silently
+  no-op. Zybit-123 added a launch-time warning, but the experiment still
+  cannot actually run on a client-side-rendered page.
+- **Post-hydration content is unreachable** — anything rendered by JS, and any
+  SPA route change (the proxy only sees the initial document) is invisible to
+  server-side rewriting.
+- **The modification vocabulary is small.** No inserting new elements, moving
+  content across containers, coordinated multi-element changes, or conditional
+  logic. As Zybit propose richer variants — and the **Zybit-144 AI Variant
+  Advisor** in particular — the advisor will be able to *propose* variants the
+  engine cannot *deploy*. This ticket closes that capability gap; it is the
+  deployment-side counterpart to Zybit-144.
+
+**Approach — a small, constrained client-side variant runtime.** The proxy
+already injects one script (`bridgeScript.ts`). Add a second: a runtime that
+applies the variant in the browser after hydration, so the same experiment
+works on SSR and SPA pages and can express richer changes.
+
+1. **Delivery.** The proxy injects the experiment's modification payload as
+   inline JSON plus the runtime script. The runtime reads the visitor's
+   **already-assigned bucket from the cookie the proxy set** — assignment
+   stays 100% server-decided, so outcome integrity is unchanged and there is
+   no flicker-causing async call.
+2. **Application.** Apply modifications to the live DOM after hydration; a
+   `MutationObserver` re-applies on SPA route changes (pushState/popstate) and
+   late-rendered nodes.
+3. **Anti-flicker.** A tiny synchronous snippet in `<head>` hides the affected
+   selectors (not the whole `body`) until the runtime applies the change or a
+   short timeout fires — prevents the original→variant flash (FOUC).
+4. **Richer modification schema.** Extend `VariantModification` with
+   `element-insert` (new node relative to a selector), `element-move`
+   (reparent), and a `sequence` wrapper for coordinated multi-step changes.
+   The schema stays **fully declarative** — no `eval`, no PM- or AI-authored
+   raw JavaScript. This preserves doctrine: deterministic, constrained,
+   PM-approved. The AI advisor (Zybit-144) and `validateBriefShape`
+   (`validateBrief.ts`) both validate against the extended schema.
+5. **Coexistence.** Server-side `applyModifications` remains the path for SSR
+   pages + the six simple types. The client runtime is **additive**, selected
+   when the page is a SPA (reuse `isSpaHtml`) or the modification type is one
+   of the new richer ones. The Zybit-123 launch guard becomes "this page will
+   use the client runtime" rather than a blocker.
+
+**Open decisions to settle in the ticket (not pre-judged here):**
+- Anti-flicker scope — per-selector hiding vs. brief whole-page hide; timeout.
+- **CSP** — an inline runtime needs a nonce; the proxy controls response
+  headers, so it can mint and attach one (preferred over `unsafe-inline`).
+- SPA route-change re-application semantics — debounce, teardown on navigate.
+- No-JS / bot traffic must fall through to control cleanly.
+- Preview parity — `Zybit-147` ephemeral preview must render the client
+  runtime so the PM previews exactly what ships.
+
+**Files (indicative):**
+- `src/lib/experiments/proxy/variantRuntime.ts` (new — the injected script source)
+- `src/lib/experiments/proxy/handler.ts` — inject runtime + payload + nonce
+- `src/lib/experiments/htmlModifier.ts` — share the richer schema
+- `src/lib/experiments/types.ts` — extend `VariantModification`
+- `src/lib/experiments/validateBrief.ts` — validate the new types
+- `src/lib/experiments/describeModification.ts` — describe the new types
+
+**Acceptance:**
+- An experiment with a `text-replace` runs correctly on a known SPA fake-site
+  (Lighthouse) — variant DOM diverges from control, no FOUC.
+- An `element-insert` variant deploys and is visible in the side-by-side
+  preview and on the live proxied page.
+- Bucket assignment is unchanged by the runtime (server cookie is the only
+  source); outcome attribution verified against a Lighthouse run.
+- SSR pages still use the server-side path; no regression in existing tests.
+- CSP header carries a nonce; no `unsafe-inline` added.
+
+> **Sequencing note:** depends on Zybit-144 (so the advisor can target the
+> richer schema) and pairs with Zybit-147 (preview parity). Reasonable to
+> schedule as the closing ticket of Sprint 3 or the opening ticket of a
+> follow-on "variant depth" sprint. Until it lands, Zybit-123's warn-and-
+> acknowledge guard remains the safety net for SPA experiments.

@@ -8,16 +8,25 @@
 
 ## Sprint arc
 
+**Status legend:** ✅ complete · 🟢 mostly complete · 🟡 in progress · 🔲 not started
+
 | Sprint | Name | Duration | Status | Gate |
 |--------|------|----------|--------|------|
-| [0](sprint-0.md) | Verification & Hardening | 1w | 🔲 Not started | Core loop confirmed live; Stripe verified; auth protected |
-| [1](sprint-1.md) | Demo Readiness | 1.5w | 🔲 Not started | Full demo script runnable without ad-hoc fixes |
-| [2](sprint-2.md) | Selector Robustness | 1.5w | 🔲 Not started | Selector staleness detected, PM notified before silent breakage |
-| [3](sprint-3.md) | Design Capture & AI Variant Advisor | 3w | 🔲 Not started | PM goes from finding → AI-drafted variant → launch in <10 min |
-| [4](sprint-4.md) | Observability & Multi-Customer Ops | 1w | 🔲 Not started | First paying customer supportable remotely |
-| [5](sprint-5.md) | Learn — Layer 2 | 2w | 🔲 Not started | Per-site rule thresholds calibrated from outcome history |
+| [0](sprint-0.md) | Verification & Hardening | 1w | 🟢 6/7 done (Zybit-118 partial) | Core loop confirmed live; Stripe verified; auth protected |
+| [1](sprint-1.md) | Demo Readiness | 1.5w | 🟢 5/8 done (124 partial; 127/128 not built) | Full demo script runnable without ad-hoc fixes |
+| [2](sprint-2.md) | Selector Robustness | 1.5w | ✅ 5/5 complete | Selector staleness detected, PM notified before silent breakage |
+| [3](sprint-3.md) | Design Capture & AI Variant Advisor | 3w | 🟡 0/9 (141/142 in PR #58; 143–146/148/149 not built) | PM goes from finding → AI-drafted variant → launch in <10 min |
+| [4](sprint-4.md) | Observability & Multi-Customer Ops | 1w | 🟢 4/5 done (156 not built) | First paying customer supportable remotely |
+| [5](sprint-5.md) | Learn — Layer 2 | 2w | 🟢 2/5 done; 161/162 superseded; 165 not built | Per-site rule thresholds calibrated from outcome history |
 
 **Total: ~10w sprint time + 1–2w customer incident slack = 11–13w to customer 3.**
+
+> **Audit (2026-05-22):** 39 tickets — 22 done, 3 partial, 10 not built, 2 in
+> open PR #58, 2 superseded. The deterministic six-step loop is built and
+> live-verified. Remaining work is concentrated in Sprint 3 (the AI/design
+> surface, now including Zybit-149 — a client-side variant runtime for complex
+> & SPA-safe changes) plus the Zybit-156 operator dashboard. Per-ticket detail
+> and the definitive remaining-work list: [`REMEDIATION.md`](REMEDIATION.md).
 
 ---
 

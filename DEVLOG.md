@@ -4,6 +4,112 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-22 (session 2)
+
+**Session:** Stripe round-trip verification, migrations 0014/0016, full sprint audit
+**Author:** —
+
+### What shipped
+
+- **Migration 0016 applied to Neon** — `phase2_site_design_snapshot` (PR #58's
+  table). Applied ahead of the merge so the cron writes don't throw; idempotent
+  (`CREATE TABLE IF NOT EXISTS`). Table + 11 columns + 4 indexes + the
+  `capture_method` CHECK constraint verified against `schema.ts`.
+- **Migration 0014 applied to Neon** — `auth_rate_limits`. DB verification
+  found it was **never applied**: the shipped Zybit-115 rate limiter
+  (`rateLimit.ts`) queries this table and would have crashed at runtime on
+  every `/api/auth/request-link` call. Applied with user approval.
+- **Stripe full round-trip verified end-to-end** — 18/18 checks against the
+  live test API + the real webhook handler + Neon, scoped to a throwaway org
+  (the 4 existing orgs untouched, cleaned up after): checkout session +
+  customer creation/persistence; webhook `checkout.session.completed` →
+  `plan='growth'`; `customer.subscription.updated` → `plan='scale'`;
+  `customer.subscription.deleted` → revert to `starter`; tampered signature →
+  400; `checkPlanLimit` reads the webhook-written plan (starter blocks at 1
+  site, growth allows). Clears the long-standing "Stripe action needed" item.
+
+### Sprint audit (sprints 0–5)
+
+- Full per-ticket re-audit: **38 real tickets — 22 done, 3 partial, 9 not
+  built, 2 in open PR #58, 2 superseded.** `docs/sprints/REMEDIATION.md`
+  rewritten as the definitive status doc; `ROADMAP.md` status table and
+  `AGENTS.md` updated to match.
+- Remaining: Zybit-127/128 (demo seed), 143/144/145/146/148 (Sprint 3 AI
+  surface), 156 (operator dashboard), 165 (operator calibration view); partial
+  118/124/147; 161/162 need a keep-superseded-or-build decision.
+- **New ticket Zybit-149** added to Sprint 3 — client-side variant runtime:
+  an injected, declarative DOM-mutation script (bucket read from the proxy
+  cookie, `MutationObserver` re-apply, anti-flicker, nonce'd CSP) so
+  experiments work on SPA pages and can express changes beyond the six simple
+  server-side types (`element-insert`, `element-move`, `sequence`). It is the
+  deployment-side counterpart to the Zybit-144 AI advisor — without it the
+  advisor can propose richer variants than the engine can deploy. Schema stays
+  declarative (no `eval`/raw JS) to preserve the deterministic, PM-approved
+  doctrine. Spec in `docs/sprints/sprint-3.md`.
+
+### Findings / blockers
+
+- The Drizzle migration journal (`drizzle/meta/_journal.json`) is stale —
+  lists only 0000–0002 though 0000–0016 are applied, and there is no
+  `drizzle.__drizzle_migrations` table. Migrations have been applied manually.
+  Reconcile before relying on `drizzle-kit migrate`.
+
+### What's next
+
+- Merge PR #59 → PR #58.
+- Zybit-156 operator dashboard; then Sprint 3 proper (needs `GEMINI_API_KEY` +
+  Vercel Blob tier).
+
+---
+
+## 2026-05-22
+
+**Session:** Live Lighthouse verification, PR #58/#59 review, Zybit-123
+**Author:** —
+
+### What shipped
+
+- **Zybit-123 — SPA-shell launch guard (re-scoped).** The ticketed spec
+  (replace an onboarding SSR/SPA toggle) was obsolete — no such toggle exists
+  and `fetcher.ts` already auto-detects SPAs for snapshots. The real live gap
+  was in *Test*: the proxy detected an SPA shell (`handler.ts`) but only
+  logged a warning, then served unmodified control HTML to variant traffic —
+  a silent no-op experiment that pollutes outcome history. Shipped instead as
+  a launch-time guard: `targetPageIsSpaShell` (new `spaGuard.ts`) fetches the
+  target page and runs `isSpaHtml`; `launchExperimentAction` returns a
+  `spa_warning`; `ExperimentBriefCard` shows a warn-and-acknowledge banner
+  (mirrors the Zybit-119 overlap pattern). Fails open on fetch error. 4 tests.
+  Suite: 46 files, 523 tests.
+
+### Verification (first live run)
+
+- **The Neon network-allowlist blocker is gone.** Every prior session logged
+  "Neon host not in allowlist"; this session the host is reachable and
+  `DATABASE_URL` is in the container env. Node 22 is present.
+- Ran live Lighthouse end-to-end for **both** scenarios against Neon:
+  AcmeBank (300 sessions → 1890 events → 2 findings → experiment +8.4% →
+  Layer 2 calibrated `return-visit-thrash ×0.70`) and WovenBasics (300 →
+  3635 events → 1 finding → +7.7% → calibrated). The full loop and Layer 2
+  are now genuinely Lighthouse-verified, not just unit-verified.
+- `npm run verify` green; app suite 519→523, Lighthouse suite 43.
+
+### PR review
+
+- **PR #58** (Sprint 3 Zybit-141/142 — design snapshot schema + writer):
+  safe to merge — additive table, non-fatal cron writes. Apply migration
+  `0016` to Neon after merge.
+- **PR #59** (empty-selector → variant=control loophole): safe to merge —
+  closes the sibling bug to Zybit-123 in the no-op-experiment family. Minor
+  open item: launch gate doesn't `.trim()` DB-sourced selectors.
+
+### What's next
+
+- Merge #59 → #58, apply migration `0016`.
+- Live Stripe round-trip (`STRIPE_SECRET_KEY` now in env — newly unblocked).
+- Sprint 3 continues: Zybit-143 (token extraction) onward.
+
+---
+
 ## 2026-05-21 (session 3)
 
 **Session:** Sprint compliance audit, Zybit-157/154/155, Stripe verification, doc consolidation
