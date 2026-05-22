@@ -9,7 +9,7 @@
  * are then fetched + parsed by Zybit's own snapshot pipeline, so the audit
  * still exercises the real `Understand` fetch+parse path.
  *
- * Requires `FIRECRAWL_API_KEY` in the environment (set it in `lighthouse/.env`).
+ * Requires `FIRECRAWL_KEY` in the environment (set it in `lighthouse/.env`).
  */
 
 const FIRECRAWL_MAP_ENDPOINT = 'https://api.firecrawl.dev/v1/map';
@@ -63,10 +63,10 @@ export async function mapSite(
   requestedUrl: string,
   maxPages: number,
 ): Promise<MapSiteResult> {
-  const apiKey = process.env.FIRECRAWL_API_KEY;
+  const apiKey = process.env.FIRECRAWL_KEY;
   if (!apiKey || apiKey.length === 0) {
     throw new Error(
-      'FIRECRAWL_API_KEY env var is required for URL-audit mode. Set it in lighthouse/.env.',
+      'FIRECRAWL_KEY env var is required for URL-audit mode. Set it in lighthouse/.env.',
     );
   }
 

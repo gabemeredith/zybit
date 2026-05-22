@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mapSite } from './firecrawl';
 
-const ORIGINAL_KEY = process.env.FIRECRAWL_API_KEY;
+const ORIGINAL_KEY = process.env.FIRECRAWL_KEY;
 
 function mockFetch(payload: unknown, ok = true, status = 200): typeof fetch {
   return vi.fn().mockResolvedValue({
@@ -14,17 +14,17 @@ function mockFetch(payload: unknown, ok = true, status = 200): typeof fetch {
 
 describe('mapSite', () => {
   beforeEach(() => {
-    process.env.FIRECRAWL_API_KEY = 'test-key';
+    process.env.FIRECRAWL_KEY = 'test-key';
   });
   afterEach(() => {
-    if (ORIGINAL_KEY === undefined) delete process.env.FIRECRAWL_API_KEY;
-    else process.env.FIRECRAWL_API_KEY = ORIGINAL_KEY;
+    if (ORIGINAL_KEY === undefined) delete process.env.FIRECRAWL_KEY;
+    else process.env.FIRECRAWL_KEY = ORIGINAL_KEY;
     vi.restoreAllMocks();
   });
 
   it('throws when the API key is missing', async () => {
-    delete process.env.FIRECRAWL_API_KEY;
-    await expect(mapSite('https://example.com', 10)).rejects.toThrow(/FIRECRAWL_API_KEY/);
+    delete process.env.FIRECRAWL_KEY;
+    await expect(mapSite('https://example.com', 10)).rejects.toThrow(/FIRECRAWL_KEY/);
   });
 
   it('dedupes by path, drops cross-origin + non-HTML, and caps shallowest-first', async () => {

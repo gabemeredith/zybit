@@ -48,7 +48,7 @@ separate Lighthouse password to maintain.
 For **URL-audit mode** (§8b) add a Firecrawl key to `lighthouse/.env`:
 
 ```env
-FIRECRAWL_API_KEY=fc-...
+FIRECRAWL_KEY=fc-...
 ```
 
 It's only needed to "audit a live URL"; the scenario runner doesn't use it.
@@ -261,7 +261,7 @@ does not verify that any given finding is *true*. `hero-hierarchy`,
 `mobile-engagement-asymmetry` cannot (it needs onboarding-step config an
 arbitrary site has no way to declare).
 
-Requires `FIRECRAWL_API_KEY` in `lighthouse/.env` (see §2).
+Requires `FIRECRAWL_KEY` in `lighthouse/.env` (see §2).
 
 ## 9. Adding more scenarios
 
