@@ -28,6 +28,60 @@ const STATUS_STYLES: Record<string, string> = {
 
 const SECTION_LABEL = "text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1";
 
+/**
+ * Render a `VariantModification` for the experiment detail panel: the
+ * selector or parentSelector it targets, the payload it writes, and a
+ * `noOp` flag set when the modification would be a silent no-op at
+ * preview/proxy time (empty selector, or empty payload for the types
+ * that need one). The detail page renders the flag as a banner so a
+ * PM looking at the preview iframes can tell why variant === control.
+ */
+function describeModification(mod: VariantModification): {
+  selector: string;
+  payloadLabel: string | null;
+  payloadValue: string | null;
+  noOp: boolean;
+} {
+  switch (mod.type) {
+    case "text-replace":
+      return {
+        selector: mod.selector,
+        payloadLabel: "text",
+        payloadValue: mod.text,
+        noOp: mod.selector.length === 0 || mod.text.length === 0,
+      };
+    case "css-inject":
+      return {
+        selector: mod.selector,
+        payloadLabel: "css",
+        payloadValue: mod.css,
+        noOp: mod.selector.length === 0 || mod.css.length === 0,
+      };
+    case "attribute-set":
+      return {
+        selector: mod.selector,
+        payloadLabel: `${mod.attr}=`,
+        payloadValue: mod.value,
+        noOp: mod.selector.length === 0 || mod.attr.length === 0,
+      };
+    case "element-hide":
+    case "element-show":
+      return {
+        selector: mod.selector,
+        payloadLabel: null,
+        payloadValue: null,
+        noOp: mod.selector.length === 0,
+      };
+    case "element-reorder":
+      return {
+        selector: mod.parentSelector,
+        payloadLabel: "order",
+        payloadValue: mod.childOrder.join(", "),
+        noOp: mod.parentSelector.length === 0 || mod.childOrder.length === 0,
+      };
+  }
+}
+
 function lift(control: number, variant: number): string {
   if (control === 0) return "—";
   const pp = ((variant - control) * 100).toFixed(1);
@@ -210,14 +264,54 @@ export default async function ExperimentDetailPage({
           {modifications.length > 0 && (
             <div className="mt-5 pt-5 border-t border-black/[0.04]">
               <div className={`${SECTION_LABEL} mb-3`}>Variant modifications (proxy path)</div>
-              <div className="space-y-2">
-                {modifications.map((mod, i) => (
-                  <div key={i} className="bg-[#F5F5F3] rounded-xl px-4 py-3 font-mono text-xs text-[#333]">
-                    <span className="text-[#6B6B6B]">{mod.type}</span>{" "}
-                    {"selector" in mod && <span>{mod.selector}</span>}
-                  </div>
-                ))}
-              </div>
+              {(() => {
+                const described = modifications.map(describeModification);
+                const anyNoOp = described.some((d) => d.noOp);
+                const allNoOp = described.every((d) => d.noOp);
+                return (
+                  <>
+                    {anyNoOp && (
+                      <div className="mb-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-800">
+                        {allNoOp
+                          ? "All modifications below are no-ops — the variant iframe will render identical HTML to control. Edit the brief to give the modification a real selector and value."
+                          : "One or more modifications below are no-ops (empty selector or empty value). They will be silently skipped at proxy time."}
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      {described.map((d, i) => {
+                        const mod = modifications[i];
+                        return (
+                          <div
+                            key={i}
+                            className={`rounded-xl px-4 py-3 font-mono text-xs ${
+                              d.noOp
+                                ? "bg-amber-50 border border-amber-200 text-amber-900"
+                                : "bg-[#F5F5F3] text-[#333]"
+                            }`}
+                          >
+                            <div>
+                              <span className="text-[#6B6B6B]">{mod.type}</span>{" "}
+                              <span>{d.selector || <em className="not-italic text-red-600">(empty selector)</em>}</span>
+                            </div>
+                            {d.payloadLabel && (
+                              <div className="mt-1 text-[#6B6B6B]">
+                                <span>{d.payloadLabel} </span>
+                                <span className="text-[#333]">
+                                  {d.payloadValue && d.payloadValue.length > 0 ? (
+                                    `"${d.payloadValue}"`
+                                  ) : (
+                                    <em className="not-italic text-red-600">(empty)</em>
+                                  )}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Side-by-side preview iframes — control left, variant right */}
               <div className="mt-4">
