@@ -17,7 +17,8 @@ export interface LogContext {
     | 'capture-record'
     | 'capture-cron'
     | 'snapshot-cron'
-    | 'compute-outcomes';
+    | 'compute-outcomes'
+    | 'ai-advisor';
   organizationId?: string;
   siteId?: string;
   [key: string]: unknown;
