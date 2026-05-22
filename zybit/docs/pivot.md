@@ -6,7 +6,7 @@ strategic discussion that produced the PRD. The binary it poses — Path A
 **resolved as a synthesis**, not a choice: page-level understanding is the
 foundation, flow-level understanding layers on top, and both ship on one shared
 spine. In particular, decision D2 here ("freeze Sprint 3 as throwaway") is
-**overridden** — see `PRD.md` §7–§8. Read `PRD.md` for the ratified direction;
+**overridden** — see `PRD.md` §1 and §4. Read `PRD.md` for the ratified direction;
 read this document only for the analysis context.
 
 **Date:** 2026-05-22

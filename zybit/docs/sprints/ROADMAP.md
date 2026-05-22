@@ -34,8 +34,8 @@
 
 > **Reconciled with `docs/PRD.md` (2026-05-22).** The PRD ratifies a single
 > committed milestone — the read-only flow-graph advisory. The "Proxy
-> mechanism — locked" decision below is amended accordingly. All other
-> decisions in this section stand.
+> mechanism — locked" decision below is amended accordingly. Other decisions
+> in this section stand as architectural targets but are deferred per the PRD.
 
 **Delivery mechanism:** The **edge proxy** — mutate origin HTML in-flight via
 Vercel Middleware, for server-rendered HTML/marketing sites; no git involvement,
