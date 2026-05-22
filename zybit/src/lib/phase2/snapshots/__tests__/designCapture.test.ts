@@ -105,8 +105,33 @@ describe('buildFullDesignSnapshot', () => {
     expect(row.pathRef).toBe(PATH);
     expect(row.screenshotUrl).toBe('https://blob.vercel/captures/site_abc/_pricing/desktop/run.png');
     expect(row.cssSystem).toBe('tailwind');
-    expect(row.designTokens).toBeNull();
     expect(row.capturedAt.toISOString()).toBe(FIXED_CAPTURE_TIME);
+  });
+
+  it('co-writes design tokens derived from computed styles', () => {
+    const row = buildFullDesignSnapshot({
+      organizationId: ORG,
+      capture: makeCapture(),
+      cssSystem: 'tailwind',
+    });
+    expect(row.designTokens).toEqual({
+      primaryColor: '#1a56db',
+      secondaryColor: '#111827',
+      typeScale: [48],
+    });
+  });
+
+  it('leaves designTokens null when no CTAs or headings carry styles', () => {
+    const base = makeCapture();
+    const row = buildFullDesignSnapshot({
+      organizationId: ORG,
+      capture: makeCapture({
+        ctas: [{ ...base.ctas[0], bgColorHex: null, fgColorHex: null }],
+        headings: [{ ...base.headings[0], colorHex: null, fontSizePx: null }],
+      }),
+      cssSystem: null,
+    });
+    expect(row.designTokens).toBeNull();
   });
 
   it('keys CTA styles by ref under the cta:<ref> key', () => {
