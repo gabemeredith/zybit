@@ -4,6 +4,55 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-22 (session 2)
+
+**Session:** Stripe round-trip verification, migrations 0014/0016, full sprint audit
+**Author:** —
+
+### What shipped
+
+- **Migration 0016 applied to Neon** — `phase2_site_design_snapshot` (PR #58's
+  table). Applied ahead of the merge so the cron writes don't throw; idempotent
+  (`CREATE TABLE IF NOT EXISTS`). Table + 11 columns + 4 indexes + the
+  `capture_method` CHECK constraint verified against `schema.ts`.
+- **Migration 0014 applied to Neon** — `auth_rate_limits`. DB verification
+  found it was **never applied**: the shipped Zybit-115 rate limiter
+  (`rateLimit.ts`) queries this table and would have crashed at runtime on
+  every `/api/auth/request-link` call. Applied with user approval.
+- **Stripe full round-trip verified end-to-end** — 18/18 checks against the
+  live test API + the real webhook handler + Neon, scoped to a throwaway org
+  (the 4 existing orgs untouched, cleaned up after): checkout session +
+  customer creation/persistence; webhook `checkout.session.completed` →
+  `plan='growth'`; `customer.subscription.updated` → `plan='scale'`;
+  `customer.subscription.deleted` → revert to `starter`; tampered signature →
+  400; `checkPlanLimit` reads the webhook-written plan (starter blocks at 1
+  site, growth allows). Clears the long-standing "Stripe action needed" item.
+
+### Sprint audit (sprints 0–5)
+
+- Full per-ticket re-audit: **38 real tickets — 22 done, 3 partial, 9 not
+  built, 2 in open PR #58, 2 superseded.** `docs/sprints/REMEDIATION.md`
+  rewritten as the definitive status doc; `ROADMAP.md` status table and
+  `AGENTS.md` updated to match.
+- Remaining: Zybit-127/128 (demo seed), 143/144/145/146/148 (Sprint 3 AI
+  surface), 156 (operator dashboard), 165 (operator calibration view); partial
+  118/124/147; 161/162 need a keep-superseded-or-build decision.
+
+### Findings / blockers
+
+- The Drizzle migration journal (`drizzle/meta/_journal.json`) is stale —
+  lists only 0000–0002 though 0000–0016 are applied, and there is no
+  `drizzle.__drizzle_migrations` table. Migrations have been applied manually.
+  Reconcile before relying on `drizzle-kit migrate`.
+
+### What's next
+
+- Merge PR #59 → PR #58.
+- Zybit-156 operator dashboard; then Sprint 3 proper (needs `GEMINI_API_KEY` +
+  Vercel Blob tier).
+
+---
+
 ## 2026-05-22
 
 **Session:** Live Lighthouse verification, PR #58/#59 review, Zybit-123

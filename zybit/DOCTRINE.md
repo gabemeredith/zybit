@@ -149,10 +149,12 @@ The analysis engine and PM dashboard are complete. Zybit can:
 
 **What is not yet complete (immediate priorities, in order):**
 
-1. **Live Stripe round-trip verification** — The checkout → webhook → plan-write → enforcement code path is implemented and its round-trip bugs fixed (redirect target, cross-instance plan-cache staleness), but it has not been exercised end-to-end with stripe-cli + test keys.
-2. **Proxy SPA handling** — JS-rendered targets are detected and logged but modifications won't apply; `browserFetcher.ts` fallback is unimplemented.
+1. **Sprint 3 — Design Capture & AI Variant Advisor** — the next product surface. Zybit-141/142 (design-snapshot schema + writer) are in open PR #58; Zybit-143–148 (token extraction, AI advisor, element picker) are not built. Needs `GEMINI_API_KEY` + a Vercel Blob tier.
+2. **Operator org dashboard (Zybit-156)** — no `/app/operator` route yet; needed to support a paying customer remotely.
 
-**Recently completed:** Learn — Layer 2 (per-site rule-threshold calibration) shipped: `ruleCalibration.ts` derives a per-site, per-rule detection-floor multiplier from accumulated outcomes (loosen on repeated wins, tighten on repeated losses), applied to all 12 rules before they run via `runInsightsPipeline`. Observability Axiom drain is now connected (best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` are set). Scheduled snapshot refresh + HTML drift detection shipped (`refresh-snapshots` cron, Zybit-023). Lighthouse now generates synthetic experiments + outcomes end-to-end (Phase 2), so the full Understand→…→Learn loop is observable on synthetic data.
+For the definitive per-ticket status across sprints 0–5, see `docs/sprints/REMEDIATION.md`.
+
+**Recently completed:** Live Stripe round-trip **verified end-to-end** (2026-05-22) — checkout → webhook → `organizations.plan` write → `checkPlanLimit` 402, 18/18 checks against the live test API. Zybit-123 SPA handling — a launch-time guard now warns the PM before launching an experiment on a client-side-rendered page (the proxy modifies server-rendered HTML, so a SPA variant would silently render identical to control). Learn — Layer 2 (per-site rule-threshold calibration) shipped: `ruleCalibration.ts` derives a per-site, per-rule detection-floor multiplier from accumulated outcomes (loosen on repeated wins, tighten on repeated losses), applied to all 12 rules before they run via `runInsightsPipeline`. Observability Axiom drain is now connected (best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` are set). Scheduled snapshot refresh + HTML drift detection shipped (`refresh-snapshots` cron, Zybit-023). Lighthouse now generates synthetic experiments + outcomes end-to-end (Phase 2), so the full Understand→…→Learn loop is observable on synthetic data.
 
 **What is deliberately not being built:**
 Sentiment analysis, GitHub PR generation, PostHog replacement / direct SDK, more audit rules, cross-site priors (before 50 customers with outcomes). See "What Zybit is not."

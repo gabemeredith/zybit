@@ -67,7 +67,7 @@ zybit/
 | **Visible loop view** | ✅ Built | Timeline merge + per-entry rendering + empty state + detail links; guardrail-breach amber badge (Zybit-091), multi-site pill selector (Zybit-092), and LEARNED entries (Zybit-093) all shipped. |
 | **Preview before deploy** | ✅ Built | Side-by-side control/variant iframes on experiment detail page; CSP `frame-ancestors 'self'` on preview response |
 | **GA4 connector** | ✅ Built | `client.ts` (JWT+OAuth+runReport), `secrets.ts`, `cursor.ts`, `mapping.ts`, `sync.ts`, job + cron. 18 unit tests. |
-| **Billing** (Stripe + plan limits) | ⚠️ Partial | Metering + hard enforcement (sites/experiments 402) + events soft-cap shipped. Round-trip code bugs fixed: post-checkout redirect pointed at a non-existent `/dashboard/settings` (→ `/app/settings`); cross-instance-stale plan cache removed so enforcement reads the webhook-written plan immediately; webhook validates planId before persisting. Remaining: live stripe-cli verification of the real checkout→webhook→plan-write round-trip (needs Stripe test keys — see BACKLOG Zybit-040). |
+| **Billing** (Stripe + plan limits) | ✅ Built | Metering + hard enforcement (sites/experiments 402) + events soft-cap shipped. Round-trip code bugs fixed: post-checkout redirect pointed at a non-existent `/dashboard/settings` (→ `/app/settings`); cross-instance-stale plan cache removed so enforcement reads the webhook-written plan immediately; webhook validates planId before persisting. **Round trip verified end-to-end 2026-05-22** — 18/18 checks against the live test API + real webhook handler + Neon (checkout → `checkout.session.completed`/`subscription.updated`/`subscription.deleted` → `organizations.plan` write → bad-signature 400 → `checkPlanLimit` 402). Production env still needs `STRIPE_WEBHOOK_SECRET` + `STRIPE_PRICE_*` set in Vercel. |
 | **Observability** | ✅ Built | Cronitor + error budget + structured logger wired into crons; Axiom drain connected — best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` set; console JSON output preserved for platform drains. **Axiom verified (2026-05-21):** token confirmed working; dataset `axiom-audit` confirmed writeable. Set `AXIOM_DATASET=axiom-audit` in Vercel env vars to activate (Zybit-153 gate criteria met). |
 | **Integration health (cockpit)** | ✅ Built | `deriveIntegrationHealth()` in `cockpit.ts`; `PipelineHealth` in `CockpitView.tsx` shows "Zybit is watching" / "No data yet" / "Degraded" + last-sync + 7-day event count (Zybit-111) |
 | **Activation (onboarding)** | ⚠️ Partial | MRR/AOV now required to finish onboarding (Zybit-113, no skip). First-insight email exists. |
@@ -75,21 +75,30 @@ zybit/
 
 ## Immediate build order
 
-> **Status (2026-05-21):** A sprint-ticket audit (see `docs/sprints/REMEDIATION.md`) identified documentation drift and laid out the per-ticket build plan. This branch (`claude/learn-layer-2-calibration-3A7e9`, PR #57) lands the Sprint 0/1/2 remediation on top of the Layer 2 calibration work:
-> - **Sprint 0:** Zybit-116 (Edge Config kill-switch) + Zybit-120 (full-loop E2E) shipped on this branch. Live Stripe round-trip still outstanding.
-> - **Sprint 1:** Zybit-125 (copy hints) + Zybit-126 (PostHog bridge health probe) + Zybit-123 (SPA-shell launch guard) shipped on this branch. Zybit-127/128 (demo seed) outstanding.
-> - **Sprint 2:** Zybit-133 (selector staleness cron) + Zybit-134 (stability tiers) + Zybit-135 (snapshot drift) + Zybit-137 (Segment schema guard) shipped on this branch.
-> - **Sprint 3:** not built — no design capture, AI Variant Advisor, or element picker. (The Layer 2 calibration work is a *Learn* feature, not Sprint 3's design/AI scope.)
-> - **Sprint 4:** Zybit-153 (Axiom), 154 (circuit breaker), 155 (cron alerts), 157 (GA4 gap) shipped. Zybit-156 (operator dashboard) outstanding.
+> **Status (2026-05-22):** Full sprint audit + live verification — see
+> `docs/sprints/REMEDIATION.md` for the definitive per-ticket list. **22/38
+> tickets done, 3 partial, 9 not built, 2 in open PR #58, 2 superseded.**
+> - **Sprint 0:** 6/7 done. Zybit-114 (Stripe) **verified live end-to-end**;
+>   Zybit-118 (snapshot cadence) partial.
+> - **Sprint 1:** 5/8 done. Zybit-124 partial; Zybit-127/128 (demo seed +
+>   synthetic outcomes) not built.
+> - **Sprint 2:** ✅ 5/5 complete.
+> - **Sprint 3:** Zybit-141/142 in open PR #58 (migration `0016` applied to
+>   Neon); Zybit-143–146/148 not built; Zybit-147 partial.
+> - **Sprint 4:** 4/5 done. Zybit-156 (operator dashboard) not built.
+> - **Sprint 5:** 2/5 done (163/164); 161/162 superseded by on-the-fly
+>   calibration; 165 (operator visibility) not built.
 >
-> Full per-ticket build plan in `docs/sprints/REMEDIATION.md`.
+> The deterministic six-step loop is built and live-verified. Remaining work
+> is concentrated in Sprint 3 plus Zybit-156. Definitive list and build order:
+> `docs/sprints/REMEDIATION.md`.
 
 ## What's needed before first real customer
 
 | Gap | Status | Notes |
 |-----|--------|-------|
-| Axiom `AXIOM_DATASET=axiom-audit` env var in Vercel | ⬛ **Action needed** | Token verified, dataset confirmed. One Vercel env var to set. |
-| Live Stripe round-trip verification | ⬛ **Action needed** | Code audited + bugs fixed. Needs stripe-cli + test keys in a reachable server. |
+| Axiom `AXIOM_DATASET=axiom-audit` env var in Vercel | ⬛ **Action needed** | Token verified and present in env; dataset confirmed. One Vercel env var to set. |
+| Live Stripe round-trip verification | ✅ **Verified (2026-05-22)** | Full round trip exercised end-to-end against the live test API + real webhook handler + Neon: checkout → `checkout.session.completed`/`subscription.updated`/`subscription.deleted` → `organizations.plan` write → bad-signature 400 → `checkPlanLimit` 402. 18/18 checks passed, scoped to a throwaway org. |
 | Connector circuit breaker (Zybit-154) | ✅ Shipped | `errorBudget.ts` degrades at 3 / disconnects at 5 failures + ops email; sync crons now **skip `disconnected` integrations**; `POST /api/phase2/integrations/:id/resume` clears the breaker. |
 | Cron failure email alerts (Zybit-155) | ✅ Shipped | `withCronAlert` wraps all 5 cron routes — unhandled throw or 5xx → structured log + Resend ops email. |
 | Operator dashboard (Zybit-156) | ⬛ Not built | No way to view all org/site sync health remotely. |
@@ -97,7 +106,7 @@ zybit/
 | Layer 2 calibration needs real outcome history | ⬛ Inert until data | Works mechanically (Lighthouse-verified). Needs 3+ concluded experiments per rule per site before it affects anything. |
 
 1. **Set `AXIOM_DATASET=axiom-audit` in Vercel** — one env var, zero code. Activates structured log drain (Zybit-153 gate).
-2. **Live Stripe round-trip verification** (~1 day): with stripe-cli + test keys, drive checkout → `checkout.session.completed`/`customer.subscription.*` webhooks → confirm `organizations.plan` write → confirm `checkPlanLimit` 402. Env vars: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`/`_GROWTH`/`_SCALE`. See BACKLOG Zybit-040.
+2. ~~**Live Stripe round-trip verification**~~ **Verified 2026-05-22** — 18/18 checks end-to-end (checkout → webhooks → plan write → `checkPlanLimit` 402). Production env still needs `STRIPE_WEBHOOK_SECRET` + `STRIPE_PRICE_STARTER`/`_GROWTH`/`_SCALE` set in Vercel for the real checkout flow.
 3. ~~**GA4 limitation warning** (Zybit-157)~~ **Shipped** — amber cockpit banner + `compute-outcomes` skip for GA4-only sites.
 4. ~~**Connector circuit breaker** (Zybit-154)~~ **Shipped** — `errorBudget.ts` degrades/disconnects on consecutive failures; sync crons skip `disconnected` integrations; resume route clears the breaker.
 5. ~~**Cron failure email** (Zybit-155)~~ **Shipped** — `withCronAlert` wraps all 5 cron routes.
