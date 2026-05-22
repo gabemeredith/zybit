@@ -49,10 +49,10 @@ export default function FlowGraphView({ graph, highlightRoute }: FlowGraphViewPr
         ))}
 
         {/* Node layer */}
-        {layout.nodes.map((node) => {
+        {layout.nodes.map((node, i) => {
           const isHighlight = node.route === highlightRoute;
           const exitPct = Math.round(node.exitRate * 100);
-          const clipId = `flow-clip-${node.route.replace(/[^a-z0-9]/gi, "-")}`;
+          const clipId = `flow-clip-${i}`;
 
           return (
             <g key={node.route} transform={`translate(${node.x},${node.y})`}>
