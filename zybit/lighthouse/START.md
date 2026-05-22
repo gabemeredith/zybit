@@ -45,6 +45,14 @@ LIGHTHOUSE_PORT=3001
 The password gate reuses `ADMIN_PASSWORD` from Zybit's `.env` — no
 separate Lighthouse password to maintain.
 
+For **URL-audit mode** (§8b) add a Firecrawl key to `lighthouse/.env`:
+
+```env
+FIRECRAWL_API_KEY=fc-...
+```
+
+It's only needed to "audit a live URL"; the scenario runner doesn't use it.
+
 ## 3. Boot
 
 From the **app root** (`zybit/zybit/`):
@@ -143,6 +151,7 @@ To reset between runs, delete the lighthouse_* rows in this order
 | 15 | Preview iframe loads for Lighthouse sites — origin rewritten to `http://<domain>/fake-sites/<slug>/<path>`, `frame-ancestors` extended so the page can embed inside Lighthouse on `:3001` (PR #56) | `src/app/api/preview/[experimentId]/route.ts` |
 | 16 | Parse-time `cssSelector` per CtaCandidate/FormCandidate (stability ladder, 17 tests); synthetic experiment generator picks selector from the snapshot — control + variant iframes now diverge instead of rendering identical HTML (PR #56) | `src/lib/phase2/snapshots/cssSelector.ts`, `lighthouse/lib/runner/syntheticExperiment.ts` |
 | 17 | wovenbasics fake site + scenario — realistic well-built DTC funnel (home → PDP → cart → checkout); calibration / false-positive counterpart to AcmeBank (PR #56) | `lighthouse/fake-sites/wovenbasics/*`, `lighthouse/lib/scenarios/wovenbasics.ts` |
+| 18 | URL-audit mode — `POST /lighthouse/api/audit-url` crawls a live site (Firecrawl `/v1/map`), snapshots each page with Zybit's own fetch+parse, emits a snapshot-grounded synthetic event layer, runs the audit, and surfaces findings + a page-structure inspector. See §8b | `lighthouse/lib/crawl/firecrawl.ts`, `lighthouse/lib/generators/groundedEvents.ts`, `lighthouse/lib/runner/runUrlAudit.ts`, `lighthouse/server/routes/auditUrl.ts` |
 
 Steps 13–14 touch `src/`: `src/lib/phase2/jobs/insightsTrigger.ts`
 (one `export`), `src/components/app/ImpersonationBanner.tsx` (new),
@@ -225,6 +234,34 @@ A new run via Generate auto-clears prior events/snapshots/findings/
 experiments for the same `lighthouse_site_<slug>` so the PM view shows
 only the current run's state. Org/site/user rows are preserved so the
 session cookie keeps working across runs.
+
+## 8b. URL-audit mode
+
+Where a scenario drives a hand-authored fake site, **URL-audit mode**
+points the Zybit audit at an arbitrary live site. The dashboard's "audit
+url" row takes a URL + a page cap; the pipeline is:
+
+1. **Crawl** — Firecrawl `/v1/map` discovers the site's pages (one fast
+   call). Lighthouse uses Firecrawl *only* for discovery.
+2. **Snapshot** — each discovered page is fetched + parsed by Zybit's own
+   snapshot pipeline (`runSnapshot`), so the real `Understand` fetch+parse
+   path is exercised against messy real-world HTML.
+3. **Ground** — a deterministic synthetic event layer
+   (`groundedEvents.ts`) is emitted, keyed to each page's *actual* parsed
+   CTAs: pageviews carry a scroll distribution, clicks are weighted by
+   document order, nav clicks spread uniformly across nav destinations.
+4. **Audit** — Zybit's Phase 2 insights pipeline runs and produces
+   findings; the right pane shows a page-structure inspector.
+
+**Important — the findings are not ground truth.** The event layer is
+engineered, not observed. URL-audit mode verifies that the rule machinery
+fires and formats findings correctly against *real page structure* — it
+does not verify that any given finding is *true*. `hero-hierarchy`,
+`above-fold-coverage`, `nav-dispersion`, and `rage-click-target` can fire;
+`mobile-engagement-asymmetry` cannot (it needs onboarding-step config an
+arbitrary site has no way to declare).
+
+Requires `FIRECRAWL_API_KEY` in `lighthouse/.env` (see §2).
 
 ## 9. Adding more scenarios
 
