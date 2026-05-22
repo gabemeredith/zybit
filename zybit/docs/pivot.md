@@ -1,9 +1,13 @@
 # Zybit — Pivot Decision Record
 
-**Status:** Proposed — not ratified. This document captures a strategic discussion
-and the decisions it forces. Nothing here is locked. Where it conflicts with
-`docs/sprints/ROADMAP.md` "Architectural decisions — locked", that conflict is
-called out explicitly in [§9](#9-conflicts-with-currently-locked-decisions).
+**Status:** Superseded by [`docs/PRD.md`](PRD.md). Retained as the record of the
+strategic discussion that produced the PRD. The binary it poses — Path A
+(page-level cosmetic CRO) *vs.* Path B (re-platform around flows) — was
+**resolved as a synthesis**, not a choice: page-level understanding is the
+foundation, flow-level understanding layers on top, and both ship on one shared
+spine. In particular, decision D2 here ("freeze Sprint 3 as throwaway") is
+**overridden** — see `PRD.md` §1 and §4. Read `PRD.md` for the ratified direction;
+read this document only for the analysis context.
 
 **Date:** 2026-05-22
 **Owner:** —

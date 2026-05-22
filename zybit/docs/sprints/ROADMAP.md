@@ -32,7 +32,18 @@
 
 ## Architectural decisions — locked
 
-**Proxy mechanism:** Mutate origin HTML in-flight via Vercel Middleware. No git involvement, no source-code changes ever.
+> **Reconciled with `docs/PRD.md` (2026-05-22).** The PRD ratifies a single
+> committed milestone — the read-only flow-graph advisory. The "Proxy
+> mechanism — locked" decision below is amended accordingly. Other decisions
+> in this section stand as architectural targets but are deferred per the PRD.
+
+**Delivery mechanism:** The **edge proxy** — mutate origin HTML in-flight via
+Vercel Middleware, for server-rendered HTML/marketing sites; no git involvement,
+no source-code changes — is the built and current delivery path. A **client
+runtime** (embeddable SDK applying experiments after SPA hydration, for SPAs /
+authenticated products; Zybit-149) is **deferred** — a customer-pulled phase
+behind the flow-graph advisory, not a scheduled milestone. See `docs/PRD.md` §4.
+The proxy is not deprecated.
 
 **Visual element picker (Sprint 3):** DOM tree view + Browserless screenshot thumbnail stored in Vercel Blob. No iframe embedding — CSP and CORS make that path 12+ days for a broken result. PM clicks element in the tree → selector populates → thumbnail highlights it. 7 days, reliable.
 
