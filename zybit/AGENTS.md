@@ -127,15 +127,23 @@ zybit/
 
 ## Document map
 
+**For the persona-routed entry point and the full doc list, see
+[`docs/INDEX.md`](./docs/INDEX.md).** The table below is the
+narrower "if you're modifying code, update this doc when…" map.
+
 | Document | Purpose | Update when... |
 |----------|---------|----------------|
-| `DOCTRINE.md` | Product vision, who it's for, build conventions, current state | Features ship, scope changes, or "Where we are today" drifts from reality |
-| `docs/ARCHITECTURE.md` | Technical architecture, what's built, what's not | Features complete or new components are added |
+| `docs/INDEX.md` | Persona-routed entry point + full doc list with one-line summaries | A doc is added, removed, or its purpose changes |
+| `DOCTRINE.md` | Product vision, who it's for, build conventions | Scope changes or build philosophy evolves (status lives here in this file) |
+| `docs/ARCHITECTURE.md` | Technical reference — per-component file paths, schema, design decisions | New components are added or moved (status lives here in this file) |
 | `docs/BACKLOG.md` | Prioritized epics and stories | Stories ship, priorities change |
-| `../product_gap.md` | Gap analysis, build plan, sequencing | Gaps are closed or re-scoped |
-| `README.md` | Project overview, local setup, env vars | Status changes, env vars added or removed |
+| `../product_gap.md` | Historical gap analysis + architectural reasoning | Major architectural decisions are made (status lives here in this file) |
+| `README.md` | Project overview, local setup, env vars | Env vars added or removed |
 | `docs/PHASE2_EVIDENCE_MODEL.md` | Canonical event schema, audit rule contracts | Event schema or rule interface changes |
 | `docs/PHASE2_LIVE_TUNING_PLAYBOOK.md` | Operator runbook for rule calibration | Rule thresholds or tuning approach changes |
+| `docs/sprints/next-bets.md` | Forward-looking priority list | Priorities reshuffle or a bet completes |
+| `docs/competitive-landscape.md` | Competitor map, wedge analysis, threats | Quarterly re-read; update when a competitor materially shifts |
+| `docs/curriculum.md` | Founders' reading list | New essential reading is discovered |
 
 ---
 
@@ -176,13 +184,21 @@ zybit/
 - If the change closes a major gap, update all affected documents in the checklist above.
 - Include documentation changes in the same commit as the code change.
 
-### Consistency requirement
+### Single source of truth (consolidation 2026-05-23)
 
-The following must always agree with each other:
+The **"Current build state" table above is the canonical record** of
+what is built, partial, or not yet built. The previously-duplicated
+status sections in `DOCTRINE.md`, `docs/ARCHITECTURE.md`, and
+`../product_gap.md` were collapsed into pointers that reference this
+table — so a feature shipping now requires updating exactly **one**
+file.
 
-- "Current build state" table in this file (`AGENTS.md`)
-- "Where we are today" section in `DOCTRINE.md`
-- "What Exists" section in `docs/ARCHITECTURE.md`
-- Status table at the top of `../product_gap.md`
+If you find any stale status mention elsewhere in the docs, replace
+it with a pointer back to this section.
 
-If you notice any of these are out of sync — even if you didn't cause the drift — fix them.
+`docs/ARCHITECTURE.md` still holds the **technical reference**
+(per-component file paths, schema, design decisions). That is
+complementary to this status table, not duplicative.
+
+For the persona-routed entry point to the full doc set, see
+[`docs/INDEX.md`](./docs/INDEX.md).

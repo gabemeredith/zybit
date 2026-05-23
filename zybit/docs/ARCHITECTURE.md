@@ -50,6 +50,12 @@ Zybit is a single Next.js application deployed on Vercel. All domain logic runs 
 
 ## What Exists (built, tested, working)
 
+> **For current build-state status (✅/⚠️/⬛), see [`../AGENTS.md`](../AGENTS.md)
+> — "Current build state."** This section is the **technical reference** —
+> per-component file paths, schema, and design decisions. The two are
+> complementary: AGENTS.md answers *"is X shipped?"*; this section answers
+> *"where in the codebase is X and how does it work?"*
+
 ### Understand — Page Audit (`src/lib/phase2/snapshots/`)
 
 Static HTML analysis. Fetches pages via HTTP, parses DOM structure.

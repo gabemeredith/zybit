@@ -60,6 +60,11 @@ The first two questions are the only hard gates. The pre-flight check
 (B1, built this session) confirms the answer mechanically within five
 minutes of the customer connecting PostHog.
 
+**For prospects who do not yet use PostHog:** share
+[`posthog-from-zero.md`](./posthog-from-zero.md) — a self-serve recipe
+that gets them from zero to a connected Zybit account on PostHog's
+free tier in about 30 minutes.
+
 ### C2. Demo-quality flow graph
 
 What to show in a pre-pilot conversation:
