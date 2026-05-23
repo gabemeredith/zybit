@@ -197,12 +197,10 @@ export function computeFlowPreflight(args: ComputeFlowPreflightArgs): PreflightR
 
   if (blockers.length > 0) {
     status = 'empty';
-  } else if (
-    warnings.length === 0 &&
-    signals.distinctSessions >= PREFLIGHT_MIN_SESSIONS &&
-    signals.distinctRoutes >= PREFLIGHT_MIN_ROUTES &&
-    signals.totalTransitions >= PREFLIGHT_MIN_TRANSITIONS
-  ) {
+  } else if (warnings.length === 0) {
+    // Every warning is gated on one of MIN_SESSIONS / MIN_ROUTES /
+    // MIN_TRANSITIONS, so warnings.length === 0 already implies all three
+    // thresholds are met. No extra guard needed.
     status = 'ready';
     diagnostics.push({
       code: 'ready',

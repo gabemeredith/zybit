@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Logo } from "@/components/logo";
 
 type AppUser = {
@@ -67,12 +68,12 @@ export default function AdminDashboard({ initialUsers }: { initialUsers: AppUser
           <span className="text-base font-bold tracking-tight text-[#111]">Zybit Admin</span>
         </div>
         <div className="flex items-center gap-5">
-          <a
+          <Link
             href="/admin/ops"
             className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#6B6B6B] hover:text-[#111] transition-colors"
           >
             Ops
-          </a>
+          </Link>
           <form action="/api/auth/sign-out" method="post">
             <button
               type="submit"
