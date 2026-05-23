@@ -34,7 +34,12 @@ const ROLES = [
 ] as const;
 
 type Role = (typeof ROLES)[number] | '';
-type Stage = 'idle' | 'running' | 'teaser' | 'sent' | 'error';
+// idle      → form is shown
+// running   → audit pipeline runs in-browser (mock timers); progress strip
+// teaser    → one finding revealed; "request the full report" form below
+// awaiting  → confirmation email sent; report fires only after they click
+//             the link in their inbox (double opt-in — see spec §4a A)
+type Stage = 'idle' | 'running' | 'teaser' | 'awaiting' | 'error';
 
 interface FormState {
   url: string;
@@ -148,7 +153,10 @@ export default function AuditPage() {
   };
 
   const sendEmailMock = () => {
-    setStage('sent');
+    // In Phase B this triggers the confirmation email — NOT the report.
+    // The report follows only after the prospect clicks the confirmation
+    // link in their inbox. Spec §4a A.
+    setStage('awaiting');
   };
 
   return (
@@ -177,7 +185,7 @@ export default function AuditPage() {
             <TeaserPanel form={form} onSendEmail={sendEmailMock} />
           )}
 
-          {stage === 'sent' && <SentPanel form={form} onReset={reset} />}
+          {stage === 'awaiting' && <AwaitingPanel form={form} onReset={reset} />}
         </section>
 
         <TrustStrip />
@@ -217,9 +225,9 @@ function Hero() {
           color: INK,
         }}
       >
-        Audit your homepage.
+        Four things to fix
         <br />
-        We&rsquo;ll email you what to change.
+        on your homepage.
       </h1>
       <p
         className="sans-text"
@@ -231,10 +239,10 @@ function Hero() {
           maxWidth: 620,
         }}
       >
-        Drop your URL. Zybit runs the same 13 friction rules our paying customers use
-        — against your live site. You&rsquo;ll get a one-page report in your inbox:
-        four ranked findings, with evidence, suggested changes, and an estimate of
-        what fixing them is worth.
+        Give us your URL and we&rsquo;ll run the same 13 friction rules our customers
+        use — against your live site. You&rsquo;ll get a one-page report by email:
+        four ranked findings, the evidence behind each, what to change, and a rough
+        dollar estimate.
       </p>
       <p
         className="sans-text"
@@ -246,8 +254,8 @@ function Hero() {
           maxWidth: 620,
         }}
       >
-        We audit ~10 sites a week. Every report is reviewed by Asad or Jad before
-        it sends — no anonymous tool dumps. Work email required.
+        Work-email only. We confirm by email before sending — so audit results
+        only ever reach the inbox that asked for them.
       </p>
     </header>
   );
@@ -293,7 +301,7 @@ function AuditForm({
         />
       </Field>
 
-      <Field label="Work email" htmlFor="audit-email" hint="No personal addresses — the report goes to your team inbox.">
+      <Field label="Work email" htmlFor="audit-email" hint="We confirm by email before running anything. Personal addresses (gmail, etc.) are routed to the waitlist instead.">
         <input
           id="audit-email"
           type="email"
@@ -340,7 +348,7 @@ function AuditForm({
       )}
 
       <button type="submit" className="btn-brutalist" style={{ width: '100%' }}>
-        Run the 60-second audit →
+        Run the audit →
       </button>
 
       <p
@@ -353,7 +361,7 @@ function AuditForm({
           textAlign: 'center',
         }}
       >
-        Free · No credit card · One audit per email per day
+        Free · No credit card · Rate-limited to keep things sane
       </p>
     </form>
   );
@@ -445,7 +453,7 @@ function RunningPanel({ form, progressIdx }: { form: FormState; progressIdx: num
         Auditing {host}…
       </div>
       <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: INK, marginBottom: 24 }}>
-        Don&rsquo;t close this tab — should take less than a minute.
+        Keep this tab open — about 45 seconds to go.
       </div>
       <ol style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {PROGRESS_STEPS.map((step, i) => {
@@ -536,8 +544,9 @@ function TeaserPanel({ form, onSendEmail }: { form: FormState; onSendEmail: () =
         className="sans-text"
         style={{ fontSize: 15, lineHeight: 1.55, color: MUTED, marginBottom: 24, maxWidth: 600 }}
       >
-        The other 10 findings — plus screenshots, suggested CSS, and dollar estimates —
-        are in the full report. We&rsquo;ll email it to you below.
+        The other three top-priority findings — plus suggested changes and dollar
+        estimates — are in the report. Request it below and we&rsquo;ll send a
+        confirmation link to your inbox first.
       </p>
 
       <TeaserCard />
@@ -563,16 +572,17 @@ function TeaserPanel({ form, onSendEmail }: { form: FormState; onSendEmail: () =
             marginBottom: 8,
           }}
         >
-          Where do we send the full report?
+          Confirm to receive the report
         </div>
         <div style={{ fontSize: 16, fontWeight: 600, color: INK, marginBottom: 4 }}>
           {form.email}
         </div>
-        <div style={{ fontSize: 13, color: MUTED, marginBottom: 18 }}>
-          Usually arrives within the hour. We review every report personally before it sends.
+        <div style={{ fontSize: 13, color: MUTED, marginBottom: 18, lineHeight: 1.5 }}>
+          We&rsquo;ll send a one-click confirmation link to this address. After you click,
+          the full report arrives within the hour.
         </div>
         <button onClick={onSendEmail} className="btn-brutalist" style={{ width: '100%' }}>
-          Send me the full report →
+          Email me the confirmation link →
         </button>
         <p style={{ marginTop: 12, fontSize: 12, color: MUTED, textAlign: 'center' }}>
           Wrong address? <button
@@ -683,11 +693,13 @@ function TeaserCard() {
 }
 
 // ---------------------------------------------------------------------------
-// Sent (stage: sent)
+// Awaiting confirmation (stage: awaiting)
+// Double opt-in: the report only fires after the prospect clicks the link
+// in the confirmation email. Keeps Zybit from becoming an unsolicited-mail
+// vector for whatever address someone types into the form. Spec §4a A.
 // ---------------------------------------------------------------------------
 
-function SentPanel({ form, onReset }: { form: FormState; onReset: () => void }) {
-  const host = hostFromUrl(form.url);
+function AwaitingPanel({ form, onReset }: { form: FormState; onReset: () => void }) {
   return (
     <div
       className="sans-text"
@@ -709,7 +721,7 @@ function SentPanel({ form, onReset }: { form: FormState; onReset: () => void }) 
           marginBottom: 12,
         }}
       >
-        Sent
+        Check your inbox
       </div>
       <h2
         style={{
@@ -721,15 +733,17 @@ function SentPanel({ form, onReset }: { form: FormState; onReset: () => void }) 
           lineHeight: 1.1,
         }}
       >
-        Your report for {host} is on its way to {form.email}.
+        We sent a confirmation link to {form.email}.
       </h2>
       <p style={{ fontSize: 15, lineHeight: 1.55, color: INK, marginBottom: 20 }}>
-        Asad or Jad is doing a quick personal pass on the report right now. You should see
-        it in the next hour. Check your spam folder if it doesn&rsquo;t land.
+        Click the link to confirm the request is yours. The full report follows
+        within the hour. We do this so audit results only ever land in the inbox
+        that actually asked for them.
       </p>
       <p style={{ fontSize: 15, lineHeight: 1.55, color: MUTED, marginBottom: 24 }}>
-        Want to walk through the findings live? Grab 30 minutes with us — we&rsquo;ll go
-        through them on screen-share and tell you whether Zybit fits, straight.
+        Want to walk through the findings live once they arrive? Grab 30 minutes
+        with the founders — we&rsquo;ll go through them on screen-share and tell
+        you straight whether Zybit fits your team.
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
         <a
@@ -769,10 +783,10 @@ function SentPanel({ form, onReset }: { form: FormState; onReset: () => void }) 
 function TrustStrip() {
   const items = useMemo(
     () => [
-      { k: '13', v: 'friction rules' },
-      { k: '~45s', v: 'pipeline time' },
+      { k: '13', v: 'deterministic rules' },
+      { k: '~45s', v: 'audit runtime' },
       { k: '4', v: 'findings per report' },
-      { k: '100%', v: 'personally reviewed' },
+      { k: 'Double', v: 'opt-in by email' },
     ],
     [],
   );
@@ -819,24 +833,32 @@ function TrustStrip() {
 function FAQ() {
   const faqs = [
     {
-      q: 'Why do you need my work email?',
-      a: 'The audit report is a one-page HTML email — that\'s the artifact. We don\'t store anonymous audit traffic, and a real email keeps us on the hook to send you something good.',
+      q: 'Why do I have to confirm by email?',
+      a: 'So Zybit only ever sends audit results to the inbox that actually asked for them. The form is open to anyone — without the confirmation step, someone could type a stranger\'s address and we\'d unwittingly send unsolicited mail. Two-second click; once-only.',
     },
     {
-      q: 'Will you spam me?',
-      a: 'No. One email with the report. If you don\'t book a call or reply, you won\'t hear from us again unless you write back.',
+      q: 'Why work email only?',
+      a: 'The report is for product teams — it cites your funnel, your CTAs, your conversion path. A personal address can\'t open a conversation about any of that, and gmail floods our spam reputation. Personal addresses are routed to the waitlist instead.',
+    },
+    {
+      q: 'Will you put me on a drip campaign?',
+      a: 'No. One confirmation email, one report email, and that\'s it. If you don\'t book a call or write back, you won\'t hear from us again. Every confirmation email has a one-click suppression link too.',
     },
     {
       q: 'What does Zybit actually do beyond this audit?',
-      a: 'The audit is the static-crawl part. The full product connects to your analytics (PostHog / Segment / GA4), watches real user sessions, and re-ranks findings based on what actually moves your metrics — a continuous loop instead of a one-shot snapshot.',
+      a: 'The audit is the static-crawl part. The full product connects to your analytics (PostHog, Segment, GA4), watches real user sessions, and re-ranks findings based on what actually moves your metrics — a continuous loop instead of a one-shot snapshot.',
     },
     {
       q: 'How accurate are the dollar estimates?',
-      a: 'They\'re grounded in your declared (or inferred) MRR/AOV and the funnel stage each finding hits. Treat them as order-of-magnitude, not forecasts. Confidence scores on each finding tell you which ones to trust most.',
+      a: 'They\'re grounded in your declared (or inferred) MRR/AOV and the funnel stage each finding hits. Treat them as order-of-magnitude, not forecasts. The confidence score on each finding tells you which ones to trust most.',
     },
     {
       q: 'My site is a SPA — will the audit work?',
-      a: 'Yes. We fall back to a headless browser render if the static HTML is empty. Some flow-aware findings need real session data and only appear once you connect analytics.',
+      a: 'Yes. If the static HTML is empty we fall back to a headless browser render. Some flow-aware findings need real session data and only appear once you connect your analytics.',
+    },
+    {
+      q: 'Will you audit anything?',
+      a: 'Almost. Public HTTPS URLs only — no internal IPs, no auth-gated pages, no private hosts. If a site asks us not to crawl them, we honour that. We rate-limit per IP, per email, per email domain, and per target hostname to keep things sane.',
     },
   ];
 

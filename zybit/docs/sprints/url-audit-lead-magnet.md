@@ -207,7 +207,228 @@ spending bomb.
 
 ---
 
-## 5. Positioning — three sentences that have to be right
+## 4a. Security & abuse playbook — Phase B gating requirements
+
+**Added 2026-05-23 (PM ask).** Phase A ships no backend, so today there
+is nothing to abuse. This section is the hard checklist that gates any
+Phase B PR. **Do not merge `/api/audit/public` without each row below
+ticked.**
+
+The endpoint takes two pieces of user-controlled input (URL + email),
+spends real money on third parties (Firecrawl, Browserless, Resend),
+and sends mail to arbitrary inboxes. Every one of those properties is
+exploitable; the next eight sections close the holes.
+
+### A. Email-bombing / unsolicited-mail (THE biggest threat)
+
+**Threat:** anyone types `ceo@stripe.com`, we obediently send "Your
+Zybit audit is ready" to Stripe's CEO. We become an unsolicited-mail
+service, the CEO emails Asad, brand is dead. CAN-SPAM exposure too.
+
+**Required mitigation: double opt-in, no exceptions.**
+
+1. Submission creates a `public_audits` row with
+   `status = 'pending_verification'`. **The audit pipeline does not run
+   yet.**
+2. A single transactional email goes out: *"Did you request a Zybit
+   audit of {domain}? Click to confirm — we'll run the audit and send
+   the report."* Confirmation link contains a 32-byte
+   `verification_token`, single-use, 24-hour TTL.
+3. Click → token marked used → audit pipeline dispatches → full report
+   email follows ~45s later.
+4. If the token is never clicked, the row TTLs out at 24h. No further
+   email is ever sent to that address from that submission.
+
+Trade-off: 1 extra click and ~2 emails per real audit. Acceptable.
+Removes the entire class of "use Zybit to spam strangers" attack and
+makes the brand promise — "we email *you*, the requester" — literally
+true.
+
+The teaser page (`/audit/[id]`) **does not depend on confirmation** —
+it can show the one teaser finding once the audit runs in the
+submitter's own browser session. That keeps the on-site signal intact.
+
+### B. Server-side request forgery (SSRF)
+
+**Threat:** `url = http://169.254.169.254/` (AWS metadata),
+`http://localhost:5432`, `http://10.0.0.1`, file://, gopher://, ipv6
+loopback `[::1]`, `[fc00::]/7`, DNS rebinding (initial resolve
+returns 1.2.3.4, second resolve in Firecrawl returns 127.0.0.1).
+
+**Required validator** (`src/lib/audit/urlValidator.ts`, new):
+
+1. Parse with `new URL()`; reject anything that throws.
+2. Allow only `http:` / `https:` schemes.
+3. Reject if hostname matches any IP literal (v4 or v6) — force named
+   hosts only.
+4. Reject TLDs in `{local, internal, localhost, test, example,
+   invalid, onion}` and the literal string `localhost`.
+5. **DNS resolve at validation time** and reject if any resolved A/AAAA
+   address falls in RFC1918 (`10/8`, `172.16/12`, `192.168/16`),
+   loopback (`127/8`, `::1`), link-local (`169.254/16`, `fe80::/10`),
+   CGNAT (`100.64/10`), broadcast, multicast, unique-local
+   (`fc00::/7`).
+6. Re-validate the hostname against the same checks immediately
+   before the Firecrawl call (mitigates DNS rebinding — the
+   validator-resolved address must match the request-time resolved
+   address).
+7. Reject URLs with userinfo (`user:pass@host`).
+8. Reject URLs > 2048 chars, paths with `..`, or any non-printable
+   characters.
+
+Cover with a unit-test suite: at minimum the 13 well-known SSRF
+payloads from the OWASP cheat sheet must all be rejected.
+
+### C. Rate-limiting (defense in depth, all required)
+
+A single layer is not enough — VPNs / mailbox tricks defeat any one
+limit. Stack five and survive most casual abuse.
+
+| Dimension | Limit | Storage | Notes |
+|---|---|---|---|
+| IP (per /24 for IPv4, /64 for IPv6) | **10 / 24h, 1 / min** | `audit_rate_limits` table (mirror of `auth_rate_limits`) | Vercel `request.ip` + Cloudflare `cf-connecting-ip` fallback |
+| Email address | **3 / 24h, 1 / hour** | same table | normalized lowercase; gmail dot-trick stripped |
+| Email domain | **8 / 24h** | same table | catches single-team abuse (every@acme.com) |
+| Target hostname | **5 / 24h** | same table | prevents grudge-audits of a competitor |
+| **Global budget** | **$X / 24h Firecrawl + $Y Browserless + $Z Resend** | Cronitor heartbeat + Vercel KV counter | trips circuit breaker — endpoint returns 503 "audits paused, try tomorrow" |
+
+The global budget is the seatbelt. Without it, every other limit is
+defeated by attackers willing to rotate IPs and mailboxes.
+
+### D. Cost-of-a-single-audit cap
+
+**Threat:** a hostile site has 10,000 pages; Firecrawl maps all of
+them, Browserless renders each, single audit costs $80.
+
+**Required caps**, hard-coded in `runUrlAudit` config:
+
+- `maxPages = 20` per audit (already in `RunUrlAuditOpts`).
+- `firecrawlTimeoutMs = 30_000` per call.
+- `perPageBrowserlessTimeoutMs = 15_000`.
+- `totalAuditWallClockMs = 90_000` — abort and partial-result if exceeded.
+- `perAuditMaxBytes = 25 MB` HTML downloaded total.
+
+If any cap trips, the audit returns whatever findings it has and the
+PM-facing copy reads "we audited 7 of 20 pages before stopping; this
+report covers what we saw."
+
+### E. Cloudflare Turnstile (or equivalent bot challenge)
+
+**Threat:** trivial curl-loop abuse. Even with email-bombing solved,
+each spurious submission still costs us a confirmation email + a
+rate-limit slot.
+
+**Required:** Turnstile widget on the `/audit` form. Server-side
+verifies the token on every POST to `/api/audit/public`. Reject with
+400 if missing/invalid/expired.
+
+Captcha-shy users (CMOs, screen readers): Turnstile's "managed"
+challenge is usually invisible; we accept the rare friction over
+unlimited bot abuse.
+
+### F. Stored-content sanitization
+
+**Threat:** the URL the prospect submits ends up in:
+- The verification email body (link + display URL)
+- The teaser page URL bar and page title
+- The full report email cover + footer
+- Slack notifications (if Phase C ships)
+
+If any of those is rendered without escaping, an attacker submits
+`https://acme.com#"><script>alert(1)</script>` and we have a stored
+XSS in our own outbound email or admin Slack.
+
+**Required:**
+- All user-controlled fields (URL, email, role) escape via
+  `escapeHtml` before rendering to any HTML surface — already
+  established convention in `auditReportEmail.ts`.
+- Display URL in the verification email shows hostname only, not
+  the full URL with fragments/queries. (Reduces tampering surface
+  in the human eye.)
+- Findings text emitted from `runUrlAudit` is already deterministic
+  and not user-controlled, but treat it as untrusted at the email
+  template layer for defense in depth.
+
+### G. PII / GDPR posture
+
+`public_audits` row stores: target URL, email, role, IP, user-agent,
+timestamps, full findings JSON. **All but the URL is PII or
+quasi-PII.**
+
+**Required:**
+- 90-day TTL on the row (cron job purges). Already in §8 open
+  question 4 — make it a hard deletion, not a soft flag.
+- Privacy policy linked from the form: what we collect, how long we
+  keep it, how to request deletion (reply to the confirmation email
+  or contact privacy@zybit).
+- "Right to be forgotten" path: a single SQL DELETE keyed on
+  lowercased email. Document in `docs/sprints/url-audit-lead-magnet.md`.
+- IP stored hashed (`SHA-256(ip + per-week-salt)`) for rate-limiting
+  uniqueness without retaining plain-text IPs beyond the window.
+
+### H. "We audited your site" complaints from third parties
+
+**Threat:** someone audits a competitor; the competitor finds us via
+Browserless user-agent string and emails us angry. The audit is
+public-internet fair use, but bad PR.
+
+**Required:**
+- User-agent string is `Mozilla/5.0 ... ZybitAudit/1.0
+  (+https://zybit.com/audit-bot)`. The /audit-bot URL explains who
+  we are and how to opt out.
+- `robots.txt` is respected. `runSnapshot` already has
+  `respectRobots` — the URL-audit currently passes `false`; **flip
+  to `true` for the public endpoint** (separate from the internal
+  Lighthouse runner which can keep `false` for our own pilots).
+- Opt-out list: a small file/table of domains we will not audit on
+  the public endpoint, populated on request. ~5 entries expected;
+  trivial to maintain.
+
+### I. Abuse-of-the-confirmation-email vector
+
+**Threat:** even the confirmation email becomes a spam vector if
+unbounded — attacker submits `victim@bigco.com` repeatedly to make
+us send 100 "did you request an audit?" emails.
+
+**Required mitigation already encoded above:**
+- Email-address rate limit (B above): 3 confirmation emails per
+  address / 24h max.
+- Single active token per email-address-+-URL pair: re-submitting
+  same email + URL within the TTL window does not send a new email,
+  it idempotently returns the existing pending row.
+- One-click unsubscribe link in every confirmation email: clicking
+  it adds the address to a permanent suppression list.
+
+### J. Observability + kill switch
+
+- Log every submission (after rate-limit + Turnstile) to Axiom with
+  `service: 'public-audit'`. Fields: hashed_ip, email_domain (not
+  full email), target_hostname, decision (`accepted`/`rejected`
+  + reason), timestamp.
+- Cronitor heartbeat for daily cost.
+- Vercel feature flag `PUBLIC_AUDIT_ENABLED` — one toggle that
+  returns 503 from `/api/audit/public` if we need to instantly
+  kill the surface (HN spike, cost overrun, security incident).
+  The `/audit` page reads the same flag and shows a "we're paused
+  for the day, come back tomorrow" state instead of the form.
+
+### Phase B definition of done — security checklist
+
+- [ ] Double opt-in confirmation email implemented + token table
+- [ ] SSRF validator (§B) with OWASP-payload test suite (passing)
+- [ ] All 5 rate-limit dimensions enforced server-side (§C)
+- [ ] Per-audit cost caps wired into `runUrlAudit` (§D)
+- [ ] Turnstile site-key + secret in env, verified on POST (§E)
+- [ ] HTML-escape audit on every rendered surface (§F)
+- [ ] 90-day TTL cron + privacy policy + opt-out path (§G + §H)
+- [ ] User-agent string + robots.txt respected (§H)
+- [ ] Idempotent submissions + suppression list (§I)
+- [ ] Axiom logging + Cronitor cost heartbeat + kill-switch flag (§J)
+
+**No checkbox skipped. No Phase B PR merges without this list
+literally pasted into the PR description with every box ticked.**
+
+
 
 The risk is anchoring prospects to "Zybit = free audit tool." The
 copy has to make the audit feel like a *teaser*, not the product.
@@ -248,18 +469,34 @@ prospects walk away with the 3 findings and never come back.
 These four files ship as visual mocks. No new env vars, no schema,
 no Resend wiring yet.
 
-### Phase B — Wire to the real pipeline (3-4 days)
+### Phase B — Wire to the real pipeline (5-6 days, revised 2026-05-23)
 
-5. `public_audits` schema + migration.
-6. `/api/audit/public` route — rate-limit (IP 10/day + email-domain
-   3/day), Turnstile verify, URL SSRF validator, dispatch
-   `runUrlAudit`, persist findings, pick teaser + top-4, render
-   email via the template from Phase A, send via Resend.
-7. `/audit/[id]` page — promote from client-timer mock to real
-   polling of `public_audits.status`.
-8. Cloudflare Turnstile site-key + secret in env.
-9. Cost monitor — Cronitor heartbeat for daily Firecrawl/Browserless
-   spend on the public route.
+**Gating prerequisite: every checkbox in §4a is implemented and tested
+before the route is enabled in production.**
+
+5. `public_audits` schema + migration + `audit_verification_tokens`
+   sibling table (one-shot 24h TTL tokens for double opt-in).
+6. `/api/audit/public/submit` route — Turnstile verify → SSRF validate
+   → 5-dimensional rate-limit → idempotency check → persist row with
+   `status='pending_verification'` → send confirmation email. **Does
+   not run the audit pipeline.**
+7. `/api/audit/public/confirm?token=…` route — verify + consume token,
+   dispatch `runUrlAudit`, persist findings, render the full report
+   email via the Phase A template, send via Resend, write
+   `email_sent_at`.
+8. `/audit/[id]` page — promote from client-timer mock to real polling
+   of `public_audits.status`. Teaser shows the moment the pipeline
+   finishes; the inbox copy is replaced with "Check your inbox to
+   confirm — we'll send the full report after you click."
+9. Cloudflare Turnstile site-key + secret in env.
+10. Cost monitor + kill-switch — Cronitor heartbeat for daily
+    Firecrawl/Browserless/Resend spend; Vercel feature flag
+    `PUBLIC_AUDIT_ENABLED` gates `/api/audit/public/*` and the `/audit`
+    form.
+11. Privacy policy + opt-out page (`/audit/privacy`).
+12. Test suite: OWASP SSRF payloads (§B), rate-limit overflow,
+    idempotency, token replay, kill-switch, HTML-escape on every
+    template.
 
 ### Phase C — Premium routing (optional, 1-2 days, gated on demand)
 

@@ -146,7 +146,7 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
             <td style="padding: 0 28px 24px;">
               <h1 style="margin: 8px 0 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 36px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: ${INK};">${safeDomain}</h1>
               <p style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK};">
-                We ran Zybit's 13 friction rules against your live homepage and the ${report.pagesScanned} internal pages we could reach. Below are the <strong>four highest-priority findings</strong>, ranked by potential revenue impact and confidence. Each one cites what we saw, what to change, and an estimate of what fixing it is worth.
+                We ran our 13 friction rules against your homepage and the ${report.pagesScanned} internal pages we could reach. The <strong>four findings below</strong> are the ones most worth fixing first — ranked by potential revenue impact and how confident we are in the call. Each one cites what we saw on your site, what to change, and a rough dollar estimate.
               </p>
             </td>
           </tr>
@@ -182,13 +182,13 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
               ${
                 moreCount > 0
                   ? `<p style="margin: 0 0 22px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 14px; line-height: 1.55; color: ${MUTED};">
-                <strong style="color: ${INK};">+${moreCount} more findings.</strong> The four above are the highest-priority ones. The full ranked list — plus flow drop-offs, weekly digests, and the rules learning what works on <em>your</em> product — comes after you connect your analytics.
+                <strong style="color: ${INK};">${moreCount} other findings didn&rsquo;t make the cut.</strong> They&rsquo;re lower-impact or lower-confidence — worth seeing once you&rsquo;ve fixed the four above. The full ranked list lives in Zybit, along with the things a static crawl can&rsquo;t see: flow drop-offs, session-level evidence, and rules that learn what actually works on <em>your</em> product.
               </p>`
                   : ''
               }
               <a href="${escapeHtml(report.bookCallUrl)}" style="display: inline-block; padding: 14px 28px; background: ${INK}; color: ${CREAM}; text-decoration: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; box-shadow: 4px 4px 0 ${INK}; border: 1px solid ${INK};">Walk through these with us →</a>
               <p style="margin: 14px 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px; line-height: 1.5; color: ${MUTED};">
-                30 minutes. We'll go through the four findings on screen-share, answer questions, and tell you whether Zybit fits your team — straight, no pitch.
+                30 minutes on screen-share. We&rsquo;ll walk through each finding, answer your questions, and tell you straight whether Zybit fits your team. No pitch deck.
               </p>
             </td>
           </tr>
@@ -201,7 +201,7 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
                   — Asad &amp; Jad
                 </p>
                 <p style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: ${MUTED};">
-                  Built at Cornell · We review every audit personally
+                  Zybit · Built at Cornell
                 </p>
               </div>
             </td>
@@ -238,7 +238,7 @@ export async function sendAuditReportEmail(
     const { error } = await resend.emails.send({
       from: 'Asad & Jad at Zybit <audit@resend.dev>',
       to,
-      subject: `Your Zybit audit — ${report.domain}`,
+      subject: `Four things to fix on ${report.domain}`,
       html,
     });
     if (error) {
