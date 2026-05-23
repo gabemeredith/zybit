@@ -43,6 +43,10 @@ export interface AuditReport {
   totalFindings: number;
   findings: AuditFindingForEmail[];
   bookCallUrl: string;
+  /** Public URL of the above-fold homepage screenshot, if captured. */
+  screenshotUrl?: string | null;
+  /** 2-sentence AI visual observation from the screenshot, if run. */
+  visionObs?: string | null;
 }
 
 const INK = '#111';
@@ -117,6 +121,26 @@ function findingCard(f: AuditFindingForEmail): string {
   `;
 }
 
+function screenshotSection(report: AuditReport): string {
+  if (!report.screenshotUrl) return '';
+
+  const imgTag = `<img src="${escapeHtml(report.screenshotUrl)}" width="544" alt="Above-fold screenshot of ${escapeHtml(report.domain)}" style="display: block; width: 100%; max-width: 544px; border: 2px solid ${INK}; box-shadow: 6px 6px 0 ${INK};" />`;
+
+  const caption = report.visionObs
+    ? `<p style="margin: 10px 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; line-height: 1.6; color: ${INK}; font-style: italic;">${escapeHtml(report.visionObs)}</p>`
+    : '';
+
+  return `
+          <tr>
+            <td style="padding: 0 28px 28px;">
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 12px;">What we saw</div>
+              ${imgTag}
+              ${caption}
+            </td>
+          </tr>
+  `;
+}
+
 export function renderAuditReportEmailHtml(report: AuditReport): string {
   const findingsHtml = report.findings.map(findingCard).join('\n');
   const safeDomain = escapeHtml(report.domain);
@@ -168,6 +192,8 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
               </table>
             </td>
           </tr>
+
+          ${screenshotSection(report)}
 
           <!-- Findings -->
           <tr>

@@ -5,6 +5,7 @@ import { zybitFindings } from '@/lib/db/schema';
 import { sendAuditReportEmail } from '@/lib/email/auditReportEmail';
 import type { AuditReport, AuditFindingForEmail } from '@/lib/email/auditReportEmail';
 import { recordAuditCost } from '@/lib/audit/publicAuditRateLimit';
+import { captureAuditScreenshot, runVisionPass } from '@/lib/audit/visionPass';
 import { runUrlAudit } from '../../../../../../lighthouse/lib/runner/runUrlAudit';
 import { eq, desc } from 'drizzle-orm';
 
@@ -119,6 +120,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     estimatedImpactMonthlyUsd: f.impactEstimate?.unit === 'usd' ? Number(f.impactEstimate.value) : null,
   }));
 
+  // Vision pass — non-fatal, best-effort
+  const screenshot = await captureAuditScreenshot(audit.url);
+  const visionObs = screenshot?.buffer
+    ? await runVisionPass(
+        audit.domain,
+        screenshot.buffer,
+        topFindings[0]
+          ? { title: topFindings[0].title, whatToChange: topFindings[0].whatToChange }
+          : null,
+      )
+    : null;
+
   const bookCallUrl =
     process.env.ZYBIT_BOOK_CALL_URL ?? 'https://calendly.com/asad-getzybit/30min';
 
@@ -131,6 +144,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     totalFindings: counts.findings,
     findings: topFindings,
     bookCallUrl,
+    screenshotUrl: screenshot?.screenshotUrl || null,
+    visionObs,
   };
 
   await sendAuditReportEmail(audit.email, report);
