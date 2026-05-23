@@ -4,6 +4,7 @@ import {
   callGeminiFlash,
   isSafeAttributeName,
   isSafeCssDeclarations,
+  isSafeReplacementText,
   parseAndValidateResponse,
   type AdvisorFinding,
   type AdvisorDesignContext,
@@ -164,6 +165,28 @@ describe('isSafeCssDeclarations', () => {
   });
 });
 
+describe('isSafeReplacementText', () => {
+  it('accepts plain copy', () => {
+    expect(isSafeReplacementText('Start free trial')).toBe(true);
+    expect(isSafeReplacementText('Book a demo')).toBe(true);
+  });
+
+  it('rejects empty strings', () => {
+    expect(isSafeReplacementText('')).toBe(false);
+  });
+
+  it('rejects strings over the 200-char cap', () => {
+    expect(isSafeReplacementText('a'.repeat(200))).toBe(true);
+    expect(isSafeReplacementText('a'.repeat(201))).toBe(false);
+  });
+
+  it('rejects angle-bracket payloads so script-tag copy never reaches PM review', () => {
+    expect(isSafeReplacementText('<script>alert(1)</script>')).toBe(false);
+    expect(isSafeReplacementText('Save >50%')).toBe(false);
+    expect(isSafeReplacementText('<3 our product')).toBe(false);
+  });
+});
+
 describe('parseAndValidateResponse', () => {
   const allowed = SNAPSHOT.availableSelectors;
 
@@ -308,6 +331,27 @@ describe('parseAndValidateResponse', () => {
     expect(out.options).toHaveLength(1);
     expect(out.options[0].modifications).toEqual([
       { type: 'attribute-set', selector: 'button.cta-primary', attr: 'aria-label', value: 'Start trial' },
+    ]);
+    expect(out.droppedCount).toBe(2);
+  });
+
+  it('drops text-replace modifications carrying angle brackets or oversize copy', () => {
+    const raw = JSON.stringify({
+      options: [
+        {
+          label: 'text-attacks',
+          modifications: [
+            { type: 'text-replace', selector: 'button.cta-primary', text: '<script>alert(1)</script>' },
+            { type: 'text-replace', selector: 'button.cta-primary', text: 'a'.repeat(201) },
+            { type: 'text-replace', selector: 'button.cta-primary', text: 'Start free trial' },
+          ],
+        },
+      ],
+    });
+    const out = parseAndValidateResponse({ raw, availableSelectors: allowed, captureMethod: 'full' });
+    expect(out.options).toHaveLength(1);
+    expect(out.options[0].modifications).toEqual([
+      { type: 'text-replace', selector: 'button.cta-primary', text: 'Start free trial' },
     ]);
     expect(out.droppedCount).toBe(2);
   });

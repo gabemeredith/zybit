@@ -84,6 +84,20 @@ export function isSafeAttributeName(attr: string): boolean {
   );
 }
 
+// `text-replace` sets the textContent of an allowlisted element. The variant
+// runtime (Zybit-149) MUST apply this via `textContent`/`innerText`, not
+// `innerHTML`, so any markup the AI emits renders as literal text. We still
+// reject angle brackets here so a payload like `<script>` never reaches the
+// PM-review surface verbatim (a PM skimming three options shouldn't have to
+// notice script tags in copy), and we cap length so a hallucinating model
+// can't blow up the option card. 200 chars covers CTA copy + form labels.
+const TEXT_REPLACE_MAX_LENGTH = 200;
+export function isSafeReplacementText(text: string): boolean {
+  if (text.length === 0 || text.length > TEXT_REPLACE_MAX_LENGTH) return false;
+  if (/[<>]/.test(text)) return false;
+  return true;
+}
+
 // `css-inject` accepts declarations applied to an allowlisted selector
 // (e.g. `font-size: 24px; color: #111;`). Anything that opens a new rule
 // block, references an external resource, or breaks out of the style
@@ -185,8 +199,9 @@ function validateModification(
       if (!isSafeCssDeclarations(m.css)) return null;
       return { type, selector, css: m.css };
     case 'text-replace':
-      if (!selector || typeof m.text !== 'string' || m.text.length === 0) return null;
+      if (!selector || typeof m.text !== 'string') return null;
       if (!allowedSelectors.has(selector)) return null;
+      if (!isSafeReplacementText(m.text)) return null;
       return { type, selector, text: m.text };
     case 'element-hide':
     case 'element-show':
