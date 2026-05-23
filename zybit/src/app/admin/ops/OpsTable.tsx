@@ -32,27 +32,33 @@ export default function OpsTable({ rows, generatedAt }: { rows: OpsRow[]; genera
 
   const view = useMemo(() => {
     const filterLc = filter.trim().toLowerCase();
-    const filtered = filterLc
-      ? rows.filter(
-          (r) =>
-            r.organizationName.toLowerCase().includes(filterLc) ||
-            r.siteDomain.toLowerCase().includes(filterLc) ||
-            r.organizationId.toLowerCase().includes(filterLc),
-        )
-      : rows;
+    // Pre-compute siteHealth once per row — it's O(connectors) + Date.parse
+    // per call, and the comparator would call it twice per pair otherwise.
+    const withHealth = rows
+      .filter((r) => {
+        if (!filterLc) return true;
+        return (
+          r.organizationName.toLowerCase().includes(filterLc) ||
+          r.siteDomain.toLowerCase().includes(filterLc) ||
+          r.organizationId.toLowerCase().includes(filterLc)
+        );
+      })
+      .map((r) => ({ row: r, health: siteHealth(r, now) }));
 
-    return [...filtered].sort((a, b) => {
-      if (sort === "org") return a.organizationName.localeCompare(b.organizationName);
+    withHealth.sort((a, b) => {
+      if (sort === "org") return a.row.organizationName.localeCompare(b.row.organizationName);
       if (sort === "lastEvent") {
-        const ta = a.lastEventAt ? Date.parse(a.lastEventAt) : 0;
-        const tb = b.lastEventAt ? Date.parse(b.lastEventAt) : 0;
+        const ta = a.row.lastEventAt ? Date.parse(a.row.lastEventAt) : 0;
+        const tb = b.row.lastEventAt ? Date.parse(b.row.lastEventAt) : 0;
         return tb - ta;
       }
-      const ha = HEALTH_ORDER[siteHealth(a, now)];
-      const hb = HEALTH_ORDER[siteHealth(b, now)];
+      const ha = HEALTH_ORDER[a.health];
+      const hb = HEALTH_ORDER[b.health];
       if (ha !== hb) return ha - hb;
-      return a.organizationName.localeCompare(b.organizationName);
+      return a.row.organizationName.localeCompare(b.row.organizationName);
     });
+
+    return withHealth;
   }, [rows, sort, filter, now]);
 
   return (
@@ -104,8 +110,7 @@ export default function OpsTable({ rows, generatedAt }: { rows: OpsRow[]; genera
                 </td>
               </tr>
             )}
-            {view.map((row) => {
-              const h = siteHealth(row, now);
+            {view.map(({ row, health: h }) => {
               const tone = HEALTH_TONE[h];
               return (
                 <tr key={row.siteId} className="border-t border-zinc-100">

@@ -105,12 +105,12 @@ export function computeFlowPreflight(args: ComputeFlowPreflightArgs): PreflightR
 
     const route = normalizeRoute(ev.path);
     distinctRoutes.add(route);
-    const arrivals = sessionRoutes.get(ev.sessionId) ?? [];
-    if (arrivals.length === 0 || arrivals[arrivals.length - 1] !== route) {
+    let arrivals = sessionRoutes.get(ev.sessionId);
+    if (!arrivals) {
+      arrivals = [route];
+      sessionRoutes.set(ev.sessionId, arrivals);
+    } else if (arrivals[arrivals.length - 1] !== route) {
       arrivals.push(route);
-      sessionRoutes.set(ev.sessionId, arrivals);
-    } else {
-      sessionRoutes.set(ev.sessionId, arrivals);
     }
   }
 
