@@ -130,38 +130,32 @@ Zybit's long-term moat is outcome-labeled data, not raw event collection. Models
 
 ## Where we are today
 
-The analysis engine and PM dashboard are complete. Zybit can:
+**For the canonical build-state table, see [`AGENTS.md`](./AGENTS.md) — "Current build state."**
+That table is the single source of truth for what is built, partial, or
+not yet built. This section keeps only what is unique to the doctrine:
+the immediate priorities and what we deliberately do **not** build.
 
-- Audit any product's visual hierarchy via static page snapshots (HTTP fetch + DOM parse; SPA/JS-rendered sites not yet supported)
-- Ingest behavioral data from PostHog (pull-sync), Segment (webhook), and GA4 (Data API v1beta pull-sync — aggregate-grain, Identify/Propose only)
-- Run 13 deterministic audit rules (5 design + 7 pain + 1 flow) across combined behavioral and design signals
-- Surface specific findings with A/B prescriptions, evidence arrays, and revenue impact estimates
-- Display findings, experiments, and lifecycle status in a wired PM dashboard
-- Assign visitors to control/variant via deterministic bucketing and apply HTML modifications via the proxy layer
-- Compute experiment outcomes automatically — chi-squared significance, sequential-testing guard (confidence + per-arm min sample + min days), guardrail evaluation, auto-stop, hourly cron (shipped in `5951a99` + `b09a212`)
-- Render a server-side preview of variant modifications before deploy (`api/preview/[experimentId]`)
-- Bridge the Zybit proxy visitor ID into PostHog events (`zybit_vid` super-property) so PostHog-sourced conversions match the outcome-computation join across providers
-- Notify the PM by email (Resend) when an experiment auto-stops, concludes, or breaches a guardrail
-- Authenticate PMs via invite-only magic-link sessions and authenticate machines via hashed M2M API keys
-- Bill customers and enforce plan limits via Stripe — usage metering wired (events/snapshots/insights), sites and concurrent experiments hard-enforced (402), events soft-capped (metered + surfaced, never dropped)
-- Show per-integration health in the cockpit ("Zybit is watching" / "No data yet" / "Degraded") with last-sync and 7-day event count
-- Show the visible loop timeline per site — detections, deployments, results — with a guardrail-breach amber flag and a multi-site selector
-- Surface measurement freshness ("results last refreshed") on the cockpit
-- Observe cron and pipeline health via Cronitor heartbeats, an error-budget tracker, and a structured logger
+### Immediate priorities (in order)
 
-**What is not yet complete (immediate priorities, in order):**
+The product direction is set by [`docs/PRD.md`](./docs/PRD.md) —
+deliberately **one milestone**, not a platform build.
 
-The product direction is set by `docs/PRD.md` — deliberately **one milestone**, not a platform build.
+1. ~~**Flow-graph advisory (PRD Milestone 1)**~~ ✅ **Complete** — all 5
+   PRD scope items shipped. Everything beyond the committed milestone
+   (client runtime, journey experiments, one-click in-app deploy, full
+   AI advisor, element picker) is **deferred until a customer pulls
+   it** — see [`docs/PRD.md`](./docs/PRD.md) §4 and
+   [`docs/sprints/sprint-3-deferred.md`](./docs/sprints/sprint-3-deferred.md).
+2. Forward-looking priorities live in
+   [`docs/sprints/next-bets.md`](./docs/sprints/next-bets.md) (URL-audit
+   lead magnet → preview pipeline → manual outcome entry → richer
+   modifications → one-click deploy).
 
-1. ~~**Flow-graph advisory (PRD Milestone 1)**~~ ✅ **Complete** — all 5 PRD scope items shipped: derivation, data model, `/app/flow` graph view, `flow-inter-step-dropoff` rule, `flow-funnel` credibility slice in EvidencePanel. Migration `0017` applied to Neon 2026-05-22. Everything beyond the committed milestone (client runtime, journey experiments, one-click in-app deploy, full AI advisor, element picker) is **deferred until a customer pulls it** — see `docs/PRD.md` §4.
-2. **Operator org dashboard (Zybit-156)** — no `/app/operator` route yet; needed to support a paying customer remotely.
+### What is deliberately not being built
 
-For the definitive per-ticket status across sprints 0–5, see `docs/sprints/REMEDIATION.md`.
-
-**Recently completed:** Live Stripe round-trip **verified end-to-end** (2026-05-22) — checkout → webhook → `organizations.plan` write → `checkPlanLimit` 402, 18/18 checks against the live test API. Zybit-123 SPA handling — a launch-time guard now warns the PM before launching an experiment on a client-side-rendered page (the proxy modifies server-rendered HTML, so a SPA variant would silently render identical to control). Learn — Layer 2 (per-site rule-threshold calibration) shipped: `ruleCalibration.ts` derives a per-site, per-rule detection-floor multiplier from accumulated outcomes (loosen on repeated wins, tighten on repeated losses), applied to all 12 rules before they run via `runInsightsPipeline`. Observability Axiom drain is now connected (best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` are set). Scheduled snapshot refresh + HTML drift detection shipped (`refresh-snapshots` cron, Zybit-023). Lighthouse now generates synthetic experiments + outcomes end-to-end (Phase 2), so the full Understand→…→Learn loop is observable on synthetic data.
-
-**What is deliberately not being built:**
-Sentiment analysis, GitHub PR generation, PostHog replacement / direct SDK, more audit rules, cross-site priors (before 50 customers with outcomes). See "What Zybit is not."
+Sentiment analysis, GitHub PR generation, PostHog replacement / direct
+SDK, more audit rules, cross-site priors before 50 customers with
+outcomes. See "What Zybit is not" above for the rationale on each.
 
 ---
 
