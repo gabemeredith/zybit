@@ -61,6 +61,7 @@ Static HTML analysis. Fetches pages via HTTP, parses DOM structure.
 | Visual weight | `visualWeight.ts` | Scores element prominence from Tailwind class tokens (text-2xl, bg-primary, font-bold) |
 | Fold guess | `foldGuess.ts` | Estimates above/below fold from DOM position + landmark proximity |
 | Refresh cron | `refresh.ts` + `cron/refresh-snapshots/route.ts` | Daily 03:00 UTC re-fetch of the latest snapshot per pathRef; compares `contentHash` for HTML drift; cockpit surfaces `snapshots.staleDays` (amber > 7d). Distinct from `refresh-captures` (Playwright artifacts). (Zybit-023) |
+| Design token extractor | `tokenExtractor.ts` | Pure `extractDesignTokens(computedStyles, parser)` derives a compact token set (primary/secondary/accent colour, font family, type scale, border radius, spacing unit, CTA vocabulary) from captured computed styles. Co-written atomically into the design-snapshot row by `buildFullDesignSnapshot` in `designCapture.ts`. The AI Variant Advisor reads this as its design-system context. (Zybit-143) |
 
 **Limitation:** SPA pages return blank HTTP responses. `fetcher.ts` checks `isSpaHtml()` and falls back to `runBrowserSnapshot()` via Browserless.io when a shell is detected (`snapshotMethod: 'browser'`). HTTP-only fallback when `BROWSERLESS_TOKEN` is absent. Visual weight is heuristic (class token matching), not measured pixel positions.
 
@@ -104,6 +105,17 @@ Deterministic per-site route-transition graph derived from canonical events — 
 
 The derived graph feeds `runInsightsPipeline` (passed to audit rules as `ctx.flowGraph`) and is persisted after each insights run by `maybeRunInsightsForSite`. The `/app/flow` dashboard surface reads the cached graph from `phase2_flow_graph`.
 
+### Propose — AI Variant Advisor (`src/lib/experiments/aiAdvisor.ts` + route)
+
+LLM-assisted variant proposal layer for the experiment builder. **Proposals only — nothing applies them to a live DOM yet (the Zybit-149 client-side variant runtime is not built).**
+
+| Component | File | What it does |
+|-----------|------|--------------|
+| API route | `src/app/api/dashboard/experiments/ai-suggest/route.ts` | `POST /api/dashboard/experiments/ai-suggest` — magic-link session, org-scoped. Loads finding + structural snapshot + design snapshot; checks rate limit (denied calls don't bump counter); builds prompt; calls Gemini 2.0 Flash via REST; validates output; returns up to 3 schema-valid `VariantModification[]` options. Returns **503** when `GEMINI_API_KEY` is unset (PMs fall back to manual entry); **429** when the daily limit is reached. (Zybit-144) |
+| Advisor core | `aiAdvisor.ts` | Prompt builder + response parser + validator. Selector allowlist derived from CTAs + forms in the structural snapshot (headings out of scope — the snapshot lacks per-heading `cssSelector`). `attribute-set` restricted to an attribute allowlist; `css-inject` content checks; `text-replace` sanitisation. Finding text is wrapped in delimiters so prompt-injection from prescriptions can't escape into the system prompt. `element-reorder` is deliberately excluded from the AI surface. |
+| Rate limit + cost guard | `aiAdvisorRateLimit.ts` | Per-org daily cap (10 calls/org/UTC day) via atomic upsert on `phase2_ai_advisor_usage` (migration `0018`). Denied calls return 429 and **do not bump the counter**. Token usage logged per call under `service: 'ai-advisor'`. (Zybit-148) |
+
+
 ### Dashboard (`src/app/dashboard/`)
 
 PM-facing product surface. Connected to real APIs and real data.
@@ -130,6 +142,7 @@ Single Postgres database (Neon serverless) via Drizzle ORM.
 | `phase2_integrations` | Connector records (PostHog/Segment, status, cursor) |
 | `phase2_page_snapshots` | Page DNA snapshots |
 | `phase2_flow_graph` | Cached derived flow graph per site (one row, upserted each insights run) — migration `0017` |
+| `phase2_ai_advisor_usage` | Per-org daily AI advisor call counter (UTC day-bucket; atomic upsert; denied calls do not bump) — migration `0018` |
 | `zybit_findings` | Persisted audit findings with lifecycle |
 | `zybit_experiments` | Experiment metadata and results |
 | `zybit_site_meta` | Site operational metadata (MRR, AOV, session counts) |

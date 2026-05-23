@@ -48,6 +48,7 @@ Open `http://localhost:3000`. Before opening a PR: `npm run verify` (lint + Type
 | `STRIPE_PRICE_STARTER` / `_GROWTH` / `_SCALE` | Billing | Stripe price IDs for each plan |
 | `BROWSERLESS_API_KEY` | Snapshots | Browserless.io API key for JS-rendered snapshot fallback |
 | `CRONITOR_API_KEY` | Monitoring | Cronitor ping key for cron health monitoring |
+| `GEMINI_API_KEY` | AI Variant Advisor (non-essential) | Gemini 2.0 Flash key used by `POST /api/dashboard/experiments/ai-suggest`. Route returns 503 when unset — PMs fall back to manual variant entry. Per-org daily rate limit (10 calls/UTC day) enforced via `phase2_ai_advisor_usage` (migration `0018`). |
 
 To run without Postgres: `PHASE1_STORAGE_DRIVER=blob npm run dev`
 

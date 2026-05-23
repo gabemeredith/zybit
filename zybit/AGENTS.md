@@ -39,7 +39,7 @@ zybit/
   src/lib/phase1/             — Readiness scoring + legacy insights engine
   src/lib/auth/               — Invite-only magic-link auth + M2M API keys
   src/lib/billing/            — Stripe integration (plans, limits, usage metering)
-  src/lib/experiments/        — Bucketing, HTML modifier, edge proxy (partial)
+  src/lib/experiments/        — Bucketing, HTML modifier, edge proxy (partial), AI Variant Advisor (`aiAdvisor.ts`) + per-org daily rate limit (`aiAdvisorRateLimit.ts`)
   src/lib/observability/      — Cronitor, error budget, structured logger
   src/lib/db/                 — Drizzle schema + Postgres client (Neon)
   src/app/api/phase1/         — Readiness + insights HTTP API
@@ -62,7 +62,7 @@ zybit/
 | **Watch** (PostHog + Segment + GA4) | ✅ Built | PostHog + Segment built; PostHog visitor-ID bridge shipped; GA4 connector shipped — service-account JWT (Web Crypto), `runReport` offset pagination, cursor, `runGA4PullSyncJob` + `/cron/sync-ga4` every 30m. GA4 is aggregate-grain (Identify/Propose only, not joinable to assignments). Segment webhook has a batch schema guard (`guardSegmentBatch` — rejects malformed/oversized payloads, Zybit-137). PostHog bridge health probe surfaces an amber "bridge not detected" cockpit banner when experiment assignments exist but no conversion joins (Zybit-126). |
 | **Identify** (13 audit rules) | ✅ Built | 5 design + 7 pain + 1 flow rule, 592 passing tests — sufficient; do not add more rules |
 | **Flow-graph advisory** (PRD Milestone 1) | ✅ Built | All 5 PRD scope items complete: derivation (`deriveFlowGraph`), data model (`phase2_flow_graph` table + migration `0017`), graph view (`/app/flow` + `FlowGraphView.tsx`), flow-aware finding (`flow-inter-step-dropoff`), credibility slice (`flow-funnel` diagram in EvidencePanel). Migration `0017` created; **not yet applied to Neon** — apply before first `/app/flow` use. |
-| **Propose** (findings + prescriptions) | ✅ Built | Ranked by priority score + revenue impact, PM-readable. Selector validation badge (500ms debounced, Zybit-121). CSS system hint in experiment builder when 'Swap CSS classes' selected (Zybit-122). Dead-state UX shows session progress bar vs threshold (Zybit-124). Deterministic copy-quality hints on the variant-copy field (`copyHints`, Zybit-125). Selector suggestions carry stability tiers (stable/medium/fragile, sorted stable-first) so PMs pick durable selectors (Zybit-134). |
+| **Propose** (findings + prescriptions) | ✅ Built | Ranked by priority score + revenue impact, PM-readable. Selector validation badge (500ms debounced, Zybit-121). CSS system hint in experiment builder when 'Swap CSS classes' selected (Zybit-122). Dead-state UX shows session progress bar vs threshold (Zybit-124). Deterministic copy-quality hints on the variant-copy field (`copyHints`, Zybit-125). Selector suggestions carry stability tiers (stable/medium/fragile, sorted stable-first) so PMs pick durable selectors (Zybit-134). **Design token extraction (Zybit-143)** — `extractDesignTokens` pure function derives a compact token set (primary/secondary/accent colour, font family, type scale, border radius, CTA vocabulary) from the captured computed styles and is co-written atomically into the design-snapshot row by `buildFullDesignSnapshot`. **AI Variant Advisor (Zybit-144)** — `POST /api/dashboard/experiments/ai-suggest` calls Gemini 2.0 Flash via REST and returns up to 3 schema-valid `VariantModification[]` proposals per finding; output validated against a selector allowlist (CTAs + forms only — headings are out of scope because the structural snapshot lacks per-heading `cssSelector`), an `attribute-set` attribute allowlist, `css-inject` content checks, and `text-replace` sanitisation; the prompt uses prescription delimiters to resist injection from finding text. `element-reorder` is deliberately excluded from the AI surface. Returns 503 if `GEMINI_API_KEY` is unset (PMs fall back to manual entry). **Proposals only — nothing applies them to a live DOM yet (Zybit-149 variant runtime not built).** |
 | **Test** (variant deployment) | ⚠️ Partial | Bucketing + HTML modifier + proxy routes built. Network-error fail-open, modification-error fail-open, kill switch (`experiment.status === 'running'`), origin timeout (10s) all shipped in `handler.ts`. SPA shell detection logs a warning at proxy time; **launch-time SPA guard (Zybit-123)** — `launchExperimentAction` fetches the target page, runs `isSpaHtml`, and a client-side-rendered page triggers a warn-and-acknowledge banner before launch (the proxy modifies server-rendered HTML, so a SPA variant would silently render identical to control and pollute outcomes). Fails open on fetch error. DNS verify now probes HTTPS after CNAME check (`proxyLive` flag) to distinguish CNAME-only from fully-live proxy. Overlap warn-and-proceed (Zybit-119): running experiments on same site trigger acknowledgment banner; `overlappingExperimentIds` stored for audit. Draft→running "Launch experiment" button added to ExperimentControls. Edge Config kill-switch (Zybit-116): stopping/concluding an experiment writes a `disabledExperiments` key the proxy honors at the edge, failing closed without a DB round-trip. Daily `check-selectors` cron re-validates running experiments' selectors against the latest snapshot and emails the PM on a miss (Zybit-133). |
 | **Measure** (outcome computation) | ✅ Built | OBF alpha-spending (`stats.ts`), daily cron. PostHog visitor-ID bridge + auto-stop/guardrail PM email shipped. "Last computed at" surfaced in cockpit (Zybit-086, `MAX(experiment.updatedAt)`). **neon-http driver fix** (caught by live Lighthouse Phase 2): `queryBucketCounts` reads `result.rows` (neon-http returns a result object, not an array); `concludeExperiment` uses sequential writes instead of `db.transaction` (unsupported on neon-http). Verified end-to-end. **GA4-only sites skipped (Zybit-157):** `computeAllOutcomes` checks `isGa4OnlyMeasurementGap` per site and skips compute with a structured warning — GA4 is aggregate-grain and cannot be joined to assignments. |
 | **Learn** (outcome feedback loop) | ✅ Built (L1+L2, PM-visible) | Layer 1 — per-site re-ranking via `applyLearnRerank`; persisted as `learn_adjustment` jsonb, surfaced as backlog pill, finding-detail "Past tests" panel, LEARNED timeline entry. **Layer 2** — per-site rule-threshold calibration (`ruleCalibration.ts`): `computeRuleCalibrations` aggregates outcomes per `ruleId` into `clamp(1 − netSignal, 0.7, 1.3)` multiplier (gated at 3+ conclusive outcomes); 11/12 rules route through `calibratedFloor`/`calibratedCap` (`hero-hierarchy-inversion` exempt — sample-size-only gate). **PM-visible (Zybit-164 equivalent):** calibration receipt stored in `learnAdjustment.calibration` jsonb; "Tuned" badge on findings backlog; "Tuned for your site" panel on finding detail (direction + multiplier + basis count); calibration note on LEARNED timeline entries. **Lighthouse-verified:** runner now seeds 3 prior outcomes after step 4.5 and re-runs the pipeline (step 4.6) to confirm calibration fires; `GenerateResult.layer2` carries the diagnostic. Security: `listForSite`/`listByIds` scope by `organizationId`. Layer 3 (cross-site priors) deferred until 50+ customers. |
@@ -74,21 +74,29 @@ zybit/
 | **Integration health (cockpit)** | ✅ Built | `deriveIntegrationHealth()` in `cockpit.ts`; `PipelineHealth` in `CockpitView.tsx` shows "Zybit is watching" / "No data yet" / "Degraded" + last-sync + 7-day event count (Zybit-111) |
 | **Activation (onboarding)** | ⚠️ Partial | MRR/AOV now required to finish onboarding (Zybit-113, no skip). First-insight email exists. |
 | **Auth security** | ✅ Built | Magic-link auth. Rate limiting on `/api/auth/request-link`: 3 req/10min per email, 10 req/10min per IP via `auth_rate_limits` table (Zybit-115). Single active token per email (old tokens invalidated on re-request). |
+| **AI Variant Advisor cost guard** | ✅ Built | Per-org daily rate limit (10 AI suggestions / org / UTC day) via atomic upsert on `phase2_ai_advisor_usage` (migration `0018`); denied calls return 429 and **do not bump the counter**. Structured cost logging under `service: 'ai-advisor'` records token usage per call (Zybit-148). |
 
 ## Immediate build order
 
-> **Status (2026-05-22):** Full sprint audit + live verification — see
-> `docs/sprints/REMEDIATION.md` for the definitive per-ticket list. **22/38
-> tickets done, 3 partial, 9 not built, 2 in open PR #58, 2 superseded.**
+> **Status (2026-05-23):** Full sprint audit + live verification — see
+> `docs/sprints/REMEDIATION.md` for the definitive per-ticket list. **22/39
+> tickets done, 3 partial, 7 not built, 5 in open PRs (2 in PR #58, 3 in
+> PR #66), 2 superseded.**
 > - **Sprint 0:** 6/7 done. Zybit-114 (Stripe) **verified live end-to-end**;
 >   Zybit-118 (snapshot cadence) partial.
 > - **Sprint 1:** 5/8 done. Zybit-124 partial; Zybit-127/128 (demo seed +
 >   synthetic outcomes) not built.
 > - **Sprint 2:** ✅ 5/5 complete.
 > - **Sprint 3:** Zybit-141/142 in open PR #58 (migration `0016` applied to
->   Neon); Zybit-143–146/148/149 not built; Zybit-147 partial. (Zybit-149 —
->   client-side variant runtime for complex & SPA-safe changes — added
->   2026-05-22.)
+>   Neon). **Zybit-143/144/148 shipped in open PR #66** (`feat/sprint-3-followup`) —
+>   design token extraction, AI Variant Advisor API (Gemini 2.0 Flash, REST,
+>   strict validation), per-org daily rate limit + cost logging. Migration
+>   `0018` ships with the PR and needs to be applied to Neon before the route
+>   goes live; `GEMINI_API_KEY` needs to be set in Vercel (route returns 503
+>   without it — non-essential, PMs build manually). Zybit-145/146 not built;
+>   Zybit-147 partial; **Zybit-149 (client-side variant runtime) not built —
+>   the advisor returns proposals only; nothing applies them to a live DOM
+>   yet.**
 > - **Sprint 4:** 4/5 done. Zybit-156 (operator dashboard) not built.
 > - **Sprint 5:** 2/5 done (163/164); 161/162 superseded by on-the-fly
 >   calibration; 165 (operator visibility) not built.
