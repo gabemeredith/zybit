@@ -10,6 +10,12 @@ on:
       - 'zybit/**'
       - '.github/workflows/zybit-verify.yml'
 
+# Cancel an in-flight run when a new commit lands on the same ref so PRs do
+# not pile up multiple in-progress CIs after rapid pushes.
+concurrency:
+  group: zybit-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -27,9 +33,9 @@ jobs:
 
       - run: npm ci
 
+      # `npm run verify` already runs lint + tsc + tests + build. Running
+      # `npm run test` separately afterwards was duplicating ~16s of work.
       - run: npm run verify
-
-      - run: npm run test
 
   migrate-smoke:
     runs-on: ubuntu-latest
@@ -68,3 +74,23 @@ jobs:
 
       - name: Apply Drizzle migrations (smoke)
         run: npx drizzle-kit migrate
+
+      # Catches the common "added a column but forgot to commit the migration"
+      # bug. After applying every existing migration, `drizzle-kit generate`
+      # must produce no new SQL — if it does, schema.ts has drifted from the
+      # migration history and the PR is shipping an unrunnable schema.
+      - name: Detect schema/migration drift
+        run: |
+          OUT=$(npx drizzle-kit generate 2>&1 || true)
+          echo "$OUT"
+          if echo "$OUT" | grep -qiE "no schema changes|no changes detected"; then
+            echo "::notice::Schema in sync with migrations."
+            exit 0
+          fi
+          if git status --porcelain drizzle | grep .; then
+            echo "::error::schema.ts has changes not captured by an existing migration."
+            git status --porcelain drizzle
+            git diff drizzle | head -200
+            exit 1
+          fi
+          echo "::warning::drizzle-kit generate did not announce a no-op; review the output above."
