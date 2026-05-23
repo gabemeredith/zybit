@@ -14,10 +14,16 @@ quarterly anchoring exercise.
 
 ## 1. Public URL-audit lead magnet 🔴 highest leverage
 
+> **Phase A (visual mock) shipped 2026-05-23.** `/audit` page,
+> `/audit/email-preview` route, and `auditReportEmail.ts` template
+> live for founder review — no backend wiring yet. **Positioning
+> reversed:** teaser-on-site + full report by email, not anonymous
+> on-page results. See `url-audit-lead-magnet.md` §0 + §6.
+
 **Why first:** Solves the Day-0 friction (the PostHog setup wall)
 without removing it from the upsell story. The engine already
 exists in PR #65; we just need the public wrapper. ~6 dev-days
-for Phases A + B.
+for Phases A + B (A done; B is the real-pipeline wiring).
 
 **What it unlocks:**
 - Zero-cost top-of-funnel for inbound
