@@ -205,6 +205,7 @@ export default function SettingsView({
 
       {/* Proxy & DNS */}
       <Card>
+        <a id="proxy" />
         <SectionHeading>Proxy & DNS</SectionHeading>
         <ProxySetupForm
           siteId={site.id}

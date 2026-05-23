@@ -29,7 +29,7 @@ export default function EmptyFindings({
             Zybit requires a data source to build an understanding of your funnel and generate its first prescription.
           </p>
           <Link
-            href="/app/onboarding?step=3"
+            href="/app/onboarding?step=2"
             className="inline-flex items-center justify-center bg-[#111] text-[#FAFAF8] px-8 py-4 rounded-full text-lg font-bold shadow-2xl transition-transform duration-300 hover:scale-105 active:scale-95 group"
           >
             Connect PostHog

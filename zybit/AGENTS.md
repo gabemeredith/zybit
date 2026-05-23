@@ -72,7 +72,7 @@ zybit/
 | **Billing** (Stripe + plan limits) | ✅ Built | Metering + hard enforcement (sites/experiments 402) + events soft-cap shipped. Round-trip code bugs fixed: post-checkout redirect pointed at a non-existent `/dashboard/settings` (→ `/app/settings`); cross-instance-stale plan cache removed so enforcement reads the webhook-written plan immediately; webhook validates planId before persisting. **Round trip verified end-to-end 2026-05-22** — 18/18 checks against the live test API + real webhook handler + Neon (checkout → `checkout.session.completed`/`subscription.updated`/`subscription.deleted` → `organizations.plan` write → bad-signature 400 → `checkPlanLimit` 402). Production env still needs `STRIPE_WEBHOOK_SECRET` + `STRIPE_PRICE_*` set in Vercel. |
 | **Observability** | ✅ Built | Cronitor + error budget + structured logger wired into crons; Axiom drain connected — best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` set; console JSON output preserved for platform drains. **Axiom verified (2026-05-21):** token confirmed working; dataset `axiom-audit` confirmed writeable. Set `AXIOM_DATASET=axiom-audit` in Vercel env vars to activate (Zybit-153 gate criteria met). |
 | **Integration health (cockpit)** | ✅ Built | `deriveIntegrationHealth()` in `cockpit.ts`; `PipelineHealth` in `CockpitView.tsx` shows "Zybit is watching" / "No data yet" / "Degraded" + last-sync + 7-day event count (Zybit-111) |
-| **Activation (onboarding)** | ⚠️ Partial | MRR/AOV now required to finish onboarding (Zybit-113, no skip). First-insight email exists. |
+| **Activation (onboarding)** | ⚠️ Partial | MRR/AOV now required to finish onboarding (Zybit-113, no skip). First-insight email exists. **Flow-graph pre-flight check shipped (2026-05-23)** — `computeFlowPreflight` (`src/lib/phase2/flow/preflight.ts`) derives a `ready` / `thin` / `empty` verdict + PM-readable diagnostics from canonical events; `GET /api/phase2/sites/:siteId/flow-preflight` + `runFlowPreflightAction` answer PRD §5's one hard dependency before promising the graph. Wizard redesign scoped in `docs/sprints/onboarding-redesign.md`. |
 | **Auth security** | ✅ Built | Magic-link auth. Rate limiting on `/api/auth/request-link`: 3 req/10min per email, 10 req/10min per IP via `auth_rate_limits` table (Zybit-115). Single active token per email (old tokens invalidated on re-request). |
 
 ## Immediate build order
@@ -89,13 +89,14 @@ zybit/
 >   Neon); Zybit-143–146/148/149 not built; Zybit-147 partial. (Zybit-149 —
 >   client-side variant runtime for complex & SPA-safe changes — added
 >   2026-05-22.)
-> - **Sprint 4:** 4/5 done. Zybit-156 (operator dashboard) not built.
+> - **Sprint 4:** ✅ 5/5 done. Zybit-156 (operator dashboard) shipped 2026-05-23 — read-only `/admin/ops`.
 > - **Sprint 5:** 2/5 done (163/164); 161/162 superseded by on-the-fly
 >   calibration; 165 (operator visibility) not built.
 >
-> The deterministic six-step loop is built and live-verified. Remaining work
-> is concentrated in Sprint 3 plus Zybit-156. Definitive list and build order:
-> `docs/sprints/REMEDIATION.md`.
+> The deterministic six-step loop is built and live-verified. Zybit-156
+> (operator dashboard) shipped 2026-05-23. Remaining engineering work is
+> Sprint 3 (deferred per PRD — see `docs/sprints/sprint-3-deferred.md`).
+> Definitive per-ticket list: `docs/sprints/REMEDIATION.md`.
 
 ## What's needed before first real customer
 
@@ -105,7 +106,7 @@ zybit/
 | Live Stripe round-trip verification | ✅ **Verified (2026-05-22)** | Full round trip exercised end-to-end against the live test API + real webhook handler + Neon: checkout → `checkout.session.completed`/`subscription.updated`/`subscription.deleted` → `organizations.plan` write → bad-signature 400 → `checkPlanLimit` 402. 18/18 checks passed, scoped to a throwaway org. |
 | Connector circuit breaker (Zybit-154) | ✅ Shipped | `errorBudget.ts` degrades at 3 / disconnects at 5 failures + ops email; sync crons now **skip `disconnected` integrations**; `POST /api/phase2/integrations/:id/resume` clears the breaker. |
 | Cron failure email alerts (Zybit-155) | ✅ Shipped | `withCronAlert` wraps all 5 cron routes — unhandled throw or 5xx → structured log + Resend ops email. |
-| Operator dashboard (Zybit-156) | ⬛ Not built | No way to view all org/site sync health remotely. |
+| Operator dashboard (Zybit-156) | ✅ Shipped (MVP) | Read-only ops view at `/admin/ops` — one row per org/site with plan, connectors (per-provider health dot + consecutive-failure count + last error code), last event timestamp, snapshot count + age, open-finding count. Sortable by urgency / last-event / org; filterable by org or domain. Reuses existing `ADMIN_COOKIE` gate. Pure helpers (`formatTimeAgo`, `connectorHealth`, `siteHealth`) covered by 19 unit tests. |
 | GA4 measurement limitation warning (Zybit-157) | ✅ Shipped | `isGa4OnlyMeasurementGap` predicate; amber cockpit banner when GA4 is the only connector; `compute-outcomes` skips GA4-only sites with a structured warning instead of producing 0-confidence noise. |
 | Layer 2 calibration needs real outcome history | ⬛ Inert until data | Works mechanically (Lighthouse-verified). Needs 3+ concluded experiments per rule per site before it affects anything. |
 

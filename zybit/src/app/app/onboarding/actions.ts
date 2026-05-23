@@ -9,6 +9,8 @@ import { getDb } from "@/lib/db/client";
 import { zybitSiteMeta } from "@/lib/db/schema";
 import type { Phase1SiteRecord } from "@/lib/phase1";
 import type { ConnectorProvider, IntegrationRecord } from "@/lib/phase2/connectors/types";
+import { computeFlowPreflight } from "@/lib/phase2/flow";
+import type { PreflightReport } from "@/lib/phase2/flow";
 
 // ---------------------------------------------------------------------------
 // Step 1: Create (or return existing) site
@@ -107,6 +109,40 @@ export async function createIntegrationAction(
       });
 
   return { ok: true, integration };
+}
+
+// ---------------------------------------------------------------------------
+// Post-connect verification: does the connected analytics already carry enough
+// signal to render an informative flow graph? PRD §5's one hard dependency.
+// ---------------------------------------------------------------------------
+
+const PREFLIGHT_WINDOW_DAYS = 7;
+const PREFLIGHT_EVENT_LIMIT = 20_000;
+
+export async function runFlowPreflightAction(
+  siteId: string,
+): Promise<{ ok: true; report: PreflightReport } | { ok: false; error: string }> {
+  const auth = await getServerAuth();
+  if (!auth.ok) redirect("/sign-in");
+
+  const end = new Date();
+  const start = new Date(end.getTime() - PREFLIGHT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const windowStart = start.toISOString();
+  const windowEnd = end.toISOString();
+
+  try {
+    const repository = createPhase1Repository();
+    const events = await repository.listEventsInWindow({
+      organizationId: auth.orgId,
+      siteId,
+      window: { start: windowStart, end: windowEnd },
+      limit: PREFLIGHT_EVENT_LIMIT,
+    });
+    const report = computeFlowPreflight({ events, windowStart, windowEnd });
+    return { ok: true, report };
+  } catch {
+    return { ok: false, error: "Could not read events for this site. Try again in a moment." };
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -153,7 +153,7 @@ export default async function ExperimentDetailPage({
               Zybit needs a proxy slug + CNAME before variant traffic can route through us.
             </div>
             <Link
-              href="/app/onboarding?step=2"
+              href="/app/settings#proxy"
               className="shrink-0 text-sm font-bold text-amber-900 hover:text-amber-700 underline underline-offset-2"
             >
               Set up →

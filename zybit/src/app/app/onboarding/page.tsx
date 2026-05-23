@@ -30,7 +30,7 @@ export default async function OnboardingPage({
   const { step } = await searchParams;
   const parsed = step ? Number.parseInt(step, 10) : NaN;
   const initialStep =
-    parsed === 1 || parsed === 2 || parsed === 3 || parsed === 4 ? parsed : null;
+    parsed === 1 || parsed === 2 || parsed === 3 ? parsed : null;
 
   return (
     <OnboardingWizard

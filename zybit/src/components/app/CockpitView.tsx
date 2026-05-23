@@ -131,7 +131,7 @@ function PipelineHealth({ integrations }: { integrations: NonNullable<CockpitDat
               No integrations connected. Zybit needs analytics data to generate findings.
             </div>
             <Link
-              href="/app/onboarding?step=3"
+              href="/app/onboarding?step=2"
               className="shrink-0 inline-flex items-center gap-2 bg-[#111] text-[#FAFAF8] px-4 py-2.5 font-bold text-xs uppercase tracking-[0.08em] hover:opacity-80 transition-opacity"
             >
               Connect PostHog
