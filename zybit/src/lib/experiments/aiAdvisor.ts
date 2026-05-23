@@ -128,10 +128,20 @@ export function buildPrompt(args: {
 }): string {
   const { finding, design, snapshot } = args;
 
-  const degraded =
-    design.captureMethod === 'structural'
+  const hasTokens =
+    design.designTokens !== null &&
+    typeof design.designTokens === 'object' &&
+    Object.keys(design.designTokens).length > 0;
+
+  // Structural-mode rows carry no computed styles AND no design tokens, so
+  // telling the model to "base CSS on design tokens" is contradictory — there
+  // are none. Switch the instruction based on what's actually present.
+  let degraded = '';
+  if (design.captureMethod === 'structural') {
+    degraded = hasTokens
       ? '\nNote: computed styles unavailable. Base CSS on design tokens and site patterns.'
-      : '';
+      : '\nNote: no design system available — propose minimal, framework-agnostic CSS.';
+  }
 
   return [
     'You are generating A/B test modifications for a production website.',

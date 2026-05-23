@@ -49,7 +49,7 @@ describe('buildPrompt', () => {
     expect(prompt).not.toContain('computed styles unavailable');
   });
 
-  it('adds a degraded-mode note when capture method is structural', () => {
+  it('adds a degraded-mode note when capture method is structural with tokens', () => {
     const prompt = buildPrompt({
       finding: FINDING,
       design: { ...DESIGN_FULL, captureMethod: 'structural', computedStyles: null },
@@ -57,6 +57,40 @@ describe('buildPrompt', () => {
     });
     expect(prompt).toContain('CAPTURE METHOD: structural');
     expect(prompt).toContain('computed styles unavailable');
+    expect(prompt).toContain('Base CSS on design tokens');
+  });
+
+  it('swaps the degraded-mode note when no design tokens are available', () => {
+    const prompt = buildPrompt({
+      finding: FINDING,
+      design: {
+        ...DESIGN_FULL,
+        captureMethod: 'structural',
+        computedStyles: null,
+        designTokens: null,
+      },
+      snapshot: SNAPSHOT,
+    });
+    expect(prompt).toContain('no design system available');
+    expect(prompt).toContain('framework-agnostic CSS');
+    // The contradictory "base on design tokens" instruction must NOT appear
+    // when the tokens themselves are empty.
+    expect(prompt).not.toContain('Base CSS on design tokens');
+  });
+
+  it('also swaps the note when designTokens is present but empty', () => {
+    const prompt = buildPrompt({
+      finding: FINDING,
+      design: {
+        ...DESIGN_FULL,
+        captureMethod: 'structural',
+        computedStyles: null,
+        designTokens: {},
+      },
+      snapshot: SNAPSHOT,
+    });
+    expect(prompt).toContain('no design system available');
+    expect(prompt).not.toContain('Base CSS on design tokens');
   });
 
   it('exposes the allowed-selectors list', () => {
