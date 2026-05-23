@@ -4,12 +4,16 @@
  * Two independent steps, both non-fatal:
  *   1. captureAuditScreenshot — above-fold desktop screenshot via Browserless,
  *      uploaded to Vercel Blob (public access so email clients can load it).
- *   2. runVisionPass — sends the JPEG buffer to Claude claude-sonnet-4-6 via
- *      the Anthropic Messages API (REST, no SDK dep) and returns a short
- *      visual observation that enriches the top finding in the email.
+ *   2. runVisionPass — sends the JPEG buffer to Gemini 2.0 Flash via the
+ *      Generative Language REST API and returns a short visual observation
+ *      that enriches the top finding in the email.
  *
  * Both return null if the required env vars are absent or if anything fails.
  * The pipeline never waits for these to retry — they are best-effort.
+ *
+ * The Gemini call mirrors `src/lib/experiments/aiAdvisor.ts`: same model
+ * (`gemini-2.0-flash`), same key location (`x-goog-api-key` header so the
+ * key never lands in access logs), same REST endpoint.
  */
 
 import { connectBrowserless } from '@/lib/phase2/capture/browser';
@@ -20,8 +24,8 @@ export interface ScreenshotResult {
   buffer: Buffer;
 }
 
-const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
-const VISION_MODEL = 'claude-sonnet-4-6';
+const GEMINI_ENDPOINT =
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 const VIEWPORT_W = 1440;
 const VIEWPORT_H = 900;
 
@@ -52,7 +56,8 @@ export async function captureAuditScreenshot(url: string): Promise<ScreenshotRes
     await context.close();
 
     if (!blobToken) {
-      // No blob storage — still return the buffer so vision can run, but no public URL
+      // No blob storage configured — return the buffer so vision can still
+      // run, but with no public URL the email skips the embed.
       return { screenshotUrl: '', buffer: Buffer.from(buffer) };
     }
 
@@ -95,57 +100,44 @@ export async function runVisionPass(
   buffer: Buffer,
   topFinding: VisionFindingHint | null,
 ): Promise<string | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
   try {
     const base64 = buffer.toString('base64');
     const prompt = buildVisionPrompt(domain, topFinding);
 
-    const resp = await fetch(ANTHROPIC_ENDPOINT, {
+    const resp = await fetch(GEMINI_ENDPOINT, {
       method: 'POST',
       headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
         'content-type': 'application/json',
+        // Key in header (not URL) so it never lands in Vercel access logs.
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify({
-        model: VISION_MODEL,
-        max_tokens: 220,
-        messages: [
+        contents: [
           {
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/jpeg',
-                  data: base64,
-                },
-              },
-              {
-                type: 'text',
-                text: prompt,
-              },
+            parts: [
+              { inlineData: { mimeType: 'image/jpeg', data: base64 } },
+              { text: prompt },
             ],
           },
         ],
+        generationConfig: { maxOutputTokens: 220, temperature: 0.4 },
       }),
       signal: AbortSignal.timeout(30_000),
     });
 
     if (!resp.ok) {
-      console.warn('[visionPass] Anthropic API error', { status: resp.status });
+      console.warn('[visionPass] Gemini API error', { status: resp.status });
       return null;
     }
 
     const data = (await resp.json()) as {
-      content?: Array<{ type: string; text?: string }>;
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
 
-    const textBlock = data.content?.find((b) => b.type === 'text');
-    const observation = textBlock?.text?.trim();
+    const observation = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!observation) return null;
 
     // Truncate to 400 chars to keep the email clean

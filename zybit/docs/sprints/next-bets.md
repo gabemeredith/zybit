@@ -14,16 +14,19 @@ quarterly anchoring exercise.
 
 ## 1. Public URL-audit lead magnet 🔴 highest leverage
 
-> **Phase A (visual mock) shipped 2026-05-23.** `/audit` page,
-> `/audit/email-preview` route, and `auditReportEmail.ts` template
-> live for founder review — no backend wiring yet. **Positioning
-> reversed:** teaser-on-site + full report by email, not anonymous
-> on-page results. See `url-audit-lead-magnet.md` §0 + §6.
+> **Phases A + B shipped 2026-05-23 (PR #69).** `/audit` page,
+> double-opt-in confirmation, real `runUrlAudit` pipeline, SSRF
+> re-validation at run time, multi-dimensional rate limits + $25/day
+> budget cap, screenshot via Browserless + Vercel Blob, optional
+> Gemini vision caption. **Positioning reversed:** teaser-on-site +
+> full report by email, not anonymous on-page results. See
+> `url-audit-lead-magnet.md` §0 + §6. Phase C (founder approval queue)
+> remains deferred.
 
 **Why first:** Solves the Day-0 friction (the PostHog setup wall)
 without removing it from the upsell story. The engine already
-exists in PR #65; we just need the public wrapper. ~6 dev-days
-for Phases A + B (A done; B is the real-pipeline wiring).
+exists in PR #65; we just need the public wrapper. Phase C (~1-2 days)
+is the only remaining work, and only if demand routing becomes useful.
 
 **What it unlocks:**
 - Zero-cost top-of-funnel for inbound

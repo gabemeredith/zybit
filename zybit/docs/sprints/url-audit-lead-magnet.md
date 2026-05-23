@@ -448,6 +448,13 @@ prospects walk away with the 3 findings and never come back.
 
 ## 6. Phased implementation **[revised 2026-05-23]**
 
+> **Status update 2026-05-23:** Phases A + B both shipped in PR #69.
+> The route is live behind `PUBLIC_AUDIT_ENABLED`; the security
+> playbook below (§4a) was implemented as part of B. Phase C
+> (founder approval queue) and Phase D (marketing surface) remain
+> deferred. The detailed prose below is preserved as the
+> implementation reference, not as a forward-looking plan.
+
 ### Phase A — Visual mock (shipped 2026-05-23, ~0.5 day)
 
 **Goal: founders react to the surface before any backend cost.**
@@ -469,10 +476,16 @@ prospects walk away with the 3 findings and never come back.
 These four files ship as visual mocks. No new env vars, no schema,
 no Resend wiring yet.
 
-### Phase B — Wire to the real pipeline (5-6 days, revised 2026-05-23)
+### Phase B — Wire to the real pipeline (shipped 2026-05-23 in PR #69)
 
-**Gating prerequisite: every checkbox in §4a is implemented and tested
-before the route is enabled in production.**
+**Implemented:** submit/confirm/run/status routes, double-opt-in token
+flow with atomic consumption, SSRF re-validation at run time (defeats
+DNS rebinding within the 24h window), multi-dim sliding-window rate
+limits (IP/email/email-domain/target-host), $25/day budget cap with
+minimum charge on failure, Browserless screenshot uploaded to Vercel
+Blob, optional Gemini vision caption, `PUBLIC_AUDIT_ENABLED` kill
+switch. Turnstile not yet integrated — the email gate is the primary
+abuse control for now.
 
 5. `public_audits` schema + migration + `audit_verification_tokens`
    sibling table (one-shot 24h TTL tokens for double opt-in).

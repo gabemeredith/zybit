@@ -4,6 +4,10 @@ import { sql } from 'drizzle-orm';
 import { after } from 'next/server';
 import { getDb } from '@/lib/db/client';
 
+// node:crypto + after() require the Node runtime — pin so an Edge default
+// flip can't break this route silently.
+export const runtime = 'nodejs';
+
 type TokenRow = {
   id: string;
   audit_id: string;
@@ -105,7 +109,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         body: JSON.stringify({ auditId }),
       });
     } catch {
-      // Non-fatal: the run endpoint will be retried when the client polls
+      // Dispatch failed — the audit is stuck in 'running' until an operator
+      // re-fires /api/audit/public/run with this auditId. There is no
+      // automatic retry; the status poller only reads state, it doesn't
+      // re-trigger the pipeline.
     }
   });
 

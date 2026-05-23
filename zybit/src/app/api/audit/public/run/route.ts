@@ -13,6 +13,16 @@ import { eq, desc } from 'drizzle-orm';
 // Give the full pipeline plenty of time. Set VERCEL_MAX_DURATION in project
 // settings to 300 on Pro to unlock the full window.
 export const maxDuration = 300;
+// urlValidator uses node:dns, runUrlAudit reaches outside the Next bundle, and
+// recordAuditCost uses node:crypto via getDb — pin to Node so an Edge default
+// flip can't break this route silently.
+export const runtime = 'nodejs';
+
+// Minimum charge against the daily budget for any attempted run. Even a
+// pipeline failure has usually paid some Firecrawl/Browserless cost, and
+// charging zero would let an attacker who can reliably trigger failures
+// invisibly burn through the budget cap.
+const MIN_AUDIT_COST_USD = 0.05;
 
 type AuditRow = {
   id: string;
@@ -103,9 +113,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (pipelineError || !generateResult) {
+    // Charge the minimum even on failure — Firecrawl/Browserless are usually
+    // billed before runUrlAudit throws, and a free failure path is a budget bypass.
+    await recordAuditCost(MIN_AUDIT_COST_USD);
     await db.execute(sql`
       UPDATE public_audits
-      SET status = 'failed', error = ${pipelineError ?? 'Unknown pipeline error'}, completed_at = now()
+      SET status = 'failed',
+          cost_usd = ${MIN_AUDIT_COST_USD.toFixed(4)},
+          error = ${pipelineError ?? 'Unknown pipeline error'},
+          completed_at = now()
       WHERE id = ${auditId}
     `);
     return NextResponse.json({ error: pipelineError }, { status: 500 });
@@ -165,7 +181,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Approximate cost: $0.01 per snapshot page. Recorded against the budget
   // regardless of email outcome — the cost was already incurred.
-  const estimatedCostUsd = Math.max(0.05, counts.snapshots * 0.01);
+  const estimatedCostUsd = Math.max(MIN_AUDIT_COST_USD, counts.snapshots * 0.01);
   await recordAuditCost(estimatedCostUsd);
 
   let emailError: string | null = null;

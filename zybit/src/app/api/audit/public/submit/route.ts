@@ -8,6 +8,10 @@ import { checkPublicAuditRateLimit, checkDailyBudget } from '@/lib/audit/publicA
 import { runStructuralAudit } from '@/lib/intake/structuralAudit';
 import { sendAuditConfirmationEmail } from '@/lib/email/auditConfirmationEmail';
 
+// node:crypto + node:dns (via validatePublicUrl) need the Node runtime — pin
+// so an Edge default flip can't break this route silently.
+export const runtime = 'nodejs';
+
 function clientIp(req: NextRequest): string {
   return (
     req.headers.get('x-forwarded-for')?.split(',')[0].trim() ??
@@ -19,6 +23,19 @@ function clientIp(req: NextRequest): string {
 function extractEmailDomain(email: string): string {
   return email.split('@')[1]?.toLowerCase() ?? '';
 }
+
+// Mirrors ROLES in `src/app/audit/page.tsx` — kept in sync manually because
+// the page is a client component and importing its module here would pull
+// React into a server route.
+const ALLOWED_ROLES = new Set([
+  'Product Manager',
+  'Founder / CEO',
+  'Head of Growth',
+  'Head of Product',
+  'Engineering Lead',
+  'Designer',
+  'Other',
+]);
 
 function formatExpiryUtc(d: Date): string {
   // e.g. "May 24, 2026 at 1:42 PM UTC" — 24h from submission, not today's midnight.
@@ -62,6 +79,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   if (!role || typeof role !== 'string') {
     return NextResponse.json({ error: 'role is required.' }, { status: 400 });
+  }
+  if (!ALLOWED_ROLES.has(role)) {
+    // Reject arbitrary free-text so the report email + ops dashboard render a
+    // bounded set of values.
+    return NextResponse.json({ error: 'Please pick a role from the list.' }, { status: 400 });
   }
 
   const email = rawEmail.trim().toLowerCase();
