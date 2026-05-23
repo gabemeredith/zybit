@@ -1,22 +1,11 @@
 'use client';
 
-/**
- * /audit — public URL-audit lead-magnet page.
- *
- * **This is a Phase-A visual mock** (see `docs/sprints/url-audit-lead-magnet.md` §6).
- * No backend wiring: state transitions are driven by client timers that
- * mimic the ~45-second real pipeline so founders can react to the surface
- * before any backend cost. Phase B promotes this to a real polling page
- * against `/api/audit/public`.
- *
- * Brand intent: premium, scarce, personally-reviewed.
- */
-
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { SiteNav } from '@/components/SiteNav';
 import { IntakeModal } from '@/components/IntakeModal';
 import { isPersonalEmail, rejectionMessage } from '@/lib/audit/personalEmailDomains';
+import type { IntakeFinding } from '@/lib/intake/structuralAudit';
 
 const INK = '#111';
 const CREAM = '#FAFAF8';
@@ -90,20 +79,16 @@ export default function AuditPage() {
   const [error, setError] = useState<string | null>(null);
   const [progressIdx, setProgressIdx] = useState(0);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
+  const [teaserFinding, setTeaserFinding] = useState<IntakeFinding | null>(null);
 
-  // Mock pipeline: advance through PROGRESS_STEPS, then reveal teaser.
-  // `submit()` resets progressIdx to 0 before flipping to 'running' so this
-  // effect doesn't have to setState synchronously on mount.
+  // Animate the progress strip while the submit fetch is in-flight.
+  // The effect only advances progressIdx — the fetch completion sets the stage.
   useEffect(() => {
     if (stage !== 'running') return;
     let cancelled = false;
-    let i = 0;
+    let i = progressIdx;
     const tick = () => {
-      if (cancelled) return;
-      if (i >= PROGRESS_STEPS.length) {
-        setStage('teaser');
-        return;
-      }
+      if (cancelled || i >= PROGRESS_STEPS.length - 1) return;
       const ms = PROGRESS_STEPS[i].ms;
       i += 1;
       setTimeout(() => {
@@ -113,18 +98,17 @@ export default function AuditPage() {
       }, ms);
     };
     tick();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     const url = normalizeUrl(form.url);
     if (!url) {
-      setError('That doesn’t look like a valid URL. Try acme.com or https://acme.com.');
+      setError('That doesn\'t look like a valid URL. Try acme.com or https://acme.com.');
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
@@ -136,13 +120,38 @@ export default function AuditPage() {
       return;
     }
     if (!form.role) {
-      setError('Pick a role so we know who we’re writing to.');
+      setError('Pick a role so we know who we\'re writing to.');
       return;
     }
 
-    setForm({ ...form, url });
+    const normalizedForm = { ...form, url };
+    setForm(normalizedForm);
     setProgressIdx(0);
     setStage('running');
+
+    try {
+      const res = await fetch('/api/audit/public/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, email: form.email, role: form.role }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data?.error ?? 'Something went wrong. Please try again.');
+        setStage('idle');
+        setForm(normalizedForm);
+        return;
+      }
+
+      setTeaserFinding(data.teaserFinding ?? null);
+      setStage('teaser');
+    } catch {
+      setError('Network error — check your connection and try again.');
+      setStage('idle');
+      setForm(normalizedForm);
+    }
   };
 
   const reset = () => {
@@ -150,14 +159,12 @@ export default function AuditPage() {
     setForm(EMPTY);
     setProgressIdx(0);
     setError(null);
+    setTeaserFinding(null);
   };
 
-  const sendEmailMock = () => {
-    // In Phase B this triggers the confirmation email — NOT the report.
-    // The report follows only after the prospect clicks the confirmation
-    // link in their inbox. Spec §4a A.
-    setStage('awaiting');
-  };
+  // The confirmation email was already sent during submit.
+  // This just advances the UI state.
+  const confirmEmail = () => setStage('awaiting');
 
   return (
     <main className="relative w-full min-h-screen" style={{ background: CREAM, color: INK }}>
@@ -182,7 +189,7 @@ export default function AuditPage() {
           )}
 
           {stage === 'teaser' && (
-            <TeaserPanel form={form} onSendEmail={sendEmailMock} />
+            <TeaserPanel form={form} teaserFinding={teaserFinding} onSendEmail={confirmEmail} />
           )}
 
           {stage === 'awaiting' && <AwaitingPanel form={form} onReset={reset} />}
@@ -508,7 +515,15 @@ function Dots() {
 // Teaser (stage: teaser) — ONE finding inline. Rest goes in the email.
 // ---------------------------------------------------------------------------
 
-function TeaserPanel({ form, onSendEmail }: { form: FormState; onSendEmail: () => void }) {
+function TeaserPanel({
+  form,
+  teaserFinding,
+  onSendEmail,
+}: {
+  form: FormState;
+  teaserFinding: IntakeFinding | null;
+  onSendEmail: () => void;
+}) {
   const host = hostFromUrl(form.url);
   return (
     <div style={{ maxWidth: 760 }}>
@@ -523,7 +538,7 @@ function TeaserPanel({ form, onSendEmail }: { form: FormState; onSendEmail: () =
           marginBottom: 12,
         }}
       >
-        Top finding · {host}
+        {teaserFinding ? `Top finding · ${host}` : `Audit complete · ${host}`}
       </div>
       <h2
         className="sans-text"
@@ -536,20 +551,30 @@ function TeaserPanel({ form, onSendEmail }: { form: FormState; onSendEmail: () =
           marginBottom: 8,
         }}
       >
-        We found 11 things worth fixing.
-        <br />
-        Here&rsquo;s the most expensive one.
+        {teaserFinding ? (
+          <>
+            We found something worth fixing.
+            <br />
+            Here&rsquo;s the most urgent one.
+          </>
+        ) : (
+          <>
+            Audit complete.
+            <br />
+            Confirm to receive the report.
+          </>
+        )}
       </h2>
       <p
         className="sans-text"
         style={{ fontSize: 15, lineHeight: 1.55, color: MUTED, marginBottom: 24, maxWidth: 600 }}
       >
-        The other three top-priority findings — plus suggested changes and dollar
-        estimates — are in the report. Request it below and we&rsquo;ll send a
-        confirmation link to your inbox first.
+        {teaserFinding
+          ? 'The full ranked list — plus evidence, suggested changes, and dollar estimates for the top four findings — is in the report. Confirm below and it goes straight to your inbox.'
+          : 'We ran 13 friction rules against your homepage. The full report — four priority findings with evidence and what to change — will arrive in your inbox once you confirm.'}
       </p>
 
-      <TeaserCard />
+      {teaserFinding && <TeaserCard finding={teaserFinding} />}
 
       <div
         className="sans-text"
@@ -598,8 +623,7 @@ function TeaserPanel({ form, onSendEmail }: { form: FormState; onSendEmail: () =
   );
 }
 
-function TeaserCard() {
-  // Same receipt-card visual language as the landing page sample finding.
+function TeaserCard({ finding }: { finding: IntakeFinding }) {
   return (
     <div
       className="sans-text"
@@ -608,6 +632,7 @@ function TeaserCard() {
         border: `2px solid ${INK}`,
         boxShadow: `8px 8px 0 ${INK}`,
         maxWidth: 560,
+        marginBottom: 4,
       }}
     >
       <div
@@ -625,9 +650,11 @@ function TeaserCard() {
         }}
       >
         <span style={{ color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          F-0001 · hero-hierarchy-inversion
+          F-0001 · {finding.kind}
         </span>
-        <span style={{ color: MUTED, whiteSpace: 'nowrap' }}>High · 0.79</span>
+        <span style={{ color: MUTED, whiteSpace: 'nowrap' }}>
+          High · {finding.confidence.toFixed(2)}
+        </span>
       </div>
       <div style={{ padding: '18px', borderBottom: `1px solid ${HAIRLINE}` }}>
         <div
@@ -643,7 +670,7 @@ function TeaserCard() {
           Finding
         </div>
         <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.3, letterSpacing: '-0.01em', color: INK }}>
-          Hero gives most visual weight to the secondary action
+          {finding.title}
         </div>
       </div>
       <div style={{ padding: '16px 18px', borderBottom: `1px solid ${HAIRLINE}` }}>
@@ -660,33 +687,39 @@ function TeaserCard() {
           Evidence
         </div>
         <div style={{ fontSize: 15, lineHeight: 1.55, color: INK }}>
-          The &ldquo;Book a demo&rdquo; button uses the filled brand-blue treatment in the hero,
-          while &ldquo;Start free trial&rdquo; is a plain text link. Yet 58% of all CTA clicks on the homepage go
-          to &ldquo;Start free trial&rdquo;. Visual emphasis is inverted relative to revealed preference.
+          {finding.evidence}
         </div>
       </div>
-      <div
-        style={{
-          padding: '16px 18px',
-          background: INK,
-          color: CREAM,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
+      <div style={{ padding: '16px 18px', borderBottom: `1px solid ${HAIRLINE}` }}>
         <div
           style={{
             fontSize: 10,
             fontWeight: 700,
             letterSpacing: '0.18em',
             textTransform: 'uppercase',
-            opacity: 0.6,
+            color: MUTED,
+            marginBottom: 8,
           }}
         >
-          Est. impact
+          What to change
         </div>
-        <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: '-0.02em' }}>~$5.4k / month</div>
+        <div style={{ fontSize: 15, lineHeight: 1.55, color: INK }}>
+          {finding.prescription}
+        </div>
+      </div>
+      <div
+        style={{
+          padding: '14px 18px',
+          background: INK,
+          color: CREAM,
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          opacity: 0.85,
+        }}
+      >
+        Full report includes 3 more findings + dollar estimates
       </div>
     </div>
   );

@@ -624,6 +624,69 @@ export const zybitExperimentOutcomes = pgTable(
   })
 );
 
+// ---------------------------------------------------------------------------
+// Public URL-audit lead magnet (Phase B)
+// ---------------------------------------------------------------------------
+
+export const publicAudits = pgTable(
+  'public_audits',
+  {
+    id: text('id').primaryKey(),
+    email: text('email').notNull(),
+    domain: text('domain').notNull(),
+    url: text('url').notNull(),
+    role: text('role').notNull(),
+    status: text('status').notNull().default('pending'), // 'pending'|'running'|'done'|'failed'
+    ip: text('ip').notNull(),
+    teaserFinding: jsonb('teaser_finding').$type<Record<string, unknown> | null>(),
+    findings: jsonb('findings').$type<unknown[] | null>(),
+    pagesScanned: integer('pages_scanned'),
+    totalFindings: integer('total_findings'),
+    costUsd: decimal('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'),
+    error: text('error'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => ({
+    emailIdx: index('public_audits_email_idx').on(table.email),
+    domainIdx: index('public_audits_domain_idx').on(table.domain),
+    statusIdx: index('public_audits_status_idx').on(table.status),
+  }),
+);
+
+export const auditTokens = pgTable(
+  'audit_tokens',
+  {
+    id: text('id').primaryKey(),
+    auditId: text('audit_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  },
+  (table) => ({
+    hashIdx: uniqueIndex('audit_tokens_hash_idx').on(table.tokenHash),
+    auditIdx: index('audit_tokens_audit_idx').on(table.auditId),
+  }),
+);
+
+export const publicAuditBudget = pgTable('public_audit_budget', {
+  dayUtc: text('day_utc').primaryKey(),
+  costUsd: decimal('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'),
+});
+
+export const publicAuditRateLimits = pgTable(
+  'public_audit_rate_limits',
+  {
+    key: text('key').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    count: integer('count').notNull().default(1),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.key, table.windowStart] }),
+  }),
+);
+
 export const phase1ReadinessSnapshots = pgTable(
   'phase1_readiness_snapshots',
   {
