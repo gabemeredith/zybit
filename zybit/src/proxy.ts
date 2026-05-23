@@ -17,6 +17,9 @@ const PUBLIC_PREFIXES = [
   '/api/billing/webhook',
   '/api/loader',
   '/api/proxy',
+  // Public URL-audit lead magnet
+  '/audit',
+  '/api/audit',
 ];
 
 function isPublicPath(pathname: string): boolean {
