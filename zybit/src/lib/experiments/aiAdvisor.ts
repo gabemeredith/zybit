@@ -291,10 +291,15 @@ export function parseAndValidateResponse(args: {
 
   const result: AdvisorResult = { options, droppedCount };
   if (options.length < 3) {
-    result.note =
-      options.length === 0
-        ? 'No valid options — the AI returned modifications that did not pass schema or selector validation.'
-        : `Returned ${options.length} of 3 options — the others were dropped during validation.`;
+    if (options.length === 0) {
+      result.note =
+        'No valid options — the AI returned modifications that did not pass schema or selector validation.';
+    } else {
+      // Compute the denominator from what the AI actually returned, not the
+      // requested 3 — if the model overproduced (5 returned, 2 dropped) the
+      // "of 3" framing would be true-but-confusing.
+      result.note = `Returned ${options.length} of ${rawOptions.length} options — the others were dropped during validation.`;
+    }
   }
   return result;
 }

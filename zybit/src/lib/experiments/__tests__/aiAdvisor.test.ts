@@ -245,7 +245,7 @@ describe('parseAndValidateResponse', () => {
     expect(out.options[0].label).toBe('Bigger primary');
     expect(out.options[0].confidence).toBe('high');
     expect(out.droppedCount).toBe(0);
-    expect(out.note).toMatch(/2 of 3/);
+    expect(out.note).toMatch(/2 of 2/);
   });
 
   it('marks confidence "low" when capture method is structural', () => {
@@ -410,6 +410,28 @@ describe('parseAndValidateResponse', () => {
       { type: 'css-inject', selector: 'button.cta-primary', css: 'font-size: 24px;' },
     ]);
     expect(out.droppedCount).toBe(3);
+  });
+
+  it('computes the note denominator from the returned-option count, not the requested 3', () => {
+    // Model overproduced (5 options) and 3 were dropped — the note should
+    // say "2 of 5", not "2 of 3" (which would be true-but-confusing).
+    const raw = JSON.stringify({
+      options: [
+        { label: 'a', modifications: [{ type: 'element-hide', selector: 'button.cta-primary' }] },
+        { label: 'b', modifications: [{ type: 'element-hide', selector: 'a.cta-secondary' }] },
+        // dropped — bad selector
+        { label: 'c', modifications: [{ type: 'element-hide', selector: '.invented-1' }] },
+        // dropped — bad selector
+        { label: 'd', modifications: [{ type: 'element-hide', selector: '.invented-2' }] },
+        // dropped — bad selector
+        { label: 'e', modifications: [{ type: 'element-hide', selector: '.invented-3' }] },
+      ],
+    });
+    const out = parseAndValidateResponse({ raw, availableSelectors: allowed, captureMethod: 'full' });
+    expect(out.options).toHaveLength(2);
+    expect(out.note).toBe(
+      'Returned 2 of 5 options — the others were dropped during validation.',
+    );
   });
 
   it('falls back to a numbered label when the AI omits one', () => {
