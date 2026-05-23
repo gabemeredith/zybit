@@ -58,10 +58,10 @@ zybit/
 
 | Loop Step | Status | Notes |
 |-----------|--------|-------|
-| **Understand** (snapshot audit) | ⚠️ Partial | HTTP + DOM parse works; SPA/JS-rendered pages trigger Browserless fallback (`browserFetcher.ts`). snapshotMethod field on records. CSS system detection (Tailwind/styled-components/Emotion/CSS-Modules/Bootstrap) now runs at parse time and stored as `cssSystem` on `PageSnapshotData` (Zybit-122). Scheduled snapshot refresh + HTML drift detection shipped — `refresh-snapshots` cron (daily 03:00 UTC) re-fetches latest snapshot per pathRef, compares `contentHash`; cockpit surfaces `snapshots.staleDays` with an amber banner > 7 days (Zybit-023), now broken out **per pathRef** so the PM sees which pages are stale (Zybit-135). |
+| **Understand** (snapshot audit) | ⚠️ Partial | HTTP + DOM parse works; SPA/JS-rendered pages trigger Browserless fallback (`browserFetcher.ts`, gated on `BROWSERLESS_KEY`). **Browserless live-verified 2026-05-22** — a client-rendered SPA that returned an empty HTTP shell rendered fully via Browserless (`snapshotMethod: 'browser'`). snapshotMethod field on records. CSS system detection (Tailwind/styled-components/Emotion/CSS-Modules/Bootstrap) now runs at parse time and stored as `cssSystem` on `PageSnapshotData` (Zybit-122). Scheduled snapshot refresh + HTML drift detection shipped — `refresh-snapshots` cron (daily 03:00 UTC) re-fetches latest snapshot per pathRef, compares `contentHash`; cockpit surfaces `snapshots.staleDays` with an amber banner > 7 days (Zybit-023), now broken out **per pathRef** so the PM sees which pages are stale (Zybit-135). |
 | **Watch** (PostHog + Segment + GA4) | ✅ Built | PostHog + Segment built; PostHog visitor-ID bridge shipped; GA4 connector shipped — service-account JWT (Web Crypto), `runReport` offset pagination, cursor, `runGA4PullSyncJob` + `/cron/sync-ga4` every 30m. GA4 is aggregate-grain (Identify/Propose only, not joinable to assignments). Segment webhook has a batch schema guard (`guardSegmentBatch` — rejects malformed/oversized payloads, Zybit-137). PostHog bridge health probe surfaces an amber "bridge not detected" cockpit banner when experiment assignments exist but no conversion joins (Zybit-126). |
 | **Identify** (13 audit rules) | ✅ Built | 5 design + 7 pain + 1 flow rule, 592 passing tests — sufficient; do not add more rules |
-| **Flow-graph advisory** (PRD Milestone 1) | ✅ Built | All 5 PRD scope items complete: derivation (`deriveFlowGraph`), data model (`phase2_flow_graph` table + migration `0017`), graph view (`/app/flow` + `FlowGraphView.tsx`), flow-aware finding (`flow-inter-step-dropoff`), credibility slice (`flow-funnel` diagram in EvidencePanel). Migration `0017` created; **not yet applied to Neon** — apply before first `/app/flow` use. |
+| **Flow-graph advisory** (PRD Milestone 1) | ✅ Built | All 5 PRD scope items complete: derivation (`deriveFlowGraph`), data model (`phase2_flow_graph` table + migration `0017`), graph view (`/app/flow` + `FlowGraphView.tsx`), flow-aware finding (`flow-inter-step-dropoff`), credibility slice (`flow-funnel` diagram in EvidencePanel). Migration `0017` **applied to Neon 2026-05-22** (table `phase2_flow_graph` + org index verified live). |
 | **Propose** (findings + prescriptions) | ✅ Built | Ranked by priority score + revenue impact, PM-readable. Selector validation badge (500ms debounced, Zybit-121). CSS system hint in experiment builder when 'Swap CSS classes' selected (Zybit-122). Dead-state UX shows session progress bar vs threshold (Zybit-124). Deterministic copy-quality hints on the variant-copy field (`copyHints`, Zybit-125). Selector suggestions carry stability tiers (stable/medium/fragile, sorted stable-first) so PMs pick durable selectors (Zybit-134). **Design token extraction (Zybit-143)** — `extractDesignTokens` pure function derives a compact token set (primary/secondary/accent colour, font family, type scale, border radius, CTA vocabulary) from the captured computed styles and is co-written atomically into the design-snapshot row by `buildFullDesignSnapshot`. **AI Variant Advisor (Zybit-144)** — `POST /api/dashboard/experiments/ai-suggest` calls Gemini 2.0 Flash via REST and returns up to 3 schema-valid `VariantModification[]` proposals per finding; output validated against a selector allowlist (CTAs + forms only — headings are out of scope because the structural snapshot lacks per-heading `cssSelector`), an `attribute-set` attribute allowlist, `css-inject` content checks, and `text-replace` sanitisation; the prompt uses prescription delimiters to resist injection from finding text. `element-reorder` is deliberately excluded from the AI surface. Returns 503 if `GEMINI_API_KEY` is unset (PMs fall back to manual entry). **Proposals only — nothing applies them to a live DOM yet (Zybit-149 variant runtime not built).** |
 | **Test** (variant deployment) | ⚠️ Partial | Bucketing + HTML modifier + proxy routes built. Network-error fail-open, modification-error fail-open, kill switch (`experiment.status === 'running'`), origin timeout (10s) all shipped in `handler.ts`. SPA shell detection logs a warning at proxy time; **launch-time SPA guard (Zybit-123)** — `launchExperimentAction` fetches the target page, runs `isSpaHtml`, and a client-side-rendered page triggers a warn-and-acknowledge banner before launch (the proxy modifies server-rendered HTML, so a SPA variant would silently render identical to control and pollute outcomes). Fails open on fetch error. DNS verify now probes HTTPS after CNAME check (`proxyLive` flag) to distinguish CNAME-only from fully-live proxy. Overlap warn-and-proceed (Zybit-119): running experiments on same site trigger acknowledgment banner; `overlappingExperimentIds` stored for audit. Draft→running "Launch experiment" button added to ExperimentControls. Edge Config kill-switch (Zybit-116): stopping/concluding an experiment writes a `disabledExperiments` key the proxy honors at the edge, failing closed without a DB round-trip. Daily `check-selectors` cron re-validates running experiments' selectors against the latest snapshot and emails the PM on a miss (Zybit-133). |
 | **Measure** (outcome computation) | ✅ Built | OBF alpha-spending (`stats.ts`), daily cron. PostHog visitor-ID bridge + auto-stop/guardrail PM email shipped. "Last computed at" surfaced in cockpit (Zybit-086, `MAX(experiment.updatedAt)`). **neon-http driver fix** (caught by live Lighthouse Phase 2): `queryBucketCounts` reads `result.rows` (neon-http returns a result object, not an array); `concludeExperiment` uses sequential writes instead of `db.transaction` (unsupported on neon-http). Verified end-to-end. **GA4-only sites skipped (Zybit-157):** `computeAllOutcomes` checks `isGa4OnlyMeasurementGap` per site and skips compute with a structured warning — GA4 is aggregate-grain and cannot be joined to assignments. |
@@ -72,16 +72,17 @@ zybit/
 | **Billing** (Stripe + plan limits) | ✅ Built | Metering + hard enforcement (sites/experiments 402) + events soft-cap shipped. Round-trip code bugs fixed: post-checkout redirect pointed at a non-existent `/dashboard/settings` (→ `/app/settings`); cross-instance-stale plan cache removed so enforcement reads the webhook-written plan immediately; webhook validates planId before persisting. **Round trip verified end-to-end 2026-05-22** — 18/18 checks against the live test API + real webhook handler + Neon (checkout → `checkout.session.completed`/`subscription.updated`/`subscription.deleted` → `organizations.plan` write → bad-signature 400 → `checkPlanLimit` 402). Production env still needs `STRIPE_WEBHOOK_SECRET` + `STRIPE_PRICE_*` set in Vercel. |
 | **Observability** | ✅ Built | Cronitor + error budget + structured logger wired into crons; Axiom drain connected — best-effort fire-and-forget ingest in `logger.ts`, active when `AXIOM_TOKEN`+`AXIOM_DATASET` set; console JSON output preserved for platform drains. **Axiom verified (2026-05-21):** token confirmed working; dataset `axiom-audit` confirmed writeable. Set `AXIOM_DATASET=axiom-audit` in Vercel env vars to activate (Zybit-153 gate criteria met). |
 | **Integration health (cockpit)** | ✅ Built | `deriveIntegrationHealth()` in `cockpit.ts`; `PipelineHealth` in `CockpitView.tsx` shows "Zybit is watching" / "No data yet" / "Degraded" + last-sync + 7-day event count (Zybit-111) |
-| **Activation (onboarding)** | ⚠️ Partial | MRR/AOV now required to finish onboarding (Zybit-113, no skip). First-insight email exists. |
+| **Activation (onboarding)** | ⚠️ Partial | MRR/AOV now required to finish onboarding (Zybit-113, no skip). First-insight email exists. **Flow-graph pre-flight check shipped (2026-05-23)** — `computeFlowPreflight` (`src/lib/phase2/flow/preflight.ts`) derives a `ready` / `thin` / `empty` verdict + PM-readable diagnostics from canonical events; `GET /api/phase2/sites/:siteId/flow-preflight` + `runFlowPreflightAction` answer PRD §5's one hard dependency before promising the graph. Wizard redesign scoped in `docs/sprints/onboarding-redesign.md`. |
 | **Auth security** | ✅ Built | Magic-link auth. Rate limiting on `/api/auth/request-link`: 3 req/10min per email, 10 req/10min per IP via `auth_rate_limits` table (Zybit-115). Single active token per email (old tokens invalidated on re-request). |
 | **AI Variant Advisor cost guard** | ✅ Built | Per-org daily rate limit (10 AI suggestions / org / UTC day) via atomic upsert on `phase2_ai_advisor_usage` (migration `0018`); denied calls return 429 and **do not bump the counter**. Structured cost logging under `service: 'ai-advisor'` records token usage per call (Zybit-148). |
 
 ## Immediate build order
 
 > **Status (2026-05-23):** Full sprint audit + live verification — see
-> `docs/sprints/REMEDIATION.md` for the definitive per-ticket list. **22/39
-> tickets done, 3 partial, 7 not built, 5 in open PRs (2 in PR #58, 3 in
-> PR #66), 2 superseded.**
+> `docs/sprints/REMEDIATION.md` for the definitive per-ticket list. **23/39
+> tickets done (Zybit-156 operator dashboard shipped 2026-05-23), 3 partial,
+> 5 in open PRs (2 in PR #58, 3 in PR #66), 3 deferred per PRD (Zybit-145/146/149),
+> 4 not built, 2 superseded.**
 > - **Sprint 0:** 6/7 done. Zybit-114 (Stripe) **verified live end-to-end**;
 >   Zybit-118 (snapshot cadence) partial.
 > - **Sprint 1:** 5/8 done. Zybit-124 partial; Zybit-127/128 (demo seed +
@@ -93,17 +94,18 @@ zybit/
 >   strict validation), per-org daily rate limit + cost logging. Migration
 >   `0018` ships with the PR and needs to be applied to Neon before the route
 >   goes live; `GEMINI_API_KEY` needs to be set in Vercel (route returns 503
->   without it — non-essential, PMs build manually). Zybit-145/146 not built;
->   Zybit-147 partial; **Zybit-149 (client-side variant runtime) not built —
->   the advisor returns proposals only; nothing applies them to a live DOM
->   yet.**
-> - **Sprint 4:** 4/5 done. Zybit-156 (operator dashboard) not built.
+>   without it — non-essential, PMs build manually). Zybit-145/146/149
+>   deferred per PRD (see `docs/sprints/sprint-3-deferred.md`); Zybit-147
+>   partial. **Without Zybit-149 the advisor returns proposals only; nothing
+>   applies them to a live DOM yet.**
+> - **Sprint 4:** ✅ 5/5 done. Zybit-156 (operator dashboard) shipped 2026-05-23 — read-only `/admin/ops`.
 > - **Sprint 5:** 2/5 done (163/164); 161/162 superseded by on-the-fly
 >   calibration; 165 (operator visibility) not built.
 >
-> The deterministic six-step loop is built and live-verified. Remaining work
-> is concentrated in Sprint 3 plus Zybit-156. Definitive list and build order:
-> `docs/sprints/REMEDIATION.md`.
+> The deterministic six-step loop is built and live-verified. Zybit-156
+> (operator dashboard) shipped 2026-05-23. Remaining engineering work is
+> Sprint 3 (deferred per PRD — see `docs/sprints/sprint-3-deferred.md`).
+> Definitive per-ticket list: `docs/sprints/REMEDIATION.md`.
 
 ## What's needed before first real customer
 
@@ -113,7 +115,7 @@ zybit/
 | Live Stripe round-trip verification | ✅ **Verified (2026-05-22)** | Full round trip exercised end-to-end against the live test API + real webhook handler + Neon: checkout → `checkout.session.completed`/`subscription.updated`/`subscription.deleted` → `organizations.plan` write → bad-signature 400 → `checkPlanLimit` 402. 18/18 checks passed, scoped to a throwaway org. |
 | Connector circuit breaker (Zybit-154) | ✅ Shipped | `errorBudget.ts` degrades at 3 / disconnects at 5 failures + ops email; sync crons now **skip `disconnected` integrations**; `POST /api/phase2/integrations/:id/resume` clears the breaker. |
 | Cron failure email alerts (Zybit-155) | ✅ Shipped | `withCronAlert` wraps all 5 cron routes — unhandled throw or 5xx → structured log + Resend ops email. |
-| Operator dashboard (Zybit-156) | ⬛ Not built | No way to view all org/site sync health remotely. |
+| Operator dashboard (Zybit-156) | ✅ Shipped (MVP) | Read-only ops view at `/admin/ops` — one row per org/site with plan, connectors (per-provider health dot + consecutive-failure count + last error code), last event timestamp, snapshot count + age, open-finding count. Sortable by urgency / last-event / org; filterable by org or domain. Reuses existing `ADMIN_COOKIE` gate. Pure helpers (`formatTimeAgo`, `connectorHealth`, `siteHealth`) covered by 19 unit tests. |
 | GA4 measurement limitation warning (Zybit-157) | ✅ Shipped | `isGa4OnlyMeasurementGap` predicate; amber cockpit banner when GA4 is the only connector; `compute-outcomes` skips GA4-only sites with a structured warning instead of producing 0-confidence noise. |
 | Layer 2 calibration needs real outcome history | ⬛ Inert until data | Works mechanically (Lighthouse-verified). Needs 3+ concluded experiments per rule per site before it affects anything. |
 
@@ -134,15 +136,23 @@ zybit/
 
 ## Document map
 
+**For the persona-routed entry point and the full doc list, see
+[`docs/INDEX.md`](./docs/INDEX.md).** The table below is the
+narrower "if you're modifying code, update this doc when…" map.
+
 | Document | Purpose | Update when... |
 |----------|---------|----------------|
-| `DOCTRINE.md` | Product vision, who it's for, build conventions, current state | Features ship, scope changes, or "Where we are today" drifts from reality |
-| `docs/ARCHITECTURE.md` | Technical architecture, what's built, what's not | Features complete or new components are added |
+| `docs/INDEX.md` | Persona-routed entry point + full doc list with one-line summaries | A doc is added, removed, or its purpose changes |
+| `DOCTRINE.md` | Product vision, who it's for, build conventions | Scope changes or build philosophy evolves (status lives here in this file) |
+| `docs/ARCHITECTURE.md` | Technical reference — per-component file paths, schema, design decisions | New components are added or moved (status lives here in this file) |
 | `docs/BACKLOG.md` | Prioritized epics and stories | Stories ship, priorities change |
-| `../product_gap.md` | Gap analysis, build plan, sequencing | Gaps are closed or re-scoped |
-| `README.md` | Project overview, local setup, env vars | Status changes, env vars added or removed |
+| `../product_gap.md` | Historical gap analysis + architectural reasoning | Major architectural decisions are made (status lives here in this file) |
+| `README.md` | Project overview, local setup, env vars | Env vars added or removed |
 | `docs/PHASE2_EVIDENCE_MODEL.md` | Canonical event schema, audit rule contracts | Event schema or rule interface changes |
 | `docs/PHASE2_LIVE_TUNING_PLAYBOOK.md` | Operator runbook for rule calibration | Rule thresholds or tuning approach changes |
+| `docs/sprints/next-bets.md` | Forward-looking priority list | Priorities reshuffle or a bet completes |
+| `docs/competitive-landscape.md` | Competitor map, wedge analysis, threats | Quarterly re-read; update when a competitor materially shifts |
+| `docs/curriculum.md` | Founders' reading list | New essential reading is discovered |
 
 ---
 
@@ -183,13 +193,21 @@ zybit/
 - If the change closes a major gap, update all affected documents in the checklist above.
 - Include documentation changes in the same commit as the code change.
 
-### Consistency requirement
+### Single source of truth (consolidation 2026-05-23)
 
-The following must always agree with each other:
+The **"Current build state" table above is the canonical record** of
+what is built, partial, or not yet built. The previously-duplicated
+status sections in `DOCTRINE.md`, `docs/ARCHITECTURE.md`, and
+`../product_gap.md` were collapsed into pointers that reference this
+table — so a feature shipping now requires updating exactly **one**
+file.
 
-- "Current build state" table in this file (`AGENTS.md`)
-- "Where we are today" section in `DOCTRINE.md`
-- "What Exists" section in `docs/ARCHITECTURE.md`
-- Status table at the top of `../product_gap.md`
+If you find any stale status mention elsewhere in the docs, replace
+it with a pointer back to this section.
 
-If you notice any of these are out of sync — even if you didn't cause the drift — fix them.
+`docs/ARCHITECTURE.md` still holds the **technical reference**
+(per-component file paths, schema, design decisions). That is
+complementary to this status table, not duplicative.
+
+For the persona-routed entry point to the full doc set, see
+[`docs/INDEX.md`](./docs/INDEX.md).

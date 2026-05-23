@@ -1,23 +1,15 @@
 # Zybit — Product Gap Analysis & Roadmap
 
-> **Status (updated 2026-05-23):** The deterministic six-step loop (Understand → Watch → Identify → Propose → Test → Measure → Learn) is built and **live-verified end-to-end** against the production Neon DB. **GA4 connector shipped** (aggregate-grain, Identify/Propose only). **Visible loop view shipped** (timeline + guardrail badge + multi-site selector + LEARNED entry). **Learn Layer 1 + Layer 2 shipped** — past outcomes adjust both `priorityScore` (`applyLearnRerank`) and per-site rule detection floors (`ruleCalibration.ts`). **Gap 2 (Billing) closed** — Stripe round trip verified end-to-end 2026-05-22. **PRD Milestone 1 (Flow-graph advisory) complete** — derivation, data model, `/app/flow` view, `flow-inter-step-dropoff` rule, `flow-funnel` credibility slice. Migration `0017` created (not yet applied to Neon). **Sprint 3 follow-up (PR #66) shipped:** design token extraction (Zybit-143), AI Variant Advisor API at `POST /api/dashboard/experiments/ai-suggest` against Gemini 2.0 Flash with strict schema validation (Zybit-144), per-org daily rate limit + cost logging (Zybit-148). Migration `0018` ships with the PR and must be applied to Neon before the route goes live; `GEMINI_API_KEY` must be set in Vercel (route is non-essential — returns 503 without the key, PMs build manually). The advisor returns **proposals only** — the Zybit-149 client-side variant runtime is not built, so nothing applies the proposed modifications to a live DOM yet. **Sprint audit:** 22/39 tickets done + 5 in open PRs (2 in PR #58, 3 in PR #66); remaining work is concentrated in the rest of Sprint 3 (UI surface, picker, runtime) plus the Zybit-156 operator dashboard — see `zybit/docs/sprints/REMEDIATION.md`. Learn Layer 3 (cross-site priors) deferred until 50+ customers.
-
----
-
-## State of the Product Today
-
-| Loop Step | Status | What Works |
-|-----------|--------|-----------|
-| **Understand** | ✅ Built | HTTP snapshot → DOM parse → visual-weight scoring. SPA support still missing. |
-| **Watch** | ✅ Built | PostHog pull-sync + Segment webhook + GA4 Data API pull-sync, canonical event schema. PostHog visitor-ID bridge. GA4 is aggregate-grain (Identify/Propose only). |
-| **Identify** | ✅ Built | 13 audit rules (5 design + 7 pain + 1 flow), 592 passing tests, deterministic findings |
-| **Flow advisory** | ✅ Built | PRD Milestone 1 complete — derivation, data model, `/app/flow` view, `flow-inter-step-dropoff` rule, `flow-funnel` diagram. Migration `0017` created, not yet applied to Neon. |
-| **Propose** | ✅ Built | Findings ranked by priority score + revenue impact, PM-readable. **AI Variant Advisor API** shipped (PR #66, Zybit-143/144/148): design token extraction + Gemini 2.0 Flash-backed `POST /api/dashboard/experiments/ai-suggest` returning up to 3 schema-valid `VariantModification[]` proposals with strict selector/attribute/content validation, per-org daily rate limit (10/UTC day; denied calls don't bump counter), structured cost logging. Migration `0018` + `GEMINI_API_KEY` required. **Proposals only — Zybit-149 client-side variant runtime not yet built; nothing applies them to a live DOM.** |
-| **Test** | ⚠️ Partial | Bucketing, HTML modifier, and edge proxy routes built. Network-error fail-open, modification-error fail-open, kill switch (Zybit-116 Edge Config), and origin timeout all shipped in `handler.ts`. Launch-time SPA-shell guard shipped (Zybit-123) — warns before launching an experiment on a client-side-rendered page. Remaining: full SPA *snapshot* capture (`browserFetcher.ts` Browserless fallback) and auto-rollback wiring. |
-| **Measure** | ✅ Built | Outcome storage, conversion join (`DISTINCT ON` dedup), chi-squared + Welch, sequential guard, guardrail eval, auto-stop, cron with Cronitor heartbeat. PostHog visitor-ID bridge now shipped (`proxy/bridgeScript.ts` + `posthog/mapping.ts` prefers `zybit_vid`) — PostHog-sourced conversions are now matched. Auto-stop/guardrail PM email shipped. |
-| **Learn** | ✅ Built (L1+L2) | Layer 1 (per-site re-ranking) shipped: `applyLearnRerank` in `src/lib/phase2/rules/learnReranker.ts` adjusts `priorityScore` on new findings using a cascade match + D-with-guardrails formula. Persisted as `learn_adjustment` on `forge_findings`; surfaced as backlog pill, finding-detail "Past tests" panel, and LEARNED timeline entry on `/app/loop`. Layer 2 (per-site rule-threshold calibration) shipped: `ruleCalibration.ts` derives a per-site, per-rule detection-floor multiplier from accumulated outcomes (loosen on repeated wins, tighten on losses; gated at 3+ conclusive outcomes), applied to 11 of 12 rules in `runInsightsPipeline` (hero-hierarchy-inversion exempt). Unit-verified only. Layer 3 (cross-site priors, ≥50 customers) not built. |
-| **Pay** | ✅ Built | Metering at the persistence layer; plan limits enforced — sites + concurrent experiments hard (402), events soft-capped. Round-trip code bugs fixed (post-checkout redirect target; cross-instance-stale plan cache removed; webhook validates planId). **Verified end-to-end 2026-05-22** — 18/18 checks: checkout → `checkout.session.completed`/`subscription.updated`/`subscription.deleted` → `organizations.plan` write → bad-signature 400 → `checkPlanLimit` 402. |
-| **Operate** | ⚠️ Partial | Cronitor heartbeats, error-budget tracker, and structured logger built and wired into crons. No staging environment, no E2E harness, no Axiom log drain. |
+> **For current build state, see [`zybit/AGENTS.md`](./zybit/AGENTS.md) — "Current build state."**
+> That table is the single source of truth for what is built, partial,
+> or not yet built. This document keeps the **historical gap analysis
+> + architectural reasoning** that motivated each gap — the *why*
+> behind each major area of work. The *what is shipped today* lives
+> in AGENTS.md.
+>
+> **For forward-looking priorities, see [`zybit/docs/sprints/next-bets.md`](./zybit/docs/sprints/next-bets.md).**
+> **For per-ticket status, see [`zybit/docs/sprints/REMEDIATION.md`](./zybit/docs/sprints/REMEDIATION.md).**
+> **For the top-level doc map, see [`zybit/docs/INDEX.md`](./zybit/docs/INDEX.md).**
 
 ---
 

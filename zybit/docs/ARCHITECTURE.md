@@ -50,6 +50,12 @@ Zybit is a single Next.js application deployed on Vercel. All domain logic runs 
 
 ## What Exists (built, tested, working)
 
+> **For current build-state status (✅/⚠️/⬛), see [`../AGENTS.md`](../AGENTS.md)
+> — "Current build state."** This section is the **technical reference** —
+> per-component file paths, schema, and design decisions. The two are
+> complementary: AGENTS.md answers *"is X shipped?"*; this section answers
+> *"where in the codebase is X and how does it work?"*
+
 ### Understand — Page Audit (`src/lib/phase2/snapshots/`)
 
 Static HTML analysis. Fetches pages via HTTP, parses DOM structure.
@@ -63,7 +69,7 @@ Static HTML analysis. Fetches pages via HTTP, parses DOM structure.
 | Refresh cron | `refresh.ts` + `cron/refresh-snapshots/route.ts` | Daily 03:00 UTC re-fetch of the latest snapshot per pathRef; compares `contentHash` for HTML drift; cockpit surfaces `snapshots.staleDays` (amber > 7d). Distinct from `refresh-captures` (Playwright artifacts). (Zybit-023) |
 | Design token extractor | `tokenExtractor.ts` | Pure `extractDesignTokens(computedStyles, parser)` derives a compact token set (primary/secondary/accent colour, font family, type scale, border radius, spacing unit, CTA vocabulary) from captured computed styles. Co-written atomically into the design-snapshot row by `buildFullDesignSnapshot` in `designCapture.ts`. The AI Variant Advisor reads this as its design-system context. (Zybit-143) |
 
-**Limitation:** SPA pages return blank HTTP responses. `fetcher.ts` checks `isSpaHtml()` and falls back to `runBrowserSnapshot()` via Browserless.io when a shell is detected (`snapshotMethod: 'browser'`). HTTP-only fallback when `BROWSERLESS_TOKEN` is absent. Visual weight is heuristic (class token matching), not measured pixel positions.
+**Limitation:** SPA pages return blank HTTP responses. `fetcher.ts` checks `isSpaHtml()` and falls back to `runBrowserSnapshot()` via Browserless.io when a shell is detected (`snapshotMethod: 'browser'`). HTTP-only fallback when `BROWSERLESS_KEY` is absent. Visual weight is heuristic (class token matching), not measured pixel positions.
 
 ### Watch — Data Collection (`src/lib/phase2/connectors/`)
 
@@ -397,7 +403,7 @@ The audit engine (snapshot fetcher) and the proxy both have SPA gaps.
 
 **Snapshot fetcher (`src/lib/phase2/snapshots/fetcher.ts`):**
 - Detect SPA: if raw HTML `<body>` has <500 characters or contains `<div id="root"></div>` / `<div id="app"></div>` with no content → SPA detected
-- Re-fetch via Browserless.io: `wss://chrome.browserless.io?token=BROWSERLESS_TOKEN`
+- Re-fetch via Browserless.io: `wss://chrome.browserless.io?token=BROWSERLESS_KEY`
 - `page.goto(url, { waitUntil: 'networkidle', timeout: 10_000 })`
 - If Browserless unavailable: return HTTP result with `snapshotMethod: 'http-only'` in the snapshot record, surface a warning in the cockpit
 
@@ -406,7 +412,7 @@ The audit engine (snapshot fetcher) and the proxy both have SPA gaps.
 - For experiments targeting a path that SPA-routes to (not a full-page load), the variant must be applied via the injected initial HTML — CSS injection and the initial DOM state are sufficient for most modifications
 - Record which experiments target SPA-only paths; validate that modifications are HTML-injectable at parse time, not dependent on post-hydration DOM
 
-**Add to Vercel env:** `BROWSERLESS_TOKEN` — gate all Browserless calls behind its presence.
+**Add to Vercel env:** `BROWSERLESS_KEY` — gate all Browserless calls behind its presence.
 
 #### Auto-Rollback on Guardrail Regression
 

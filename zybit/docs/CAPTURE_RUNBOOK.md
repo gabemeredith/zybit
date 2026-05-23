@@ -13,7 +13,7 @@ Capture is opt-in per deployment via the `capture_v2_enabled` Edge Config flag (
 | Variable | Required | Description |
 |---|---|---|
 | `BROWSERLESS_URL` | Yes | WebSocket base URL for your Browserless instance, e.g. `wss://chrome.browserless.io` |
-| `BROWSERLESS_TOKEN` | Yes | Browserless API token appended as `?token=…` |
+| `BROWSERLESS_KEY` | Yes | Browserless API token appended as `?token=…` |
 | `BLOB_READ_WRITE_TOKEN` | Yes | Vercel Blob token for screenshot storage |
 | `CAPTURE_V2_ENABLED` | No | Set to `1` to enable capture when Edge Config is unavailable |
 | `FORGE_CRON_SECRET` | Yes | Bearer token for cron route auth (`Authorization: Bearer <secret>`) |
