@@ -12,49 +12,59 @@ const LIMITS = {
 
 const DAILY_BUDGET_USD = 25;
 
-type CountRow = { count: string };
 type BudgetRow = { cost_usd: string };
 
 export type AuditRateLimitResult =
   | { allowed: true }
   | { allowed: false; reason: string; retryAfterSeconds?: number };
 
-async function checkDim(
-  key: string,
-  windowMs: number,
-  max: number,
-  now: number,
-): Promise<{ allowed: boolean; retryAfterSeconds: number }> {
-  const db = getDb();
+type DimSpec = { key: string; windowMs: number; max: number };
+
+function windowBounds(windowMs: number, now: number) {
   const currentWindowStart = new Date(Math.floor(now / windowMs) * windowMs);
   const prevWindowStart = new Date(currentWindowStart.getTime() - windowMs);
   const elapsed = now - currentWindowStart.getTime();
   const prevWeight = (windowMs - elapsed) / windowMs;
   const retryAfterSeconds = Math.ceil((windowMs - elapsed) / 1000);
+  return { currentWindowStart, prevWindowStart, prevWeight, retryAfterSeconds };
+}
 
-  const [current, prev] = await Promise.all([
-    db.execute<CountRow>(sql`
-      INSERT INTO public_audit_rate_limits (key, window_start, count)
-      VALUES (${key}, ${currentWindowStart}, 1)
-      ON CONFLICT (key, window_start) DO UPDATE
-        SET count = public_audit_rate_limits.count + 1
-      RETURNING count
-    `),
-    db.execute<CountRow>(sql`
-      SELECT COALESCE(count, 0) AS count FROM public_audit_rate_limits
-      WHERE key = ${key} AND window_start = ${prevWindowStart}
-    `),
-  ]);
+/** Read-only check: would another request push this dimension over `max`? */
+async function peekDim(
+  spec: DimSpec,
+  now: number,
+): Promise<{ allowed: boolean; retryAfterSeconds: number }> {
+  const db = getDb();
+  const { currentWindowStart, prevWindowStart, prevWeight, retryAfterSeconds } =
+    windowBounds(spec.windowMs, now);
 
-  const curr = Number((current.rows[0] as CountRow).count);
-  const prv = Number(((prev.rows[0] as CountRow | undefined)?.count) ?? 0);
-  const effective = prv * prevWeight + curr;
+  const result = await db.execute<{ curr: string; prev: string }>(sql`
+    SELECT
+      COALESCE((SELECT count FROM public_audit_rate_limits
+                WHERE key = ${spec.key} AND window_start = ${currentWindowStart}), 0)::text AS curr,
+      COALESCE((SELECT count FROM public_audit_rate_limits
+                WHERE key = ${spec.key} AND window_start = ${prevWindowStart}), 0)::text AS prev
+  `);
+  const row = result.rows[0] as { curr: string; prev: string } | undefined;
+  const curr = Number(row?.curr ?? 0);
+  const prv = Number(row?.prev ?? 0);
+  // After increment, effective count = prev*weight + curr + 1
+  const effectiveAfter = prv * prevWeight + curr + 1;
+  return { allowed: effectiveAfter <= spec.max, retryAfterSeconds };
+}
 
+async function incrementDim(spec: DimSpec, now: number): Promise<void> {
+  const db = getDb();
+  const { currentWindowStart, prevWindowStart } = windowBounds(spec.windowMs, now);
+  await db.execute(sql`
+    INSERT INTO public_audit_rate_limits (key, window_start, count)
+    VALUES (${spec.key}, ${currentWindowStart}, 1)
+    ON CONFLICT (key, window_start) DO UPDATE
+      SET count = public_audit_rate_limits.count + 1
+  `);
   db.execute(sql`
     DELETE FROM public_audit_rate_limits WHERE window_start < ${prevWindowStart}
   `).catch(() => { /* non-fatal */ });
-
-  return { allowed: effective <= max, retryAfterSeconds };
 }
 
 export async function checkPublicAuditRateLimit(opts: {
@@ -66,41 +76,62 @@ export async function checkPublicAuditRateLimit(opts: {
   const now = Date.now();
   const { ip, email, emailDomain, targetHost } = opts;
 
-  const [ipResult, emailResult, domainResult, hostResult] = await Promise.all([
-    checkDim(`audit:ip:${ip}`, LIMITS.ip.perMs, LIMITS.ip.max, now),
-    checkDim(`audit:email:${email}`, LIMITS.email.perMs, LIMITS.email.max, now),
-    checkDim(`audit:dom:${emailDomain}`, LIMITS.emailDomain.perMs, LIMITS.emailDomain.max, now),
-    checkDim(`audit:host:${targetHost}`, LIMITS.targetHost.perMs, LIMITS.targetHost.max, now),
+  const specs = {
+    ip: { key: `audit:ip:${ip}`, windowMs: LIMITS.ip.perMs, max: LIMITS.ip.max },
+    email: { key: `audit:email:${email}`, windowMs: LIMITS.email.perMs, max: LIMITS.email.max },
+    domain: { key: `audit:dom:${emailDomain}`, windowMs: LIMITS.emailDomain.perMs, max: LIMITS.emailDomain.max },
+    host: { key: `audit:host:${targetHost}`, windowMs: LIMITS.targetHost.perMs, max: LIMITS.targetHost.max },
+  };
+
+  // Phase 1 — read-only peek across all dimensions. A request that would
+  // overflow any dimension is rejected without bumping the counters on the
+  // other three, so a flood on one IP can't burn email/domain/host quotas.
+  const [ipPeek, emailPeek, domainPeek, hostPeek] = await Promise.all([
+    peekDim(specs.ip, now),
+    peekDim(specs.email, now),
+    peekDim(specs.domain, now),
+    peekDim(specs.host, now),
   ]);
 
-  if (!ipResult.allowed) {
+  if (!ipPeek.allowed) {
     return {
       allowed: false,
       reason: 'Too many requests from your IP. Try again in an hour.',
-      retryAfterSeconds: ipResult.retryAfterSeconds,
+      retryAfterSeconds: ipPeek.retryAfterSeconds,
     };
   }
-  if (!emailResult.allowed) {
+  if (!emailPeek.allowed) {
     return {
       allowed: false,
       reason: 'That email address has already requested two audits today. Check your inbox.',
-      retryAfterSeconds: emailResult.retryAfterSeconds,
+      retryAfterSeconds: emailPeek.retryAfterSeconds,
     };
   }
-  if (!domainResult.allowed) {
+  if (!domainPeek.allowed) {
     return {
       allowed: false,
       reason: 'Too many audits from this email domain today.',
-      retryAfterSeconds: domainResult.retryAfterSeconds,
+      retryAfterSeconds: domainPeek.retryAfterSeconds,
     };
   }
-  if (!hostResult.allowed) {
+  if (!hostPeek.allowed) {
     return {
       allowed: false,
       reason: 'That site has already been audited multiple times today.',
-      retryAfterSeconds: hostResult.retryAfterSeconds,
+      retryAfterSeconds: hostPeek.retryAfterSeconds,
     };
   }
+
+  // Phase 2 — all four dimensions pass; commit increments. Small race window
+  // between peek and increment is acceptable: at worst a single extra request
+  // sneaks in per dimension, which is well within the abuse tolerance for
+  // these limits.
+  await Promise.all([
+    incrementDim(specs.ip, now),
+    incrementDim(specs.email, now),
+    incrementDim(specs.domain, now),
+    incrementDim(specs.host, now),
+  ]);
 
   return { allowed: true };
 }

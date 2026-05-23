@@ -20,8 +20,21 @@ function extractEmailDomain(email: string): string {
   return email.split('@')[1]?.toLowerCase() ?? '';
 }
 
-function utcDateString(): string {
-  return new Date().toISOString().slice(0, 10);
+function formatExpiryUtc(d: Date): string {
+  // e.g. "May 24, 2026 at 1:42 PM UTC" — 24h from submission, not today's midnight.
+  const date = d.toLocaleString('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const time = d.toLocaleString('en-US', {
+    timeZone: 'UTC',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${date} at ${time} UTC`;
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -135,10 +148,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const tokenId = `tok_${randomBytes(8).toString('hex')}`;
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
-  await db.execute(sql`
-    INSERT INTO audit_tokens (id, audit_id, token_hash, expires_at)
-    VALUES (${tokenId}, ${auditId}, ${tokenHash}, ${expiresAt})
-  `);
+  // neon-http doesn't support db.transaction. If the token insert fails we
+  // compensate by deleting the orphaned audit so we don't leave a 'pending'
+  // row with no way to confirm it.
+  try {
+    await db.execute(sql`
+      INSERT INTO audit_tokens (id, audit_id, token_hash, expires_at)
+      VALUES (${tokenId}, ${auditId}, ${tokenHash}, ${expiresAt})
+    `);
+  } catch (err) {
+    await db.execute(sql`DELETE FROM public_audits WHERE id = ${auditId}`).catch(() => { /* best effort */ });
+    throw err;
+  }
 
   // ── Confirmation email ───────────────────────────────────────────────────
 
@@ -148,16 +169,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     'https://getzybit.com';
 
   const confirmationUrl = `${appUrl}/api/audit/public/confirm?token=${tokenRaw}`;
-  const unsubscribeUrl = `${appUrl}/audit/unsubscribe?token=${tokenHash}`;
-
-  const expiresHuman = `${utcDateString()} at 11:59 PM UTC (24 hours from now)`;
+  const expiresHuman = formatExpiryUtc(expiresAt);
 
   await sendAuditConfirmationEmail({
     domain,
     recipientEmail: email,
     confirmationUrl,
     expiresAtHuman: expiresHuman,
-    unsubscribeUrl,
   });
 
   return NextResponse.json({

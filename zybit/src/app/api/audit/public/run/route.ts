@@ -6,6 +6,7 @@ import { sendAuditReportEmail } from '@/lib/email/auditReportEmail';
 import type { AuditReport, AuditFindingForEmail } from '@/lib/email/auditReportEmail';
 import { recordAuditCost } from '@/lib/audit/publicAuditRateLimit';
 import { captureAuditScreenshot, runVisionPass } from '@/lib/audit/visionPass';
+import { validatePublicUrl } from '@/lib/audit/urlValidator';
 import { runUrlAudit } from '../../../../../../lighthouse/lib/runner/runUrlAudit';
 import { eq, desc } from 'drizzle-orm';
 
@@ -75,12 +76,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: `Unexpected status: ${audit.status}` }, { status: 409 });
   }
 
+  // Re-validate the stored URL right before the network fetch. The submit-time
+  // DNS check could be stale by up to 24h (token expiry window), opening a
+  // DNS-rebinding window where an attacker swaps the A record from a public
+  // IP to an RFC-1918 address after passing the initial guard.
+  const revalidation = await validatePublicUrl(audit.url);
+  if (!revalidation.valid) {
+    await db.execute(sql`
+      UPDATE public_audits
+      SET status = 'failed', error = ${`URL re-validation failed: ${revalidation.reason}`}, completed_at = now()
+      WHERE id = ${auditId}
+    `);
+    return NextResponse.json({ error: revalidation.reason }, { status: 400 });
+  }
+
   let generateResult;
   let pipelineError: string | null = null;
 
   try {
     generateResult = await runUrlAudit({
-      url: audit.url,
+      url: revalidation.url.toString(),
       maxPages: 20,
     });
   } catch (err) {
@@ -148,11 +163,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     visionObs,
   };
 
-  await sendAuditReportEmail(audit.email, report);
-
-  // Approximate cost: $0.01 per snapshot page
+  // Approximate cost: $0.01 per snapshot page. Recorded against the budget
+  // regardless of email outcome — the cost was already incurred.
   const estimatedCostUsd = Math.max(0.05, counts.snapshots * 0.01);
   await recordAuditCost(estimatedCostUsd);
+
+  let emailError: string | null = null;
+  try {
+    await sendAuditReportEmail(audit.email, report);
+  } catch (err) {
+    emailError = err instanceof Error ? err.message : String(err);
+  }
+
+  if (emailError) {
+    // Pipeline succeeded but delivery failed — surface in DB so the audit
+    // doesn't sit in 'running' forever and an operator can re-send.
+    await db.execute(sql`
+      UPDATE public_audits
+      SET
+        status = 'failed',
+        findings = ${JSON.stringify(topFindings)},
+        pages_scanned = ${counts.snapshots},
+        total_findings = ${counts.findings},
+        cost_usd = ${estimatedCostUsd.toFixed(4)},
+        error = ${`Report email failed: ${emailError}`},
+        completed_at = now()
+      WHERE id = ${auditId}
+    `);
+    return NextResponse.json({ error: emailError }, { status: 500 });
+  }
 
   await db.execute(sql`
     UPDATE public_audits

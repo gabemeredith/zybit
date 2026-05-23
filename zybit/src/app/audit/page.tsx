@@ -603,11 +603,11 @@ function TeaserPanel({
           {form.email}
         </div>
         <div style={{ fontSize: 13, color: MUTED, marginBottom: 18, lineHeight: 1.5 }}>
-          We&rsquo;ll send a one-click confirmation link to this address. After you click,
-          the full report arrives within the hour.
+          A one-click confirmation link is on its way to this address. Click it
+          and the full report arrives within the hour.
         </div>
         <button onClick={onSendEmail} className="btn-brutalist" style={{ width: '100%' }}>
-          Email me the confirmation link →
+          I&rsquo;ve checked my inbox →
         </button>
         <p style={{ marginTop: 12, fontSize: 12, color: MUTED, textAlign: 'center' }}>
           Wrong address? <button

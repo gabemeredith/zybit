@@ -63,24 +63,35 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return redirectToAudit(audit.id);
   }
 
-  // Consume token + mark audit as running atomically
-  await db.execute(sql`
-    UPDATE audit_tokens SET consumed_at = now() WHERE id = ${row.id}
+  // Atomic token consumption — only the first concurrent caller wins the row.
+  // neon-http doesn't support db.transaction, so we rely on a conditional
+  // UPDATE … RETURNING to dedupe instead.
+  const consumed = await db.execute(sql`
+    UPDATE audit_tokens SET consumed_at = now()
+    WHERE id = ${row.id} AND consumed_at IS NULL
+    RETURNING id
   `);
-  await db.execute(sql`
+  if ((consumed.rows as unknown[]).length === 0) {
+    // Concurrent click already consumed this token — redirect without re-dispatching.
+    return redirectToAudit(audit.id);
+  }
+
+  const auditUpdate = await db.execute(sql`
     UPDATE public_audits SET status = 'running', confirmed_at = now()
     WHERE id = ${audit.id} AND status = 'pending'
+    RETURNING id
   `);
+  if ((auditUpdate.rows as unknown[]).length === 0) {
+    // Status changed under us (race with another path) — don't dispatch a second run.
+    return redirectToAudit(audit.id);
+  }
 
   // Kick off the pipeline asynchronously. The confirm endpoint responds
   // immediately; the run endpoint does the heavy lifting (45-90s) and sends
-  // the report email when done.
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_BASE_URL ??
-    'https://getzybit.com';
+  // the report email when done. Using req.nextUrl.origin so preview deploys
+  // hit themselves rather than the production host.
   const cronSecret = process.env.FORGE_CRON_SECRET ?? '';
-  const runUrl = `${appUrl}/api/audit/public/run`;
+  const runUrl = new URL('/api/audit/public/run', req.nextUrl.origin).toString();
   const auditId = audit.id;
 
   after(async () => {

@@ -27,8 +27,12 @@ export interface AuditConfirmationRequest {
   confirmationUrl: string;
   /** Local-time string we display in the "expires" line. */
   expiresAtHuman: string;
-  /** Suppression-list one-click unsubscribe link. */
-  unsubscribeUrl: string;
+  /**
+   * Optional suppression-list one-click unsubscribe link. Phase A omits this
+   * — the confirmation email is transactional (double opt-in) and a prospect
+   * who doesn't click the CTA never gets any further mail from us.
+   */
+  unsubscribeUrl?: string;
 }
 
 const INK = '#111';
@@ -49,7 +53,9 @@ export function renderAuditConfirmationEmailHtml(req: AuditConfirmationRequest):
   const safeDomain = escapeHtml(req.domain);
   const safeUrl = escapeHtml(req.confirmationUrl);
   const safeExpires = escapeHtml(req.expiresAtHuman);
-  const safeUnsub = escapeHtml(req.unsubscribeUrl);
+  const unsubFragment = req.unsubscribeUrl
+    ? ` or <a href="${escapeHtml(req.unsubscribeUrl)}" style="color: #999;">remove this address</a> from any future Zybit audit confirmations`
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -106,7 +112,7 @@ export function renderAuditConfirmationEmailHtml(req: AuditConfirmationRequest):
             <td style="padding: 0 28px 28px;">
               <div style="border-top: 1px solid ${HAIRLINE}; padding-top: 16px;">
                 <p style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 11px; line-height: 1.55; color: #999;">
-                  Sent to ${escapeHtml(req.recipientEmail)}. Reply to this email with any questions, or <a href="${safeUnsub}" style="color: #999;">remove this address</a> from any future Zybit audit confirmations.
+                  Sent to ${escapeHtml(req.recipientEmail)}. Reply to this email with any questions${unsubFragment}.
                 </p>
               </div>
             </td>
