@@ -6,15 +6,16 @@ import type { Phase1SiteRecord } from "@/lib/phase1";
 import {
   createSiteAction,
   createIntegrationAction,
+  runFlowPreflightAction,
   saveSiteMetaAction,
 } from "@/app/app/onboarding/actions";
-import ProxySetupForm from "./ProxySetupForm";
+import type { PreflightReport } from "@/lib/phase2/flow";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3;
 
 interface WizardState {
   step: Step;
@@ -29,7 +30,7 @@ interface WizardState {
 function ProgressBar({ step }: { step: Step }) {
   return (
     <div className="flex items-center gap-2 mb-10">
-      {([1, 2, 3, 4] as Step[]).map((s) => (
+      {([1, 2, 3] as Step[]).map((s) => (
         <div key={s} className="flex items-center gap-2">
           <div
             className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors ${
@@ -48,7 +49,7 @@ function ProgressBar({ step }: { step: Step }) {
               s
             )}
           </div>
-          {s < 4 && <div className={`w-8 h-px ${s < step ? "bg-[#111]" : "bg-black/[0.1]"}`} />}
+          {s < 3 && <div className={`w-8 h-px ${s < step ? "bg-[#111]" : "bg-black/[0.1]"}`} />}
         </div>
       ))}
     </div>
@@ -174,7 +175,7 @@ function Step1({
 
   return (
     <div>
-      <StepLabel>Step 1 of 4</StepLabel>
+      <StepLabel>Step 1 of 3</StepLabel>
       <h1 className="text-4xl font-bold tracking-tighter text-[#111] mb-2 leading-[0.95]">
         What are we<br />analyzing?
       </h1>
@@ -221,24 +222,77 @@ function Step1({
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 is now ProxySetupForm (proxy slug + customer subdomain + DNS verify).
-// See src/components/app/ProxySetupForm.tsx
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Step 3: Connect analytics
+// Step 2: Connect analytics + verify the flow graph will be informative
+//
+// Proxy/DNS setup moved out of the wizard to /app/settings (ProxySetupForm
+// with variant="settings") — surfaced when a PM signals deploy intent. See
+// docs/sprints/onboarding-redesign.md.
 // ---------------------------------------------------------------------------
 
 type AnalyticsProvider = "posthog" | "segment";
 
-function Step3({
+function VerificationPanel({
+  report,
+  onContinue,
+  onRecheck,
+  rechecking,
+}: {
+  report: PreflightReport;
+  onContinue: () => void;
+  onRecheck: () => void;
+  rechecking: boolean;
+}) {
+  const tone =
+    report.status === "ready"
+      ? { bg: "bg-emerald-50", border: "border-emerald-200", icon: "✅", text: "text-emerald-900" }
+      : report.status === "thin"
+        ? { bg: "bg-amber-50", border: "border-amber-200", icon: "⚠️", text: "text-amber-900" }
+        : { bg: "bg-rose-50", border: "border-rose-200", icon: "🛑", text: "text-rose-900" };
+
+  const headline =
+    report.status === "ready"
+      ? `Connected — ${report.signals.distinctSessions} sessions across ${report.signals.distinctRoutes} routes in the last 7 days.`
+      : report.status === "thin"
+        ? `Connected — but the signal looks thin so far.`
+        : `Connected — but we cannot build a flow graph from these events yet.`;
+
+  // De-dupe by code so the same diagnostic is not shown twice.
+  const seen = new Set<string>();
+  const shownDiagnostics = report.diagnostics.filter((d) => {
+    if (seen.has(d.code)) return false;
+    seen.add(d.code);
+    return d.code !== "ready"; // headline already says this
+  });
+
+  return (
+    <div className={`mt-6 max-w-sm rounded-xl border ${tone.border} ${tone.bg} p-4`}>
+      <div className={`flex items-start gap-2 ${tone.text}`}>
+        <span aria-hidden className="text-base leading-none mt-0.5">{tone.icon}</span>
+        <p className="text-sm font-semibold leading-snug">{headline}</p>
+      </div>
+      {shownDiagnostics.length > 0 && (
+        <ul className={`mt-3 space-y-2 text-xs ${tone.text}`}>
+          {shownDiagnostics.map((d) => (
+            <li key={d.code} className="leading-relaxed">{d.message}</li>
+          ))}
+        </ul>
+      )}
+      <div className="flex items-center gap-4 mt-4">
+        <PrimaryButton onClick={onContinue}>
+          {report.status === "ready" ? "Continue" : "Continue anyway"}
+        </PrimaryButton>
+        <SkipLink onClick={onRecheck} label={rechecking ? "Re-checking…" : "Re-check"} />
+      </div>
+    </div>
+  );
+}
+
+function Step2Connect({
   siteId,
   onComplete,
-  onSkip,
 }: {
   siteId: string;
   onComplete: () => void;
-  onSkip: () => void;
 }) {
   const [provider, setProvider] = useState<AnalyticsProvider>("posthog");
   const [host, setHost] = useState("https://app.posthog.com");
@@ -247,9 +301,23 @@ function Step3({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const [report, setReport] = useState<PreflightReport | null>(null);
+  const [verifying, setVerifying] = useState(false);
+
   const segmentWebhookUrl = typeof window !== "undefined"
     ? `${window.location.origin}/api/phase2/integrations/segment-webhook-placeholder`
     : "";
+
+  async function runVerification() {
+    setVerifying(true);
+    try {
+      const result = await runFlowPreflightAction(siteId);
+      if (result.ok) setReport(result.report);
+      else setError(result.error);
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   async function handleConnect() {
     setError("");
@@ -265,7 +333,7 @@ function Step3({
       if (!result.ok) {
         setError(result.error);
       } else {
-        onComplete();
+        await runVerification();
       }
     } catch {
       setError("Something went wrong. Try again.");
@@ -280,12 +348,12 @@ function Step3({
 
   return (
     <div>
-      <StepLabel>Step 3 of 4</StepLabel>
+      <StepLabel>Step 2 of 3</StepLabel>
       <h1 className="text-4xl font-bold tracking-tighter text-[#111] mb-2 leading-[0.95]">
         Connect your<br />analytics.
       </h1>
       <p className="text-[#6B6B6B] text-sm mb-8 leading-relaxed max-w-sm">
-        Zybit pulls behavioral data from your analytics provider to generate findings.
+        Zybit reads behavioral data from your analytics provider — no SDK, no install. We will verify the connection before you continue.
       </p>
 
       {/* Provider tabs */}
@@ -360,33 +428,42 @@ function Step3({
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <div className="flex items-center gap-4 pt-1">
-          <PrimaryButton onClick={handleConnect} loading={loading} disabled={!canSubmit}>
-            Connect
-          </PrimaryButton>
-          <SkipLink onClick={onSkip} />
-        </div>
+        {!report && (
+          <div className="flex items-center gap-4 pt-1">
+            <PrimaryButton onClick={handleConnect} loading={loading || verifying} disabled={!canSubmit}>
+              Connect &amp; verify
+            </PrimaryButton>
+            <SkipLink onClick={onComplete} />
+          </div>
+        )}
       </div>
+
+      {report && (
+        <VerificationPanel
+          report={report}
+          onContinue={onComplete}
+          onRecheck={runVerification}
+          rechecking={verifying}
+        />
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Step 4: Revenue framing
+// Step 3: Revenue framing — now skippable
 // ---------------------------------------------------------------------------
 
-function Step4({
+function Step3Revenue({
   siteId,
-  onComplete,
+  onFinish,
 }: {
   siteId: string;
-  onComplete: () => void;
+  onFinish: () => void;
 }) {
   const [mrr, setMrr] = useState("");
   const [aov, setAov] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
   const mrrNum = mrr.trim() === "" ? null : parseFloat(mrr);
   const aovNum = aov.trim() === "" ? null : parseFloat(aov);
@@ -394,20 +471,15 @@ function Step4({
     (mrrNum !== null && Number.isFinite(mrrNum) && mrrNum > 0) ||
     (aovNum !== null && Number.isFinite(aovNum) && aovNum > 0);
 
-  async function handleFinish() {
-    if (!hasValidValue) {
-      setError("Enter your monthly revenue or average order value to continue.");
-      return;
-    }
-    setError(null);
+  async function handleFinish(saveNumbers: boolean) {
     setLoading(true);
     try {
-      const mrrCents = mrrNum !== null && mrrNum > 0 ? Math.round(mrrNum * 100) : null;
-      const aovCents = aovNum !== null && aovNum > 0 ? Math.round(aovNum * 100) : null;
-      await saveSiteMetaAction(siteId, mrrCents, aovCents);
-      onComplete();
-      router.push("/app");
-      router.refresh();
+      if (saveNumbers && hasValidValue) {
+        const mrrCents = mrrNum !== null && mrrNum > 0 ? Math.round(mrrNum * 100) : null;
+        const aovCents = aovNum !== null && aovNum > 0 ? Math.round(aovNum * 100) : null;
+        await saveSiteMetaAction(siteId, mrrCents, aovCents);
+      }
+      onFinish();
     } finally {
       setLoading(false);
     }
@@ -415,7 +487,7 @@ function Step4({
 
   return (
     <div>
-      <StepLabel>Step 4 of 4</StepLabel>
+      <StepLabel>Step 3 of 3</StepLabel>
       <h1 className="text-4xl font-bold tracking-tighter text-[#111] mb-2 leading-[0.95]">
         Unlock dollar&#8209;impact<br />findings.
       </h1>
@@ -423,7 +495,7 @@ function Step4({
         When Zybit knows your revenue, every finding gets an estimated impact in dollars — not just severity labels.
       </p>
       <p className="text-xs text-[#9B9B9B] mb-8 max-w-sm">
-        These are estimates only. Used for prioritization framing, never shared.
+        Estimates only. Used for prioritization framing, never shared. You can add these later in settings.
       </p>
 
       <div className="space-y-4 max-w-sm">
@@ -456,22 +528,16 @@ function Step4({
           </div>
         </div>
 
-        {error && (
-          <p className="text-xs text-[#B42318] -mt-1">{error}</p>
-        )}
-
         <div className="flex items-center gap-4 pt-1">
           <PrimaryButton
-            onClick={() => handleFinish()}
+            onClick={() => handleFinish(true)}
             loading={loading}
             disabled={!hasValidValue}
           >
-            Finish setup
+            See my flow graph
           </PrimaryButton>
+          <SkipLink onClick={() => handleFinish(false)} label="I'll add these later" />
         </div>
-        <p className="text-xs text-[#9B9B9B] max-w-sm">
-          A rough estimate is fine — you can refine it later in settings.
-        </p>
       </div>
     </div>
   );
@@ -490,18 +556,17 @@ export default function OnboardingWizard({
   hasIntegration: boolean;
   initialStep?: Step | null;
 }) {
-  // Default step inferred from current state; explicit ?step= overrides it when
-  // the prerequisites are satisfied (e.g. can't deep-link to step 2/3/4 without a site).
-  // Step 2 = proxy slug + DNS. Skippable, so PMs with no slug yet still land here.
+  const router = useRouter();
+
+  // Inferred step from persisted state. Proxy/DNS lives in /app/settings now,
+  // so the wizard skips straight from site to analytics.
   let inferredStep: Step;
   if (!existingSite) {
     inferredStep = 1;
-  } else if (!existingSite.proxySlug) {
-    inferredStep = 2;
   } else if (!hasIntegration) {
-    inferredStep = 3;
+    inferredStep = 2;
   } else {
-    inferredStep = 4;
+    inferredStep = 3;
   }
   const startStep: Step =
     initialStep && (initialStep === 1 || existingSite) ? initialStep : inferredStep;
@@ -514,6 +579,11 @@ export default function OnboardingWizard({
 
   function advance(to: Step, patch?: Partial<WizardState>) {
     setState((prev) => ({ ...prev, step: to, ...patch }));
+  }
+
+  function finish() {
+    router.push("/app/flow");
+    router.refresh();
   }
 
   return (
@@ -530,30 +600,17 @@ export default function OnboardingWizard({
           />
         )}
 
-        {state.step === 2 && state.siteId && state.siteDomain && (
-          <ProxySetupForm
+        {state.step === 2 && state.siteId && (
+          <Step2Connect
             siteId={state.siteId}
-            domain={state.siteDomain}
-            initialSlug={existingSite?.proxySlug ?? null}
-            initialSubdomain={existingSite?.customerSubdomain ?? null}
-            variant="wizard"
-            onSaved={() => advance(3)}
-            onSkip={() => advance(3)}
+            onComplete={() => advance(3)}
           />
         )}
 
         {state.step === 3 && state.siteId && (
-          <Step3
+          <Step3Revenue
             siteId={state.siteId}
-            onComplete={() => advance(4)}
-            onSkip={() => advance(4)}
-          />
-        )}
-
-        {state.step === 4 && state.siteId && (
-          <Step4
-            siteId={state.siteId}
-            onComplete={() => {}}
+            onFinish={finish}
           />
         )}
       </div>
