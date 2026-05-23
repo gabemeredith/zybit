@@ -233,6 +233,8 @@ fix through Zybit; until then, settings → proxy stays untouched.
 | Pre-flight 🛑 *"Path missing"* | Custom event mapping in PostHog stripped `$current_url` | Send a default event and confirm it carries `$current_url` |
 | Pre-flight ⚠️ *"Low sessions"* | Low traffic in the window | Wait; the graph populates as visits arrive |
 | Pre-flight ⚠️ *"Single route"* | Only your landing page is seeing pageviews | Confirm the snippet is in `<head>` on **every** page, not just `/` |
+| Pre-flight ⚠️ *"Only N distinct pages reached us"* | The snippet fires on 2 pages but the flow graph needs at least 3 distinct routes to be informative | Confirm the snippet is in `<head>` on all routes (not just `/` and one other); for SPAs, confirm `capture_pageview: true` so route changes auto-fire pageviews |
+| Pre-flight ⚠️ *"No session navigated between two pages"* | Sessions are not stitching across page views — every recorded session only touches one route, even if multiple routes exist site-wide | Confirm a stable `distinct_id` / session cookie persists across navigations (full page loads should not reset the PostHog session); for SPAs, confirm route changes do not trigger a `posthog.reset()` |
 | "Failed to fetch" on Connect step | Wrong host URL or wrong region | EU users must use `https://eu.posthog.com`, US users `https://us.posthog.com` |
 
 ---
