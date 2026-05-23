@@ -10,6 +10,11 @@
  * `WHERE call_count < AI_DAILY_LIMIT` on the conflict update — when at
  * limit the update doesn't fire and `RETURNING` is empty, which the caller
  * interprets as `denied`.
+ *
+ * UTC boundary: two calls straddling 23:59:59.999Z / 00:00:00.001Z land on
+ * different `day_utc` keys and each see a fresh 1/LIMIT. Accepted — this
+ * is a soft cost guard (10/org/day @ ~$0.001/call), not a security boundary,
+ * so worst-case burst is 2×LIMIT at the rollover and only once per day.
  */
 
 import { sql } from 'drizzle-orm';
