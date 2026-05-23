@@ -1,6 +1,6 @@
 # Sprint Status & Remaining Work — Sprints 0–5
 
-**Created:** 2026-05-21 · **Last audited:** 2026-05-22
+**Created:** 2026-05-21 · **Last audited:** 2026-05-23
 **Why this exists:** the single source of truth for what is genuinely shipped
 across sprints 0–5 vs. what remains. Supersedes the stale "all merged" claims
 that `AGENTS.md` once carried. Audited by file-existence + behaviour checks
@@ -19,10 +19,10 @@ variant runtime; see Sprint 3). The ROADMAP ID ranges 129–132, 138–140,
 | 0 — Verification & Hardening | 7 | 6 | 1 | 0 | — |
 | 1 — Demo Readiness | 8 | 5 | 1 | 2 | — |
 | 2 — Selector Robustness | 5 | 5 | 0 | 0 | — |
-| 3 — Design Capture & AI Advisor | 9 | 0 | 1 | 6 | 2 in open PR #58 |
+| 3 — Design Capture & AI Advisor | 9 | 0 | 1 | 3 | 2 in open PR #58, 3 in open PR #66 |
 | 4 — Observability & Multi-Customer Ops | 5 | 4 | 0 | 1 | — |
 | 5 — Learn Layer 2 | 5 | 2 | 0 | 1 | 2 superseded |
-| **Total** | **39** | **22** | **3** | **10** | **4** |
+| **Total** | **39** | **22** | **3** | **7** | **7** |
 
 **The deterministic six-step loop (Understand → Watch → Identify → Propose →
 Test → Measure → Learn) is built, live-verified, and customer-ready.** What
@@ -74,12 +74,12 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 |--------|---------|--------|
 | Zybit-141 | `phase2_site_design_snapshot` schema | 🔶 **In PR #58** (open, unmerged) — migration `0016` applied to Neon 2026-05-22 |
 | Zybit-142 | Full-fidelity DesignCapture via Browserless | 🔶 **In PR #58** (open, unmerged) |
-| Zybit-143 | Design token extraction | ❌ **Not built** |
-| Zybit-144 | AI Variant Advisor API route | ❌ **Not built** |
+| Zybit-143 | Design token extraction | 🔶 **In PR #66** — `extractDesignTokens` pure fn (`tokenExtractor.ts`) co-written atomically into the design-snapshot row by `buildFullDesignSnapshot` |
+| Zybit-144 | AI Variant Advisor API route | 🔶 **In PR #66** — `POST /api/dashboard/experiments/ai-suggest` calls Gemini 2.0 Flash via REST; strict validation (CTA+forms selector allowlist — headings out of scope; `attribute-set` attribute allowlist; `css-inject` content checks; `text-replace` sanitisation; prompt-injection-resistant prescription delimiters); `element-reorder` deliberately excluded; returns 503 without `GEMINI_API_KEY` |
 | Zybit-145 | AI Variant Advisor UI | ❌ **Not built** |
 | Zybit-146 | DOM tree element picker + screenshot | ❌ **Not built** |
 | Zybit-147 | Side-by-side live preview while editing | ⚠️ **Partial** — preview iframes exist on experiment detail; ephemeral while-editing route not built |
-| Zybit-148 | Rate limiting + cost guard for AI advisor | ❌ **Not built** |
+| Zybit-148 | Rate limiting + cost guard for AI advisor | 🔶 **In PR #66** — per-org daily limit (10 calls/org/UTC day, atomic upsert on `phase2_ai_advisor_usage` per migration `0018`; denied calls don't bump counter) + structured cost logging under `service: 'ai-advisor'` |
 | Zybit-149 | Client-side variant runtime (complex & SPA-safe changes) | ❌ **Not built** — added 2026-05-22; deployment-side counterpart to Zybit-144 |
 
 ### Sprint 4 — Observability & Multi-Customer Ops
@@ -106,18 +106,15 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 
 ## Remaining work — the definitive list
 
-### ❌ Not built (10 tickets)
+### ❌ Not built (7 tickets)
 
 | Ticket | Feature | Est. | Customer-blocking? |
 |--------|---------|------|--------------------|
 | Zybit-127 | Demo site seed (`scripts/seed-demo.ts`) | ~1d | No — sales/demo aid |
 | Zybit-128 | Synthetic outcome data for demo measurement view | ~0.5d | No — sales/demo aid |
-| Zybit-143 | Design token extraction (`tokenExtractor.ts`) | ~1d | No — Sprint 3 surface |
-| Zybit-144 | AI Variant Advisor API (Gemini, Propose-only) | ~2d | No — Sprint 3 surface |
 | Zybit-145 | AI Variant Advisor UI | ~1d | No — Sprint 3 surface |
 | Zybit-146 | DOM tree element picker + screenshot thumbnail | ~2d | No — Sprint 3 surface |
-| Zybit-148 | AI advisor rate limiting + cost guard | ~0.5d | No — gates Zybit-144 |
-| Zybit-149 | Client-side variant runtime (complex & SPA-safe changes) | ~6d | No — unlocks SPA experiments + richer variants beyond the six simple types |
+| Zybit-149 | Client-side variant runtime (complex & SPA-safe changes) | ~6d | No — unlocks SPA experiments + richer variants beyond the six simple types; **without it, the Zybit-144 advisor only proposes — nothing applies its modifications to a live DOM** |
 | Zybit-156 | Operator org dashboard (`/app/operator`) | ~2d | **Soft** — needed to support customers remotely |
 | Zybit-165 | Operator calibration visibility | ~1d | No — depends on Zybit-156 |
 
@@ -129,10 +126,21 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 | Zybit-124 | Insights dead-state UX | A dedicated `InsightsDeadState` surface beyond `WelcomeState`'s progress bar |
 | Zybit-147 | Side-by-side live preview | Ephemeral preview route used *while editing* a brief (current preview is on the saved experiment only) |
 
-### 🔶 In open PR — review & merge (2 tickets)
+### 🔶 In open PR — review & merge (5 tickets)
 
 - **Zybit-141 / Zybit-142** — Sprint 3 design-snapshot schema + writer, in **PR #58**.
   Migration `0016` has already been applied to Neon. Merge order: PR #59 → PR #58.
+- **Zybit-143 / Zybit-144 / Zybit-148** — Sprint 3 follow-up (AI Variant Advisor
+  surface), in **PR #66** (`feat/sprint-3-followup`): design token extraction;
+  `POST /api/dashboard/experiments/ai-suggest` against Gemini 2.0 Flash with
+  strict validation (CTA+forms selector allowlist, attribute allowlist,
+  content checks, sanitisation, prompt-injection-resistant delimiters);
+  per-org daily rate limit (10/UTC day, atomic upsert; denied calls don't
+  bump) + structured cost logging. Migration `0018` ships with the PR and
+  must be applied to Neon before the route goes live; `GEMINI_API_KEY` must
+  be set in Vercel (route returns 503 without it — non-essential, PMs build
+  manually). **Proposals only — Zybit-149 client runtime not built; nothing
+  applies them to a live DOM yet.**
 
 ### ⚠️ Superseded — product decision needed (2 tickets)
 
@@ -172,10 +180,13 @@ The core loop is customer-ready. Remaining sequencing:
    needed to support a customer remotely.
 3. **Sprint 1 demo polish** — Zybit-127/128 (demo seed + synthetic outcomes)
    and Zybit-124 finish, if a populated demo environment is wanted for sales.
-4. **Sprint 3 proper** — Zybit-143 → 144 → 145 → 146 → 148, in dependency
-   order, then **Zybit-149** (client-side variant runtime — unlocks SPA
-   experiments and complex changes; the deployment-side counterpart to the
-   AI advisor). Prerequisites: `GEMINI_API_KEY` + a Vercel Blob plan tier.
+4. **Sprint 3 proper** — Zybit-143 / 144 / 148 shipped in PR #66 (merge after
+   applying migration `0018` and setting `GEMINI_API_KEY` in Vercel).
+   Remaining: Zybit-145 (advisor UI) → Zybit-146 (DOM picker + screenshot
+   thumbnail) → **Zybit-149** (client-side variant runtime — unlocks SPA
+   experiments and complex changes; until it lands, the Zybit-144 advisor
+   only proposes — nothing applies its modifications to a live DOM).
+   Prerequisites for the picker + capture: a Vercel Blob plan tier (PR #58).
 5. **Zybit-118 / Zybit-147** — smaller hardening, any time.
 6. **Decide Zybit-161/162** — keep superseded, or build the persisted override
    table; that decision also unblocks Zybit-165.
@@ -185,10 +196,16 @@ The core loop is customer-ready. Remaining sequencing:
 - Set `AXIOM_DATASET=axiom-audit` in Vercel — activates the Zybit-153 log drain.
 - Set `BROWSERLESS_KEY` in Vercel — gates the SPA snapshot fallback. Token
   live-verified 2026-05-22 (a client-rendered SPA rendered via Browserless).
-- Provision `GEMINI_API_KEY` + Vercel Blob tier before Sprint 3.
+- Apply migration `0018_phase2_ai_advisor_usage.sql` to Neon before merging
+  PR #66 — the Zybit-144 advisor route reads/writes `phase2_ai_advisor_usage`
+  for the Zybit-148 per-org daily rate limit (same way `0016` and `0017` were
+  noted on prior PRs).
+- Set `GEMINI_API_KEY` in Vercel before PR #66 goes live — the AI advisor
+  route returns 503 without it (non-essential; PMs fall back to manual
+  variant entry). Vercel Blob tier still needed for Zybit-142 (PR #58).
 - Migration `0017_phase2_flow_graph` applied to Neon 2026-05-22 (table +
   `phase2_flow_graph_org_idx` verified live).
 - Migration journal (`drizzle/meta/_journal.json`) is stale — it lists only
-  0000–0002 though 0000–0017 are applied, and there is no
-  `drizzle.__drizzle_migrations` tracking table (migrations applied manually).
-  Reconcile before relying on `drizzle-kit migrate`.
+  0000–0002 though 0000–0018 are applied (0018 ships with PR #66), and there
+  is no `drizzle.__drizzle_migrations` tracking table (migrations applied
+  manually). Reconcile before relying on `drizzle-kit migrate`.

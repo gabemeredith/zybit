@@ -68,7 +68,7 @@ phase2_site_design_snapshot (
 ---
 
 ## Zybit-143 — Design token extraction
-**Estimate:** 1.5d | **Owner:** —
+**Estimate:** 1.5d | **Owner:** — | **Status:** 🔶 Shipped in open PR #66 (`feat/sprint-3-followup`) — `extractDesignTokens` pure function in `src/lib/phase2/snapshots/tokenExtractor.ts`, co-written atomically with the full design-snapshot row in `buildFullDesignSnapshot`.
 
 **What:** From computed styles, derive a compact token set that represents the site's design language. This is what the AI advisor uses as its design system context.
 
@@ -98,7 +98,7 @@ Store as `designTokens` jsonb. Format example:
 ---
 
 ## Zybit-144 — AI Variant Advisor API route
-**Estimate:** 3d | **Owner:** —
+**Estimate:** 3d | **Owner:** — | **Status:** 🔶 Shipped in open PR #66 (`feat/sprint-3-followup`) — `POST /api/dashboard/experiments/ai-suggest` calls Gemini 2.0 Flash **via REST** (not the SDK) and returns up to 3 schema-valid `VariantModification[]` proposals. Validation hardening beyond the spec: CTA+forms selector allowlist only (headings out of scope — the structural snapshot lacks per-heading `cssSelector`); `attribute-set` attribute allowlist; `css-inject` content checks; `text-replace` sanitisation; prompt-injection-resistant prescription delimiters; `element-reorder` deliberately excluded from the AI surface. Returns 503 when `GEMINI_API_KEY` is unset (route is non-essential — PMs fall back to manual entry). Proposals only — nothing applies them to a live DOM yet (Zybit-149 not built).
 
 **What:** The core AI call. Takes a finding + design capture data and returns 3 pre-built modification options.
 
@@ -225,7 +225,7 @@ Return JSON only — no explanation, no markdown.
 ---
 
 ## Zybit-148 — Rate limiting + cost guard for AI advisor
-**Estimate:** 0.5d | **Owner:** —
+**Estimate:** 0.5d | **Owner:** — | **Status:** 🔶 Shipped in open PR #66 (`feat/sprint-3-followup`) — per-org daily limit (10 calls/org/UTC day) via atomic upsert on a dedicated `phase2_ai_advisor_usage` table (migration `0018_phase2_ai_advisor_usage.sql`, must be applied to Neon before route goes live). Denied calls return 429 and **do not bump the counter**. Token usage logged per call to the structured logger under `service: 'ai-advisor'`. Implemented in `src/lib/experiments/aiAdvisorRateLimit.ts`.
 
 **What:** Prevent runaway AI API costs. Simple controls.
 

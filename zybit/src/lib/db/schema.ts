@@ -74,6 +74,21 @@ export const authRateLimits = pgTable(
   })
 );
 
+// Zybit-148: per-org daily call counter for the AI Variant Advisor.
+// `day_utc` is YYYY-MM-DD (UTC). One row per org per day. Denied calls
+// do not increment — see `aiAdvisorRateLimit.ts`.
+export const phase2AiAdvisorUsage = pgTable(
+  'phase2_ai_advisor_usage',
+  {
+    organizationId: text('organization_id').notNull(),
+    dayUtc: text('day_utc').notNull(),
+    callCount: integer('call_count').notNull().default(0),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.organizationId, table.dayUtc] }),
+  })
+);
+
 // ---------------------------------------------------------------------------
 // Phase 1 (capture): headless page captures + blob assets + run tracking
 // ---------------------------------------------------------------------------
