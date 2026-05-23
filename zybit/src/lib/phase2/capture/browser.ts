@@ -15,9 +15,9 @@ const CONNECT_TIMEOUT_MS = 30_000;
 
 function buildWsEndpoint(): string {
   const url = process.env.BROWSERLESS_URL;
-  const token = process.env.BROWSERLESS_TOKEN;
+  const token = process.env.BROWSERLESS_KEY;
   if (!url || !token) {
-    throw new Error('BROWSERLESS_URL and BROWSERLESS_TOKEN must be set for headless capture');
+    throw new Error('BROWSERLESS_URL and BROWSERLESS_KEY must be set for headless capture');
   }
   return url.includes('?') ? `${url}&token=${token}` : `${url}?token=${token}`;
 }

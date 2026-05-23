@@ -223,7 +223,7 @@ export const fetchHtml: SnapshotFetcher = async (
   const { html, byteSize } = await readBodyWithLimit(response, opts.maxBytes);
 
   // If the response looks like a SPA shell, attempt a Browserless render.
-  // runBrowserSnapshot returns null when BROWSERLESS_TOKEN is unset or on error.
+  // runBrowserSnapshot returns null when BROWSERLESS_KEY is unset or on error.
   if (isSpaHtml(html)) {
     const browserResult = await runBrowserSnapshot(currentUrl, { timeoutMs: opts.timeoutMs });
     if (browserResult) {

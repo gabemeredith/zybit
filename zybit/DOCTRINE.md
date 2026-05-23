@@ -153,7 +153,7 @@ The analysis engine and PM dashboard are complete. Zybit can:
 
 The product direction is set by `docs/PRD.md` — deliberately **one milestone**, not a platform build.
 
-1. ~~**Flow-graph advisory (PRD Milestone 1)**~~ ✅ **Complete** — all 5 PRD scope items shipped: derivation, data model, `/app/flow` graph view, `flow-inter-step-dropoff` rule, `flow-funnel` credibility slice in EvidencePanel. Migration `0017` created (not yet applied to Neon). Everything beyond the committed milestone (client runtime, journey experiments, one-click in-app deploy, full AI advisor, element picker) is **deferred until a customer pulls it** — see `docs/PRD.md` §4.
+1. ~~**Flow-graph advisory (PRD Milestone 1)**~~ ✅ **Complete** — all 5 PRD scope items shipped: derivation, data model, `/app/flow` graph view, `flow-inter-step-dropoff` rule, `flow-funnel` credibility slice in EvidencePanel. Migration `0017` applied to Neon 2026-05-22. Everything beyond the committed milestone (client runtime, journey experiments, one-click in-app deploy, full AI advisor, element picker) is **deferred until a customer pulls it** — see `docs/PRD.md` §4.
 2. **Operator org dashboard (Zybit-156)** — no `/app/operator` route yet; needed to support a paying customer remotely.
 
 For the definitive per-ticket status across sprints 0–5, see `docs/sprints/REMEDIATION.md`.

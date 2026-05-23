@@ -90,7 +90,8 @@ async function renderDashboard() {
     el('p', { class: 'loading' }, 'loading scenarios…'),
   ]);
   const runPane = el('section', { class: 'runpane' });
-  root.appendChild(el('div', {}, [header, controls, runPane]));
+  const urlControls = buildUrlAuditControls(runPane);
+  root.appendChild(el('div', {}, [header, controls, urlControls, runPane]));
 
   const { body } = await api('/lighthouse/api/scenarios');
   clear(controls);
@@ -263,18 +264,113 @@ function renderRunState(runPane, state) {
     );
   }
 
-  // Right column — PM VIEW: "Open as PM" button until clicked, then
-  // an iframe of the embedded /app/loop loaded as the synthetic PM.
-  const right = el('div', { class: 'col pm-col' }, [el('h2', {}, 'pm view')]);
+  // Right column — PM VIEW for scenario runs, PAGE INSPECTOR for URL audits.
+  const isUrlAudit =
+    state.status === 'done' && state.result && Array.isArray(state.result.inspector);
+  const right = el('div', { class: 'col pm-col' }, [
+    el('h2', {}, isUrlAudit ? 'page inspector' : 'pm view'),
+  ]);
   if (state.status === 'done' && state.result) {
-    right.appendChild(buildPmView(state.result.siteId));
+    if (isUrlAudit) {
+      right.appendChild(buildInspectorView(state.result));
+    } else {
+      right.appendChild(buildPmView(state.result.siteId));
+    }
   } else if (state.status === 'running') {
     right.appendChild(
-      el('p', { class: 'pm-status' }, 'pm view appears here once the run finishes.'),
+      el('p', { class: 'pm-status' }, 'results appear here once the run finishes.'),
     );
   }
 
   runPane.appendChild(el('div', { class: 'two-col' }, [left, right]));
+}
+
+function buildUrlAuditControls(runPane) {
+  const urlInput = el('input', {
+    type: 'url',
+    name: 'auditUrl',
+    placeholder: 'https://example.com',
+  });
+  const pagesInput = el('input', {
+    type: 'number',
+    name: 'maxPages',
+    min: '1',
+    max: '40',
+    value: '20',
+  });
+  const auditBtn = el('button', { class: 'primary', type: 'button' }, 'audit url');
+
+  auditBtn.addEventListener('click', async () => {
+    const url = urlInput.value.trim();
+    if (!url) return;
+    auditBtn.setAttribute('disabled', 'disabled');
+    try {
+      const r = await api('/lighthouse/api/audit-url', {
+        method: 'POST',
+        body: JSON.stringify({ url, maxPages: Number(pagesInput.value) || 20 }),
+      });
+      if (!r.ok) {
+        throw new Error((r.body && (r.body.detail || r.body.error)) || `http ${r.status}`);
+      }
+      await pollRun(r.body.runId, runPane);
+    } catch (err) {
+      clear(runPane);
+      runPane.appendChild(el('p', { class: 'error' }, `error: ${err.message}`));
+    } finally {
+      auditBtn.removeAttribute('disabled');
+    }
+  });
+
+  return el('section', { class: 'controls' }, [
+    el('div', { class: 'control-row' }, [
+      el('label', {}, ['audit url ', urlInput]),
+      el('label', {}, ['max pages ', pagesInput]),
+      auditBtn,
+    ]),
+  ]);
+}
+
+function buildInspectorView(result) {
+  const wrap = el('div', { class: 'inspector' });
+  if (result.crawl) {
+    wrap.appendChild(
+      el('table', { class: 'counts' }, [
+        el('tr', {}, [el('th', {}, 'requested'), el('td', {}, result.crawl.requestedUrl)]),
+        el('tr', {}, [
+          el('th', {}, 'pages discovered'),
+          el('td', {}, String(result.crawl.pagesDiscovered)),
+        ]),
+        el('tr', {}, [
+          el('th', {}, 'pages snapshotted'),
+          el('td', {}, String(result.crawl.pagesSnapshotted)),
+        ]),
+      ]),
+    );
+  }
+  for (const page of result.inspector || []) {
+    const ctaItems = (page.topCtas || []).map((c) =>
+      el(
+        'li',
+        {},
+        `${c.text || '(unnamed)'} — weight ${c.visualWeight}, ${c.landmark}, ${c.foldGuess}`,
+      ),
+    );
+    wrap.appendChild(
+      el('details', { class: 'group' }, [
+        el(
+          'summary',
+          {},
+          `${page.pathRef} — ${page.ctaCount} CTAs, ${page.formCount} forms, ${page.headingCount} headings`,
+        ),
+        el('p', {}, [el('strong', {}, 'title '), page.title || '(none)']),
+        page.cssSystem ? el('p', {}, [el('strong', {}, 'css '), page.cssSystem]) : null,
+        ctaItems.length > 0
+          ? el('ul', {}, ctaItems)
+          : el('p', {}, 'no CTAs extracted'),
+      ]),
+    );
+  }
+  return wrap;
 }
 
 function buildPmView(siteId) {

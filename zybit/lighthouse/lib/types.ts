@@ -82,6 +82,7 @@ export interface GenerateRequest {
 
 export interface GenerateProgressEvent {
   step:
+    | 'crawl'
     | 'provisioning'
     | 'tunnel'
     | 'sessions'
@@ -146,4 +147,33 @@ export interface GenerateResult {
     calibratedRuleCount: number;
     calibrationSummary: Array<{ ruleId: string; direction: string; multiplier: number }>;
   };
+  /**
+   * URL-audit crawl summary (URL-audit mode only). Present when the run was
+   * driven by `runUrlAudit` rather than a hand-authored scenario.
+   */
+  crawl?: {
+    requestedUrl: string;
+    pagesDiscovered: number;
+    pagesSnapshotted: number;
+  };
+  /**
+   * Per-page parsed-structure inspector (URL-audit mode only). Surfaces what
+   * Zybit's snapshot parser extracted from each real page so the operator can
+   * eyeball whether the `Understand` step "sees" the site correctly.
+   */
+  inspector?: Array<{
+    pathRef: string;
+    url: string;
+    title: string | null;
+    cssSystem?: string;
+    ctaCount: number;
+    formCount: number;
+    headingCount: number;
+    topCtas: Array<{
+      text: string;
+      visualWeight: number;
+      landmark: string;
+      foldGuess: string;
+    }>;
+  }>;
 }

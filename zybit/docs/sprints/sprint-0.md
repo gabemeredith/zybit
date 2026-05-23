@@ -79,10 +79,10 @@
 ## Zybit-117 — Browserless live verification
 **Estimate:** 1–2d | **Owner:** —
 
-**Context:** `browserFetcher.ts` has unit tests but has never been run against live sites with a real `BROWSERLESS_TOKEN`.
+**Context:** `browserFetcher.ts` has unit tests but has never been run against live sites with a real `BROWSERLESS_KEY`.
 
 **Steps:**
-1. Set `BROWSERLESS_TOKEN` in `.env.local`
+1. Set `BROWSERLESS_KEY` in `.env.local`
 2. Run fetcher against 3 test sites: a Next.js App Router page (SSR with client components), a React SPA, a Vue SPA
 3. Measure: latency, content completeness (headings found / expected), cost per page
 4. Test `isSpaHtml()` classification accuracy against all 3
