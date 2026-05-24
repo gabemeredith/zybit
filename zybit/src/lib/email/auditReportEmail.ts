@@ -71,6 +71,14 @@ function severityLabel(s: AuditFindingForEmail['severity']): string {
   return s === 'high' ? 'High' : s === 'medium' ? 'Medium' : 'Low';
 }
 
+// Number word for prose flow at the small counts the audit produces.
+// Falls back to digits for 11+ (the audit caps at 4 today, so the high
+// branch only exists for safety).
+const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'] as const;
+function numberWord(n: number): string {
+  return n >= 0 && n < NUMBER_WORDS.length ? NUMBER_WORDS[n] : String(n);
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -180,7 +188,7 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
             <td style="padding: 0 28px 24px;">
               <h1 style="margin: 8px 0 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 36px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: ${INK};">${safeDomain}</h1>
               <p style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK};">
-                We ran our 13 friction rules against your homepage and the ${report.pagesScanned} internal pages we could reach. The <strong>four findings below</strong> are the ones most worth fixing first — ranked by potential revenue impact and how confident we are in the call. Each one cites what we saw on your site, what to change, and a rough dollar estimate.
+                We ran our 13 friction rules against your homepage and the ${report.pagesScanned} internal pages we could reach. The <strong>${numberWord(report.findings.length)} finding${report.findings.length === 1 ? '' : 's'} below</strong> ${report.findings.length === 1 ? 'is the one' : 'are the ones'} most worth fixing first — ranked by potential revenue impact and how confident we are in the call. Each one cites what we saw on your site, what to change, and a rough dollar estimate.
               </p>
             </td>
           </tr>
