@@ -199,6 +199,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { siteId, counts } = generateResult;
 
+  // If the crawl returned zero pages, sending a "0 findings" report would
+  // read as "Zybit found nothing wrong with your site" — actively misleading.
+  // The likely real cause is bot protection (Cloudflare/Akamai), an
+  // unfriendly robots.txt, or JS-only navigation hiding links from the
+  // HTTP crawler. Bail out, record the minimum cost (Firecrawl charges us
+  // for the failed crawl), mark the audit `unreachable`, and let the status
+  // page render a dedicated UX explaining why and what to do next.
+  if (counts.snapshots === 0) {
+    await recordAuditCost(MIN_AUDIT_COST_USD);
+    await db.execute(sql`
+      UPDATE public_audits
+      SET
+        status = 'unreachable',
+        pages_scanned = 0,
+        total_findings = 0,
+        cost_usd = ${MIN_AUDIT_COST_USD.toFixed(4)},
+        error = ${'No pages could be crawled — likely bot protection, robots.txt, or JS-only navigation.'},
+        completed_at = now()
+      WHERE id = ${auditId}
+    `);
+    return NextResponse.json({
+      status: 'unreachable',
+      domain: audit.domain,
+      pagesScanned: 0,
+    });
+  }
+
   // Pull the top findings from the DB (the pipeline wrote them there).
   // `rage-click-target` is excluded: the public audit has no real visitor
   // events to ground it in. The synthetic-event generator fires a fixed

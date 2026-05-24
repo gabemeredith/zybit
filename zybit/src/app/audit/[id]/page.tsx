@@ -8,7 +8,7 @@ const INK = '#111';
 const CREAM = '#FAFAF8';
 const MUTED = '#6B6B6B';
 
-type AuditStatus = 'running' | 'done' | 'failed' | 'unknown';
+type AuditStatus = 'running' | 'done' | 'unreachable' | 'failed' | 'unknown';
 
 interface StatusResponse {
   id: string;
@@ -56,6 +56,10 @@ export default function AuditStatusPage() {
 
         if (data.status === 'done') {
           setStatus('done');
+          return;
+        }
+        if (data.status === 'unreachable') {
+          setStatus('unreachable');
           return;
         }
         if (data.status === 'failed') {
@@ -220,6 +224,119 @@ export default function AuditStatusPage() {
             >
               Audit another site
             </Link>
+          </div>
+        </div>
+      )}
+
+      {status === 'unreachable' && (
+        <div
+          style={{
+            background: '#FFFFFF',
+            border: `2px solid ${INK}`,
+            boxShadow: `8px 8px 0 ${INK}`,
+            padding: '36px 32px',
+            maxWidth: 560,
+            width: '100%',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              color: MUTED,
+              marginBottom: 12,
+            }}
+          >
+            Zybit · Couldn&rsquo;t reach your site
+          </div>
+          <h1
+            style={{
+              margin: '0 0 16px',
+              fontSize: 26,
+              fontWeight: 800,
+              letterSpacing: '-0.02em',
+              lineHeight: 1.15,
+              color: INK,
+            }}
+          >
+            We couldn&rsquo;t read {domain || 'your site'}.
+          </h1>
+          <p style={{ margin: '0 0 16px', fontSize: 15, lineHeight: 1.6, color: INK }}>
+            Our crawler hit a wall before it could scan a single page. We didn&rsquo;t send you a
+            report — &ldquo;0 findings&rdquo; reads as &ldquo;Zybit found nothing wrong&rdquo; and that
+            isn&rsquo;t what happened.
+          </p>
+          <div
+            style={{
+              padding: '12px 14px',
+              background: '#FFF4E5',
+              border: `1px solid ${INK}`,
+              marginBottom: 24,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                color: MUTED,
+                marginBottom: 6,
+              }}
+            >
+              Most common causes
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6, color: INK }}>
+              <li>Bot protection (Cloudflare, Akamai) blocked the crawler</li>
+              <li>Your <code>robots.txt</code> disallows our user-agent</li>
+              <li>The page is rendered entirely with JS and has no link discovery in the HTML</li>
+            </ul>
+          </div>
+          <p style={{ margin: '0 0 20px', fontSize: 14, lineHeight: 1.55, color: INK }}>
+            Try a less-protected page on the same domain — often <code>/pricing</code>,{' '}
+            <code>/about</code>, or a blog post will slip past where the root won&rsquo;t. Or email us
+            the URL and we&rsquo;ll run it manually.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <Link
+              href="/audit"
+              style={{
+                display: 'inline-block',
+                padding: '12px 24px',
+                background: INK,
+                color: CREAM,
+                textDecoration: 'none',
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                boxShadow: `4px 4px 0 ${INK}`,
+                border: `1px solid ${INK}`,
+              }}
+            >
+              Try a different URL →
+            </Link>
+            <a
+              href={`mailto:jad@getzybit.com?subject=${encodeURIComponent(
+                `Audit help: ${domain || 'my site'}`,
+              )}`}
+              style={{
+                display: 'inline-block',
+                padding: '12px 24px',
+                background: 'transparent',
+                color: INK,
+                border: `1px solid ${INK}`,
+                textDecoration: 'none',
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Email us
+            </a>
           </div>
         </div>
       )}
