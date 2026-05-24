@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db/client';
 import { zybitFindings } from '@/lib/db/schema';
 import { sendAuditReportEmail } from '@/lib/email/auditReportEmail';
 import type { AuditReport, AuditFindingForEmail } from '@/lib/email/auditReportEmail';
-import { recordAuditCost } from '@/lib/audit/publicAuditRateLimit';
+import { recordAuditCost, checkDailyBudget } from '@/lib/audit/publicAuditRateLimit';
 import { captureAuditScreenshot, runVisionPass } from '@/lib/audit/visionPass';
 import { validatePublicUrl } from '@/lib/audit/urlValidator';
 import { runUrlAudit } from '../../../../../../lighthouse/lib/runner/runUrlAudit';
@@ -154,6 +154,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   if (audit.status !== 'running') {
     return NextResponse.json({ error: `Unexpected status: ${audit.status}` }, { status: 409 });
+  }
+
+  // Re-check the daily budget right before spending. The submit-time check at
+  // /api/audit/public/submit reads spend that is only recorded *after* a
+  // pipeline finishes — so a burst of submissions near the cap can all pass
+  // the check, all confirm, and all dispatch concurrently. Re-checking here
+  // closes the burst-window: each run sees whatever spend has been recorded
+  // by audits that finished ahead of it.
+  const budget = await checkDailyBudget();
+  if (!budget.allowed) {
+    await db.execute(sql`
+      UPDATE public_audits
+      SET status = 'failed', error = ${budget.reason ?? 'Daily audit capacity is full.'}, completed_at = now()
+      WHERE id = ${auditId}
+    `);
+    return NextResponse.json({ error: budget.reason ?? 'Daily audit capacity is full.' }, { status: 429 });
   }
 
   // Re-validate the stored URL right before the network fetch. The submit-time
