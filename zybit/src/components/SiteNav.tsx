@@ -72,8 +72,8 @@ export function SiteNav({ onRequestAccess }: { onRequestAccess: () => void }) {
             <Link href="/sign-in" className={subtleLink}>
               Sign in
             </Link>
-            <Link href="/dashboard" className={subtleLink}>
-              Preview
+            <Link href="/audit" className={subtleLink}>
+              Free audit
             </Link>
           </nav>
         </div>
@@ -113,8 +113,8 @@ export function SiteNav({ onRequestAccess }: { onRequestAccess: () => void }) {
           <Link href="/sign-in" className={subtleLink}>
             Sign in
           </Link>
-          <Link href="/dashboard" className={subtleLink}>
-            Interactive Preview
+          <Link href="/audit" className={subtleLink}>
+            Free audit
           </Link>
         </nav>
       </div>

@@ -167,7 +167,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await db.execute(sql`
       UPDATE public_audits
       SET status = 'failed', error = ${budget.reason ?? 'Daily audit capacity is full.'}, completed_at = now()
-      WHERE id = ${auditId}
+      WHERE id = ${auditId} AND status = 'running'
     `);
     return NextResponse.json({ error: budget.reason ?? 'Daily audit capacity is full.' }, { status: 429 });
   }
@@ -181,7 +181,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await db.execute(sql`
       UPDATE public_audits
       SET status = 'failed', error = ${`URL re-validation failed: ${revalidation.reason}`}, completed_at = now()
-      WHERE id = ${auditId}
+      WHERE id = ${auditId} AND status = 'running'
     `);
     return NextResponse.json({ error: revalidation.reason }, { status: 400 });
   }
@@ -208,7 +208,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           cost_usd = ${MIN_AUDIT_COST_USD.toFixed(4)},
           error = ${pipelineError ?? 'Unknown pipeline error'},
           completed_at = now()
-      WHERE id = ${auditId}
+      WHERE id = ${auditId} AND status = 'running'
     `);
     return NextResponse.json({ error: pipelineError }, { status: 500 });
   }
@@ -233,7 +233,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         cost_usd = ${MIN_AUDIT_COST_USD.toFixed(4)},
         error = ${'No pages could be crawled — likely bot protection, robots.txt, or JS-only navigation.'},
         completed_at = now()
-      WHERE id = ${auditId}
+      WHERE id = ${auditId} AND status = 'running'
     `);
     return NextResponse.json({
       status: 'unreachable',
@@ -331,7 +331,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (emailError) {
     // Pipeline succeeded but delivery failed — surface in DB so the audit
-    // doesn't sit in 'running' forever and an operator can re-send.
+    // doesn't sit in 'running' forever and an operator can re-send. Guarded
+    // on status = 'running' so we don't overwrite a lazy-flipped 'failed'
+    // from /api/audit/public/status with a stale write.
     await db.execute(sql`
       UPDATE public_audits
       SET
@@ -342,7 +344,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         cost_usd = ${estimatedCostUsd.toFixed(4)},
         error = ${`Report email failed: ${emailError}`},
         completed_at = now()
-      WHERE id = ${auditId}
+      WHERE id = ${auditId} AND status = 'running'
     `);
     return NextResponse.json({ error: emailError }, { status: 500 });
   }
@@ -356,7 +358,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       total_findings = ${counts.findings},
       cost_usd = ${estimatedCostUsd.toFixed(4)},
       completed_at = now()
-    WHERE id = ${auditId}
+    WHERE id = ${auditId} AND status = 'running'
   `);
 
   return NextResponse.json({
