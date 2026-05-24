@@ -466,7 +466,7 @@ export const zybitFindings = pgTable(
     summary: text('summary').notNull(),
     recommendation: jsonb('recommendation').$type<string[]>().notNull(),
     evidence: jsonb('evidence').$type<Array<{ label: string; value: string | number; context?: string }>>().notNull(),
-    prescription: jsonb('prescription').$type<{ whatToChange: string; whyItWorks: string; experimentVariantDescription: string } | null>(),
+    prescription: jsonb('prescription').$type<{ whyItMatters?: string; whatToChange: string; whyItWorks: string; experimentVariantDescription: string } | null>(),
     impactEstimate: jsonb('impact_estimate').$type<{ value: number; unit: string; period: 'monthly'; formatted: string; basis: string } | null>(),
     snapshotDiagram: jsonb('snapshot_diagram').$type<Record<string, unknown> | null>(),
     refs: jsonb('refs').$type<Record<string, string | undefined> | null>(),

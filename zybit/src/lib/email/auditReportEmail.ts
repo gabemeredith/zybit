@@ -26,6 +26,12 @@ export interface AuditFindingForEmail {
   confidence: number;
   ruleId: string;
   title: string;
+  /**
+   * Optional PM-first business framing rendered above the title. Surfaced
+   * from `prescription.whyItMatters` when the underlying rule provides it.
+   * Falsy → the section is omitted, no empty placeholder is rendered.
+   */
+  whyItMatters: string | null;
   evidence: string;
   whatToChange: string;
   estimatedImpactMonthlyUsd: number | null;
@@ -75,20 +81,24 @@ function escapeHtml(value: string): string {
 }
 
 function findingCard(f: AuditFindingForEmail): string {
-  const id = `F-${String(f.rank).padStart(4, '0')}`;
   const impact = fmtDollars(f.estimatedImpactMonthlyUsd);
+  // Severity-only badge — the numeric confidence score was dropped because
+  // it adds no PM signal beyond what the label already conveys.
+  const whyItMattersRow = f.whyItMatters
+    ? `
+      <tr>
+        <td style="padding: 18px 18px 4px;">
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Why this matters</div>
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.6; color: ${INK};">${escapeHtml(f.whyItMatters)}</div>
+        </td>
+      </tr>`
+    : '';
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 0 0 20px; border-collapse: separate; border: 2px solid ${INK}; box-shadow: 6px 6px 0 ${INK}; background: ${CREAM};">
       <tr>
-        <td style="padding: 12px 18px; border-bottom: 2px solid ${INK};">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-            <tr>
-              <td style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${INK};">${id} · ${escapeHtml(f.ruleId)}</td>
-              <td align="right" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; white-space: nowrap;">${severityLabel(f.severity)} · ${f.confidence.toFixed(2)}</td>
-            </tr>
-          </table>
-        </td>
+        <td align="right" style="padding: 12px 18px; border-bottom: 2px solid ${INK}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED};">${severityLabel(f.severity)}</td>
       </tr>
+      ${whyItMattersRow}
       <tr>
         <td style="padding: 18px; border-bottom: 1px solid ${HAIRLINE};">
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Finding</div>
@@ -219,6 +229,18 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
             </td>
           </tr>
 
+          <!-- Caveat: what this audit can and can't see -->
+          <tr>
+            <td style="padding: 0 28px 24px;">
+              <div style="border: 1px dashed ${HAIRLINE}; padding: 14px 16px; background: rgba(0,0,0,0.02);">
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 6px;">Based on page structure, not your visitors yet</div>
+                <p style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; line-height: 1.55; color: ${INK};">
+                  The findings above come from parsing your HTML — what your page emphasizes, how the nav is structured, where the CTAs sit. They&rsquo;re real structural observations, but we can&rsquo;t see how your real users behave on the page yet. Connect PostHog (or send us your data) and the other 9 rules light up — rage-clicks, drop-offs, form abandonment, hesitation, mobile asymmetry, and the patterns you only see in session data.
+                </p>
+              </div>
+            </td>
+          </tr>
+
           <!-- Founder signature -->
           <tr>
             <td style="padding: 0 28px 28px;">
@@ -262,13 +284,19 @@ export async function sendAuditReportEmail(
     const html = renderAuditReportEmailHtml(report);
     const resend = new Resend(key);
     const { error } = await resend.emails.send({
-      from: 'Asad & Jad at Zybit <audit@resend.dev>',
+      // Sandbox sender — same caveat as auditConfirmationEmail.ts. Override
+      // via AUDIT_REPORT_FROM_EMAIL once a custom domain is verified in Resend.
+      from: process.env.AUDIT_REPORT_FROM_EMAIL ?? 'Asad & Jad at Zybit <onboarding@resend.dev>',
       to,
       subject: `Four things to fix on ${report.domain}`,
       html,
     });
     if (error) {
-      return { success: false, error: String(error) };
+      const detail =
+        typeof error === 'object' && error !== null
+          ? JSON.stringify(error)
+          : String(error);
+      return { success: false, error: detail };
     }
     return { success: true };
   } catch (err) {
@@ -295,7 +323,8 @@ export function sampleAuditReport(): AuditReport {
         severity: 'high',
         confidence: 0.84,
         ruleId: 'rage-click-target',
-        title: 'Rage-clicks on checkout promo-code field',
+        title: 'Visitors are rage-clicking your checkout promo-code field',
+        whyItMatters: null,
         evidence:
           '847 rage-click events on #promo-code over the last 7 days. Checkout completion rate is 2.1% for sessions that interact with the field vs. 3.4% for sessions that skip it — a 38% relative drop.',
         whatToChange:
@@ -308,11 +337,13 @@ export function sampleAuditReport(): AuditReport {
         severity: 'high',
         confidence: 0.79,
         ruleId: 'hero-hierarchy-inversion',
-        title: 'Hero gives most visual weight to the secondary action',
+        title: 'Your visitors want "Start free trial", but your homepage points them at "Book a demo"',
+        whyItMatters:
+          'Your visitors are reaching for "Start free trial", but your hero is pointing them at "Book a demo" with the loud filled button. Every visitor who arrives wanting the trial has to scan past the demo CTA to find the one they actually want — that\'s friction you\'re paying for on every session.',
         evidence:
-          'The "Book a demo" button uses the filled brand-blue treatment in the hero, while "Start free trial" is a plain text link. Yet 58% of all CTA clicks on the homepage go to "Start free trial". Visual emphasis is inverted relative to revealed preference.',
+          'What visitors click most: "Start free trial" · 58% of clicks · 312 clicks · What your design emphasizes: "Book a demo" in the hero with a filled background and bold weight · Page: your homepage · Based on: 538 button clicks over the last 14 days',
         whatToChange:
-          'Swap the visual treatments: give "Start free trial" the bg-blue-600 + text-white styling currently held by "Book a demo", and demote "Book a demo" to a secondary outlined button.',
+          'Promote "Start free trial" to the hero with the same filled background and bold weight "Book a demo" has today. Demote "Book a demo" to a secondary outlined style.',
         estimatedImpactMonthlyUsd: 5400,
       },
       {
@@ -322,6 +353,7 @@ export function sampleAuditReport(): AuditReport {
         confidence: 0.71,
         ruleId: 'cta-low-contrast',
         title: 'Pricing-page CTA fails WCAG contrast at body size',
+        whyItMatters: null,
         evidence:
           'The "Choose Growth" button on /pricing uses #B8E0CC on #FAFAF8 — contrast ratio 1.9:1, well below the 4.5:1 floor. On mobile (where 62% of pricing traffic lands) the button is the smallest tap target on the page.',
         whatToChange:
@@ -335,6 +367,7 @@ export function sampleAuditReport(): AuditReport {
         confidence: 0.66,
         ruleId: 'nav-dispersion',
         title: 'Top nav forces users to choose between 9 items',
+        whyItMatters: null,
         evidence:
           'The primary nav contains 9 top-level items (Product, Features, Solutions, Use cases, Customers, Pricing, Docs, Blog, Login). Click distribution is concentrated on 3 — Pricing (41%), Docs (22%), Login (18%) — and the other 6 collectively absorb 19% of clicks. The variance is hurting discoverability.',
         whatToChange:

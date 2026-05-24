@@ -137,13 +137,22 @@ export async function sendAuditConfirmationEmail(
     const html = renderAuditConfirmationEmailHtml(req);
     const resend = new Resend(key);
     const { error } = await resend.emails.send({
-      from: 'Zybit <audit@resend.dev>',
+      // Matches the AUTH_FROM_EMAIL default used by /api/auth/request-link.
+      // resend.dev is Resend's sandbox sender — fine while no custom domain is
+      // verified, but it only delivers to the Resend account owner's address.
+      from: process.env.AUDIT_FROM_EMAIL ?? 'Zybit <onboarding@resend.dev>',
       to: req.recipientEmail,
       subject: `Confirm your Zybit audit of ${req.domain}`,
       html,
     });
     if (error) {
-      return { success: false, error: String(error) };
+      // Resend errors are objects with `name`, `message`, `statusCode` —
+      // String(error) yields "[object Object]". Pull the useful fields.
+      const detail =
+        typeof error === 'object' && error !== null
+          ? JSON.stringify(error)
+          : String(error);
+      return { success: false, error: detail };
     }
     return { success: true };
   } catch (err) {

@@ -39,6 +39,76 @@ function severityFromScore(priorityScore: number): 'high' | 'medium' | 'low' {
   return 'low';
 }
 
+type DbFinding = {
+  ruleId: string;
+  title: string;
+  evidence: Array<{ label: string; value: string | number; context?: string }>;
+  prescription: { whyItMatters?: string; whatToChange: string } | null;
+};
+
+/**
+ * Looks up an evidence row by label and returns its value as a string.
+ * Returns null when the label is absent — caller should fall back gracefully.
+ */
+function evidenceValue(f: DbFinding, label: string): string | null {
+  const row = f.evidence.find(e => e.label === label);
+  return row ? String(row.value) : null;
+}
+
+/**
+ * Public-audit copy override: rewrites title / whyItMatters / evidence to
+ * structural framing for rules whose findings, in the no-real-events
+ * context of the public audit, are grounded in page structure rather than
+ * measured visitor behavior. Returns null when no override applies — caller
+ * should use the rule's own copy.
+ */
+function structuralPublicAuditCopy(
+  f: DbFinding,
+): { title: string; whyItMatters: string; evidence: string } | null {
+  switch (f.ruleId) {
+    case 'hero-hierarchy-inversion': {
+      const topmost = evidenceValue(f, 'What visitors click most') ?? '(unnamed button)';
+      const heavy = evidenceValue(f, 'What your design emphasizes') ?? '(unnamed button)';
+      const page = evidenceValue(f, 'Page') ?? 'your homepage';
+      return {
+        title: `On ${page}, the topmost CTA isn't the one your design emphasizes`,
+        whyItMatters:
+          `${page} leads with "${topmost}" at the top of the DOM, but your design's visual weight ` +
+          `is on "${heavy}". The button the eye lands on and the button the page leads with aren't the ` +
+          `same — visitors have to scan past the loud one to find the topmost one. That's friction.`,
+        evidence:
+          `Topmost CTA: "${topmost}" · Most visually emphasized CTA: "${heavy}" · Page: ${page} · ` +
+          `Based on: page structure (we can't see your real visitors yet — connect PostHog to confirm with click data)`,
+      };
+    }
+    case 'above-fold-coverage': {
+      const page = evidenceValue(f, 'Page') ?? 'your homepage';
+      return {
+        title: `Your primary CTA on ${page} sits below the fold`,
+        whyItMatters:
+          `On ${page}, the heaviest CTA in your design only becomes visible after a scroll. Visitors who ` +
+          `don't scroll never see your main action — and a meaningful share of any audience doesn't scroll.`,
+        evidence:
+          `Page: ${page} · Based on: page structure (CTA position measured from your HTML — connect PostHog to confirm with real scroll data)`,
+      };
+    }
+    case 'nav-dispersion': {
+      const page = evidenceValue(f, 'Page') ?? 'your homepage';
+      return {
+        title: `Your top nav on ${page} exposes a lot of destinations`,
+        whyItMatters:
+          `A wide nav forces every visitor to choose. The more options at the top, the more cognitive ` +
+          `load before the visitor can do the thing they came for. The best-converting marketing sites ` +
+          `keep top-level nav to 4-5 items.`,
+        evidence:
+          `Page: ${page} · Based on: page structure (nav-item count parsed from your HTML — connect PostHog to see which destinations actually win clicks)`,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
 function formatDate(d: Date): string {
   return d.toLocaleDateString('en-US', {
     month: 'long',
@@ -129,27 +199,47 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { siteId, counts } = generateResult;
 
-  // Pull the top findings from the DB (the pipeline wrote them there)
-  const dbFindings = await db
-    .select()
-    .from(zybitFindings)
-    .where(eq(zybitFindings.siteId, siteId))
-    .orderBy(desc(zybitFindings.priorityScore))
-    .limit(10);
+  // Pull the top findings from the DB (the pipeline wrote them there).
+  // `rage-click-target` is excluded: the public audit has no real visitor
+  // events to ground it in. The synthetic-event generator fires a fixed
+  // RAGE_PROB on every session, so the rule fires on every site regardless
+  // of any real signal. Showing fabricated rage-click counts to a prospect
+  // is the kind of evidence error that destroys lead-magnet credibility.
+  const SYNTHETIC_AUDIT_RULE_BLOCKLIST = new Set(['rage-click-target']);
 
-  const topFindings: AuditFindingForEmail[] = dbFindings.slice(0, 4).map((f, i) => ({
-    id: f.id,
-    rank: i + 1,
-    severity: severityFromScore(f.priorityScore),
-    confidence: f.confidence,
-    ruleId: f.ruleId,
-    title: f.title,
-    evidence: f.evidence
-      .map((e: { label: string; value: string | number }) => `${e.label}: ${e.value}`)
-      .join(' · '),
-    whatToChange: f.prescription?.whatToChange ?? f.recommendation?.[0] ?? '',
-    estimatedImpactMonthlyUsd: f.impactEstimate?.unit === 'usd' ? Number(f.impactEstimate.value) : null,
-  }));
+  const dbFindings = (
+    await db
+      .select()
+      .from(zybitFindings)
+      .where(eq(zybitFindings.siteId, siteId))
+      .orderBy(desc(zybitFindings.priorityScore))
+      .limit(20)
+  ).filter(f => !SYNTHETIC_AUDIT_RULE_BLOCKLIST.has(f.ruleId));
+
+  const topFindings: AuditFindingForEmail[] = dbFindings.slice(0, 4).map((f, i) => {
+    // The synthetic-event generator means click counts / session shares / rage
+    // rates are generator output, not measurements. Per-ruleId rewrite to
+    // structural framing keeps the (real) structural insight while dropping
+    // the fabricated behavioral numbers. Falls through to the rule's own copy
+    // for findings we haven't classified as synthetic-grounded yet.
+    const structural = structuralPublicAuditCopy(f);
+    return {
+      id: f.id,
+      rank: i + 1,
+      severity: severityFromScore(f.priorityScore),
+      confidence: f.confidence,
+      ruleId: f.ruleId,
+      title: structural?.title ?? f.title,
+      whyItMatters: structural?.whyItMatters ?? f.prescription?.whyItMatters ?? null,
+      evidence:
+        structural?.evidence ??
+        f.evidence
+          .map((e: { label: string; value: string | number }) => `${e.label}: ${e.value}`)
+          .join(' · '),
+      whatToChange: f.prescription?.whatToChange ?? f.recommendation?.[0] ?? '',
+      estimatedImpactMonthlyUsd: f.impactEstimate?.unit === 'usd' ? Number(f.impactEstimate.value) : null,
+    };
+  });
 
   // Vision pass — non-fatal, best-effort
   const screenshot = await captureAuditScreenshot(audit.url);
@@ -184,9 +274,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const estimatedCostUsd = Math.max(MIN_AUDIT_COST_USD, counts.snapshots * 0.01);
   await recordAuditCost(estimatedCostUsd);
 
+  // sendAuditReportEmail returns { success, error } rather than throwing,
+  // so we have to inspect the result — not just await it.
   let emailError: string | null = null;
   try {
-    await sendAuditReportEmail(audit.email, report);
+    const sendResult = await sendAuditReportEmail(audit.email, report);
+    if (!sendResult.success) {
+      emailError = sendResult.error ?? 'Unknown send error';
+    }
   } catch (err) {
     emailError = err instanceof Error ? err.message : String(err);
   }
