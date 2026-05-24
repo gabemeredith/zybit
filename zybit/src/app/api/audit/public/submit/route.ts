@@ -193,12 +193,31 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const confirmationUrl = `${appUrl}/api/audit/public/confirm?token=${tokenRaw}`;
   const expiresHuman = formatExpiryUtc(expiresAt);
 
-  await sendAuditConfirmationEmail({
+  const sendResult = await sendAuditConfirmationEmail({
     domain,
     recipientEmail: email,
     confirmationUrl,
     expiresAtHuman: expiresHuman,
   });
+  if (!sendResult.success) {
+    // Surface the failure so it's not swallowed. The audit row + token are
+    // already written; an operator can re-send by minting a fresh token, or
+    // we can expose a "resend confirmation" route later. For now: log + 502
+    // so the form shows an error instead of falsely promising email delivery.
+    console.error('[audit/public/submit] confirmation email send failed', {
+      auditId,
+      domain,
+      error: sendResult.error,
+    });
+    return NextResponse.json(
+      {
+        error: 'We couldn\'t send the confirmation email. Please try again in a few minutes.',
+        // Dev-only diagnostic. Removed in production so we never leak provider details to public form submissions.
+        ...(process.env.NODE_ENV !== 'production' ? { _devError: sendResult.error } : {}),
+      },
+      { status: 502 },
+    );
+  }
 
   return NextResponse.json({
     auditId,
