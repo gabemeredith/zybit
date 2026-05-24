@@ -48,7 +48,10 @@ Open `http://localhost:3000`. Before opening a PR: `npm run verify` (lint + Type
 | `STRIPE_PRICE_STARTER` / `_GROWTH` / `_SCALE` | Billing | Stripe price IDs for each plan |
 | `BROWSERLESS_API_KEY` | Snapshots | Browserless.io API key for JS-rendered snapshot fallback |
 | `CRONITOR_API_KEY` | Monitoring | Cronitor ping key for cron health monitoring |
-| `GEMINI_API_KEY` | AI Variant Advisor (non-essential) | Gemini 2.0 Flash key used by `POST /api/dashboard/experiments/ai-suggest`. Route returns 503 when unset — PMs fall back to manual variant entry. Per-org daily rate limit (10 calls/UTC day) enforced via `phase2_ai_advisor_usage` (migration `0018`). |
+| `GEMINI_API_KEY` | AI Variant Advisor + public-audit vision pass (both non-essential) | Gemini 2.0 Flash key used by `POST /api/dashboard/experiments/ai-suggest` (route returns 503 when unset — PMs fall back to manual variant entry; per-org daily rate limit 10 calls/UTC day via `phase2_ai_advisor_usage`, migration `0018`) and by `src/lib/audit/visionPass.ts` (skipped when unset — report email omits the "What we saw" caption). |
+| `PUBLIC_AUDIT_ENABLED` | Public URL-audit kill switch | Set to `0` to make `POST /api/audit/public/submit` return 503 without a redeploy. Any other value (or unset) leaves the surface live. |
+| `ZYBIT_BOOK_CALL_URL` | Public URL-audit report email | Calendly link used as the report-email CTA. Falls back to a hardcoded default when unset. |
+| `NEXT_PUBLIC_APP_URL` / `APP_BASE_URL` | Public URL-audit | Base URL used to mint the confirmation link in the double-opt-in email and the `/audit/[id]` redirect target. Falls back to `https://getzybit.com`. |
 
 To run without Postgres: `PHASE1_STORAGE_DRIVER=blob npm run dev`
 

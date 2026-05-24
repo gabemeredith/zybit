@@ -122,6 +122,36 @@ LLM-assisted variant proposal layer for the experiment builder. **Proposals only
 | Rate limit + cost guard | `aiAdvisorRateLimit.ts` | Per-org daily cap (10 calls/org/UTC day) via atomic upsert on `phase2_ai_advisor_usage` (migration `0018`). Denied calls return 429 and **do not bump the counter**. Token usage logged per call under `service: 'ai-advisor'`. (Zybit-148) |
 
 
+### Public URL-audit lead magnet (`src/app/audit/` + `src/app/api/audit/public/` + `src/lib/audit/` + `src/lib/email/audit*`)
+
+Public Day-0 funnel: any prospect submits URL + work email + role, gets a teaser finding inline and a 4-finding HTML report by email. Spec: `docs/sprints/url-audit-lead-magnet.md`.
+
+| Component | File | What it does |
+|-----------|------|--------------|
+| Form page | `src/app/audit/page.tsx` | Public marketing form, personal-email reject at submit, progress strip during pipeline run |
+| Teaser page | `src/app/audit/[id]/page.tsx` | Polls `/api/audit/public/status` and surfaces one teaser finding + inbox-confirmation copy |
+| Email preview | `src/app/audit/email-preview/page.tsx` | Renders both email templates with mock data (gated to non-prod Vercel deployments) |
+| Submit route | `src/app/api/audit/public/submit/route.ts` | Validates input → SSRF check → multi-dim rate limit → budget gate → runs quick `runStructuralAudit` for the teaser → persists `public_audits` row + token → sends confirmation email (returns 502 if Resend fails) |
+| Confirm route | `src/app/api/audit/public/confirm/route.ts` | Atomic CAS token consumption + status flip to `'running'`, then `after()`-dispatches the run route. Redirects to `/audit/[id]` |
+| Run route | `src/app/api/audit/public/run/route.ts` | Secret-gated (`FORGE_CRON_SECRET`); re-validates URL (closes 24h DNS-rebinding window), re-checks daily budget, calls `runUrlAudit` from Lighthouse, captures screenshot + vision caption, sends report email. `maxDuration = 300` |
+| Status route | `src/app/api/audit/public/status/route.ts` | Read-only poller for the teaser page. Lazy-flips rows stuck in `'running'` past the run-route `maxDuration` to `'failed'` |
+| URL validator | `src/lib/audit/urlValidator.ts` | DNS resolution + IPv4/IPv6 blocklist (RFC 1918, loopback, link-local, CGNAT, multicast, TEST-NET, reserved). Rejects IP literals + localhost + bare hostnames |
+| Rate limiter | `src/lib/audit/publicAuditRateLimit.ts` | Two-phase peek-then-increment sliding window: IP (3/h), email (2/24h), email-domain (10/24h), target-host (5/24h). Daily $25 USD budget cap. Rejecting one dimension does not burn the others |
+| Personal-email reject | `src/lib/audit/personalEmailDomains.ts` | Hardcoded set of consumer domains (gmail, yahoo, icloud, proton, etc.). `.edu` allowed |
+| Vision pass | `src/lib/audit/visionPass.ts` | Best-effort: Browserless screenshot → Vercel Blob → Gemini 2.0 Flash REST caption. Returns null if any step fails; pipeline never waits |
+| Confirmation email | `src/lib/email/auditConfirmationEmail.ts` | Transactional double-opt-in email. All user fields HTML-escaped |
+| Report email | `src/lib/email/auditReportEmail.ts` | 4-finding HTML report, receipt-card pattern matching landing page. All user fields HTML-escaped |
+
+**Schema (migration `0019`):**
+- `public_audits` — one row per request (id, email, domain, url, role, status, ip, teaser_finding, findings, pages_scanned, cost_usd, timestamps). Status: `pending` → `running` → `done` | `failed` | `unreachable`
+- `audit_tokens` — single-use 24h tokens (sha256-hashed) with `consumed_at` for CAS dedup
+- `public_audit_budget` — one row per UTC day (`day_utc`, `cost_usd`)
+- `public_audit_rate_limits` — sliding-window counters keyed by `(key, window_start)`
+
+**Kill-switch:** `PUBLIC_AUDIT_ENABLED=0` returns 503 from the submit route without a redeploy.
+
+**Honest gaps vs spec §4a:** Cloudflare Turnstile not integrated (email gate is the primary abuse control); no OWASP SSRF unit-test suite; 90-day TTL cron + privacy policy + opt-out path not built; IP stored plaintext (spec called for hashed); no idempotent-resubmit / suppression list; Axiom + Cronitor wiring not yet attached. Phase C founder approval queue + Phase D marketing surface deferred.
+
 ### Dashboard (`src/app/dashboard/`)
 
 PM-facing product surface. Connected to real APIs and real data.

@@ -27,7 +27,7 @@ points back to it.
 **…deciding what to build next** —
 1. [`sprints/next-bets.md`](./sprints/next-bets.md) — the priority list (engineering + non-engineering)
 2. [`sprints/preview-system.md`](./sprints/preview-system.md) — credibility-slice depth (in-flight proposal)
-3. [`sprints/url-audit-lead-magnet.md`](./sprints/url-audit-lead-magnet.md) — public Day-0 audit (in-flight proposal, gated on marketing site)
+3. [`sprints/url-audit-lead-magnet.md`](./sprints/url-audit-lead-magnet.md) — public Day-0 audit (Phases A + B shipped 2026-05-23, PR #69; Phase C/D deferred)
 4. [`sprints/sprint-3-deferred.md`](./sprints/sprint-3-deferred.md) — why PR #66 + the rest of Sprint 3 stay parked
 
 **…onboarding to the codebase as a new engineer** —
@@ -99,7 +99,7 @@ points back to it.
 |---|---|
 | [`sprints/next-bets.md`](./sprints/next-bets.md) | Forward-looking priority list (engineering bets + non-engineering cofounder items) |
 | [`sprints/preview-system.md`](./sprints/preview-system.md) | Spec for the preview-of-suggested-changes system (3-phase, ~8-10 dev-days for v1) |
-| [`sprints/url-audit-lead-magnet.md`](./sprints/url-audit-lead-magnet.md) | Spec for the public URL-paste audit endpoint (gated on marketing site existing first) |
+| [`sprints/url-audit-lead-magnet.md`](./sprints/url-audit-lead-magnet.md) | Public URL-paste audit endpoint — Phases A + B shipped 2026-05-23 (PR #69); Phase C founder-approval queue + Phase D marketing surface deferred |
 | [`sprints/onboarding-redesign.md`](./sprints/onboarding-redesign.md) | Redesign that contracted onboarding from 4 → 3 steps (shipped) |
 | [`sprints/operator-dashboard.md`](./sprints/operator-dashboard.md) | Zybit-156 — `/admin/ops` read-only ops view (shipped) |
 | [`sprints/sprint-3-deferred.md`](./sprints/sprint-3-deferred.md) | Why PR #66 + the rest of Sprint 3 stay parked, and the explicit unfreeze trigger |
