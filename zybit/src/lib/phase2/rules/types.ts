@@ -76,6 +76,13 @@ export interface AuditFindingImpactEstimate {
  * more specific and action-oriented than the analytical `recommendation` field.
  */
 export interface AuditFindingPrescription {
+  /**
+   * PM-first business framing: 1-2 sentences on why this matters to the
+   * reader's outcomes (activation, conversion, revenue). Optional — being
+   * adopted rule-by-rule. When set, surfaces above `whatToChange` in
+   * prospect-facing surfaces (e.g. the audit report email).
+   */
+  whyItMatters?: string;
   /** The concrete action to take. E.g. "Move 'Get started' above the fold on mobile." */
   whatToChange: string;
   /** Causal explanation of why this works. */
