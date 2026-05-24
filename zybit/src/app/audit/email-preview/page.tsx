@@ -32,7 +32,9 @@ export default async function AuditEmailPreviewPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  if (process.env.NODE_ENV === 'production' && process.env.VERCEL_ENV === 'production') {
+  // Hide if EITHER signal says production — covers Vercel (VERCEL_ENV) and
+  // non-Vercel deployments (Docker, custom server) where only NODE_ENV is set.
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
     notFound();
   }
 
