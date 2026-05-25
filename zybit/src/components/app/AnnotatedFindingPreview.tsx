@@ -28,6 +28,35 @@ interface ScreenshotResponse {
   reason?: string;
 }
 
+/**
+ * Per-rule "why this is highlighted" framing, rendered as a callout
+ * above the colored-swatch legend. Each note states (1) what the
+ * highlight marks, (2) what the variant is *not* (a common misread),
+ * and (3) what the variant actually is. This is what stops a PM from
+ * reading an amber outline as "fix this button" when it's really a
+ * contextual anchor pointing at the page-level diagnosis.
+ */
+const HIGHLIGHT_INTENTS: Record<string, string> = {
+  "hero-hierarchy-inversion":
+    "The two outlines are your design's pull vs. your users' actual clicks. The variant isn't 'remove the loud CTA' — it's 'restyle the CTA that wins clicks so visual weight matches user intent.'",
+  "above-fold-coverage":
+    "The outline marks your primary CTA — sitting below the fold. The variant isn't 'change the CTA' — it's 'move it (or its message) above the fold where visitors actually see it.'",
+  "rage-click-target":
+    "The outline marks the element visitors are rage-clicking — they expect it to be interactive but it isn't. The variant is either to make it actually clickable, or strip the affordance so it stops baiting clicks.",
+  "form-abandonment":
+    "The outline marks the form visitors start and abandon. The variant usually isn't 'restyle the submit button' — it's 'cut a required field or rephrase the commitment copy that's losing them.'",
+  "bounce-on-key-page":
+    "Amber marks a contextual anchor, not a broken element. This is the most-prominent thing visitors see before bouncing — the variant rewrites the page's primary message so it earns the click, not redesigning this CTA.",
+  "help-seeking-spike":
+    "Amber marks a contextual anchor. The outline shows where visitors click 'help' instead of converting — the variant answers their question inline above this, rather than routing them to a help page.",
+  "hesitation-pattern":
+    "Amber marks a contextual anchor. The outline shows where visitors dwell without clicking — the variant clarifies the value proposition above it so they don't have to deliberate, not restyling the button.",
+  "flow-inter-step-dropoff":
+    "The outline marks the primary CTA on the step losing the most users. The variant cuts friction in the step (shorten the form, clarify what happens next) — not redesigning the button itself.",
+  "return-visit-thrash":
+    "Amber marks a contextual anchor, not a broken element. The outline shows the most-prominent thing visitors see when they keep coming back — the variant adds a Quick Answer section or anchor nav above it, not 'fix this button.'",
+};
+
 const LEGENDS: Record<
   string,
   { label: string; color: string; description: string }[]
@@ -173,6 +202,9 @@ export default function AnnotatedFindingPreview({
   }, [modalOpen]);
 
   const legend = LEGENDS[ruleId];
+  const intent = HIGHLIGHT_INTENTS[ruleId];
+  const hasAnnotations =
+    state.kind !== "fallback" && !(state.kind === "ready" && state.annotationsCount === 0);
 
   return (
     <section className="mt-6 bg-white border border-black/[0.05] rounded-2xl px-6 py-5">
@@ -223,9 +255,16 @@ export default function AnnotatedFindingPreview({
         )}
       </div>
 
-      {legend &&
-        state.kind !== "fallback" &&
-        !(state.kind === "ready" && state.annotationsCount === 0) && (
+      {intent && hasAnnotations && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+            Why this is highlighted
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-[#3F2D08]">{intent}</p>
+        </div>
+      )}
+
+      {legend && hasAnnotations && (
           <ul className="mt-3 space-y-1.5">
             {legend.map((l) => (
               <li key={l.label} className="flex items-start gap-2 text-xs text-[#6B6B6B]">
