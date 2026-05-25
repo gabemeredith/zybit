@@ -14,6 +14,31 @@
 import { parse, type HTMLElement } from 'node-html-parser';
 import type { PageSnapshotData } from './types';
 
+/**
+ * Re-emit the attributes that `cssSelector.ts` walked to compute
+ * `cta.cssSelector`, so the validator's synthesized HTML matches selectors
+ * the parser found on the real element. Without this, a parser-emitted
+ * selector like `[data-testid="signup-cta"]` lives only on the live page
+ * and validates as "no matches" against the in-memory snapshot. The set
+ * of selector shapes is intentionally narrow (see `cssSelector.ts`).
+ */
+function attrsFromCssSelector(selector: string | null | undefined): string {
+  if (!selector) return '';
+  const out: string[] = [];
+  const idMatch = selector.match(/^#([A-Za-z][\w-]*)/);
+  if (idMatch) out.push(`id="${idMatch[1]}"`);
+  // [attr="value"] — captures testid/test/qa/cy, name, role. Skips aria-label
+  // because the CTA loop already emits it from `cta.ariaLabel`.
+  const attrPattern = /\[([a-zA-Z-]+)="([^"]+)"\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = attrPattern.exec(selector)) !== null) {
+    const [, name, value] = m;
+    if (name === 'aria-label') continue;
+    out.push(`${name}="${value}"`);
+  }
+  return out.length ? ` ${out.join(' ')}` : '';
+}
+
 export function buildMinimalHtml(data: PageSnapshotData): string {
   const parts: string[] = ['<html><body>'];
 
@@ -29,8 +54,9 @@ export function buildMinimalHtml(data: PageSnapshotData): string {
     const href = cta.href ? ` href="${cta.href}"` : '';
     const aria = cta.ariaLabel ? ` aria-label="${cta.ariaLabel}"` : '';
     const disabled = cta.disabled ? ' disabled' : '';
+    const fromSelector = attrsFromCssSelector(cta.cssSelector);
     parts.push(
-      `<${tag} data-zybit-ref="${cta.ref}" data-landmark="${cta.landmark}"${href}${aria}${disabled}>${text}</${tag}>`
+      `<${tag} data-zybit-ref="${cta.ref}" data-landmark="${cta.landmark}"${href}${aria}${disabled}${fromSelector}>${text}</${tag}>`
     );
   }
 
