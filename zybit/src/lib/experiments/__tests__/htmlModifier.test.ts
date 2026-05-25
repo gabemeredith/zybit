@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyModifications } from '../htmlModifier';
+import { applyModifications, stripScripts } from '../htmlModifier';
 import type { VariantModification } from '../types';
 
 const SIMPLE_HTML = `
@@ -158,5 +158,39 @@ describe('applyModifications — performance', () => {
       `[htmlModifier perf] ${html.length} bytes, samples=${samples.map((s) => s.toFixed(2)).join(',')} min=${min.toFixed(2)}ms`,
     );
     expect(min).toBeLessThan(15);
+  });
+});
+
+describe('stripScripts', () => {
+  it('removes inline <script> tags', () => {
+    const html = '<html><head></head><body><script>alert(1)</script><p>hi</p></body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('alert(1)');
+    expect(out).toContain('<p>hi</p>');
+  });
+
+  it('removes external <script src=...> tags', () => {
+    const html = '<html><head><script src="https://example.com/x.js"></script></head><body><p>hi</p></body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('example.com/x.js');
+    expect(out).toContain('<p>hi</p>');
+  });
+
+  it('leaves non-script tags intact', () => {
+    const html = '<html><head><style>.x { color: red }</style></head><body><p>hi</p><img src="a.png"></body></html>';
+    const out = stripScripts(html);
+    expect(out).toContain('<style>');
+    expect(out).toContain('color: red');
+    expect(out).toContain('<img');
+    expect(out).toContain('<p>hi</p>');
+  });
+
+  it('returns the input unchanged when there are no scripts', () => {
+    const html = '<html><body><h1>hello</h1></body></html>';
+    const out = stripScripts(html);
+    expect(out).toContain('<h1>hello</h1>');
+    expect(out).not.toContain('<script');
   });
 });

@@ -22,6 +22,8 @@ import type { CanonicalEvent, Phase2SiteConfig, RollupResult, TimeWindow } from 
 import type { PageSnapshot } from '@/lib/phase2/snapshots/types';
 import type { PageCapture } from '@/lib/phase2/capture/types';
 import type { FlowGraph } from '@/lib/phase2/flow/types';
+import type { DesignTokens } from '@/lib/phase2/snapshots/tokenExtractor';
+import type { VariantModification } from '@/lib/experiments/types';
 
 export type AuditFindingSeverity = 'info' | 'warn' | 'critical';
 
@@ -204,6 +206,8 @@ export interface AuditFinding {
   refs?: {
     snapshotId?: string;
     ctaRef?: string;
+    /** For inversion-shaped findings: the CTA the user actually clicks most. */
+    clickedCtaRef?: string;
     elementRef?: string;
     formRef?: string;
   };
@@ -262,12 +266,42 @@ export interface AuditRuleContext {
   flowGraph?: FlowGraph;
 }
 
+/**
+ * Inputs a rule needs to turn one of its own findings into preview-ready
+ * `VariantModification[]` options. Built per-finding by the preview route.
+ */
+export interface ProposeModificationsContext {
+  snapshot: PageSnapshot;
+  designTokens: DesignTokens | null;
+}
+
 export interface AuditRule {
   id: string;
   category: AuditFindingCategory;
   /** Human-readable rule name for diagnostics/logging. */
   name: string;
   evaluate(ctx: AuditRuleContext): AuditFinding[];
+  /**
+   * Per-rule template that turns one finding into 1–3 preview-ready variant
+   * options. Each outer array entry is one variant; each inner array is the
+   * modifications applied for that variant. Return `[]` when the finding
+   * lacks the data needed to build a credible preview.
+   */
+  proposeModifications?(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[][];
+  /**
+   * Diagnosis overlay for the finding-detail surface — outlines + labels
+   * drawn on the customer's own page to make the rule violation visible.
+   * Unlike `proposeModifications` (which proposes a fix), these mods are
+   * non-destructive visual annotations. Return `[]` when the finding lacks
+   * the data needed to anchor an overlay.
+   */
+  proposeAnnotations?(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[];
 }
 
 /**

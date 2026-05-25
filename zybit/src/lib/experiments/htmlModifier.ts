@@ -100,3 +100,24 @@ function safeSerialize(root: ReturnType<typeof parse>, fallback: string): string
     return fallback;
   }
 }
+
+/**
+ * Remove all `<script>` tags (inline + external) from an HTML string. Used
+ * by preview surfaces that render less-trusted content inside an iframe —
+ * we're showing visual changes, not running the customer's runtime. Fails
+ * open: parser failure returns the original markup unchanged.
+ */
+export function stripScripts(html: string): string {
+  let root: ReturnType<typeof parse>;
+  try {
+    root = parse(html);
+  } catch {
+    return html;
+  }
+  try {
+    for (const el of root.querySelectorAll('script')) el.remove();
+  } catch {
+    return html;
+  }
+  return safeSerialize(root, html);
+}

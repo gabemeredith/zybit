@@ -503,6 +503,10 @@ export const zybitFindings = pgTable(
     previewUrl: text('preview_url'),
     previewType: text('preview_type'), // 'staging'|'deployment'|'image'|'mock'
     previewNotes: text('preview_notes'),
+    // Annotated screenshot of the finding's page (Vercel Blob URL).
+    // Populated lazily by `renderFindingScreenshot` on first preview view.
+    screenshotUrl: text('screenshot_url'),
+    screenshotCapturedAt: timestamp('screenshot_captured_at', { withTimezone: true }),
     // Run context (most recent sync that emitted this finding)
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),
     insightWindowStart: timestamp('insight_window_start', { withTimezone: true }),

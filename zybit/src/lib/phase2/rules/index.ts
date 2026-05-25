@@ -56,6 +56,10 @@ export { hesitationPattern } from "./hesitationPattern";
 export { returnVisitThrash } from "./returnVisitThrash";
 export { flowInterStepDropoff } from "./flowInterStepDropoff";
 
+export function getRuleById(ruleId: string): AuditRule | null {
+  return ALL_AUDIT_RULES.find((r) => r.id === ruleId) ?? null;
+}
+
 export const ALL_AUDIT_RULES: readonly AuditRule[] = [
   // Design (Layer C)
   heroHierarchyInversion,

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { heroHierarchyInversion } from '@/lib/phase2/rules/heroHierarchyInversion';
+import type { AuditFinding } from '@/lib/phase2/rules/types';
+import type { CtaCandidate, PageSnapshot } from '@/lib/phase2/snapshots/types';
 import { makeContext, makeCtaClick, makeGoalConfig, makeSnapshot, makeCta } from './fixtures';
 
 const PATH = '/pricing';
@@ -103,5 +105,144 @@ describe('heroHierarchyInversion rule', () => {
     const ctx = makeInversionContext(40);
     const [f] = heroHierarchyInversion.evaluate(ctx);
     expect(['critical', 'warn', 'info']).toContain(f.severity);
+  });
+
+  describe('proposeModifications', () => {
+    function makeFinding(ctaRef: string | undefined): AuditFinding {
+      return {
+        id: 'hero-hierarchy-inversion:/pricing',
+        ruleId: 'hero-hierarchy-inversion',
+        category: 'hierarchy',
+        severity: 'warn',
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: '/pricing',
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs: ctaRef ? { ctaRef } : undefined,
+      };
+    }
+
+    function snapshotWith(ctas: CtaCandidate[]): PageSnapshot {
+      return makeSnapshot(PATH, ctas);
+    }
+
+    it('returns [] when finding has no ctaRef', () => {
+      const snapshot = snapshotWith([makeCta('Primary', 0.9, 'above', 'r1')]);
+      const out = heroHierarchyInversion.proposeModifications!(
+        makeFinding(undefined),
+        { snapshot, designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns [] when the referenced CTA has no cssSelector', () => {
+      const heavy = makeCta('Primary', 0.9, 'above', 'cta-x');
+      expect(heavy.cssSelector).toBeNull();
+      const out = heroHierarchyInversion.proposeModifications!(
+        makeFinding('cta-x'),
+        { snapshot: snapshotWith([heavy]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns one variant with the heavy CTAs selector when present', () => {
+      const heavy = { ...makeCta('Primary', 0.9, 'above', 'cta-x'), cssSelector: 'button.cta-primary' };
+      const out = heroHierarchyInversion.proposeModifications!(
+        makeFinding('cta-x'),
+        { snapshot: snapshotWith([heavy]), designTokens: { secondaryColor: 'rgb(50, 50, 50)' } },
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]).toHaveLength(1);
+      const mod = out[0][0];
+      expect(mod.type).toBe('css-inject');
+      expect(mod).toMatchObject({ type: 'css-inject', selector: 'button.cta-primary' });
+      if (mod.type === 'css-inject') {
+        expect(mod.css).toContain('rgb(50, 50, 50)');
+      }
+    });
+
+    it('falls back to literal color when design tokens are missing', () => {
+      const heavy = { ...makeCta('Primary', 0.9, 'above', 'cta-x'), cssSelector: 'button.cta-primary' };
+      const out = heroHierarchyInversion.proposeModifications!(
+        makeFinding('cta-x'),
+        { snapshot: snapshotWith([heavy]), designTokens: null },
+      );
+      expect(out).toHaveLength(1);
+      const mod = out[0][0];
+      if (mod.type === 'css-inject') {
+        expect(mod.css).toContain('#666');
+      }
+    });
+  });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { ctaRef?: string; clickedCtaRef?: string }): AuditFinding {
+      return {
+        id: 'hero-hierarchy-inversion:/pricing',
+        ruleId: 'hero-hierarchy-inversion',
+        category: 'hierarchy',
+        severity: 'warn',
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: '/pricing',
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    function snapshotWith(ctas: CtaCandidate[]): PageSnapshot {
+      return makeSnapshot(PATH, ctas);
+    }
+
+    it('returns two mods with contrasting colors when both refs resolve to CTAs with selectors', () => {
+      const heavy = { ...makeCta('Primary', 0.9, 'above', 'h'), cssSelector: 'button.h' };
+      const clicked = { ...makeCta('Secondary', 0.3, 'above', 'c'), cssSelector: 'a.c' };
+      const out = heroHierarchyInversion.proposeAnnotations!(
+        makeFinding({ ctaRef: 'h', clickedCtaRef: 'c' }),
+        { snapshot: snapshotWith([heavy, clicked]), designTokens: null },
+      );
+      expect(out).toHaveLength(2);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.h' });
+      expect(out[1]).toMatchObject({ type: 'css-inject', selector: 'a.c' });
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+      if (out[1].type === 'css-inject') expect(out[1].css).toContain('#22c55e');
+    });
+
+    it('returns only the heavy mod when clickedCtaRef is absent', () => {
+      const heavy = { ...makeCta('Primary', 0.9, 'above', 'h'), cssSelector: 'button.h' };
+      const out = heroHierarchyInversion.proposeAnnotations!(
+        makeFinding({ ctaRef: 'h' }),
+        { snapshot: snapshotWith([heavy]), designTokens: null },
+      );
+      expect(out).toHaveLength(1);
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+    });
+
+    it('returns [] when neither CTA has a cssSelector', () => {
+      const heavy = makeCta('Primary', 0.9, 'above', 'h');
+      const clicked = makeCta('Secondary', 0.3, 'above', 'c');
+      expect(heavy.cssSelector).toBeNull();
+      expect(clicked.cssSelector).toBeNull();
+      const out = heroHierarchyInversion.proposeAnnotations!(
+        makeFinding({ ctaRef: 'h', clickedCtaRef: 'c' }),
+        { snapshot: snapshotWith([heavy, clicked]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+  });
+
+  describe('refs.clickedCtaRef persistence', () => {
+    it('finding from the snapshot path carries clickedCtaRef when the clicked CTA matched', () => {
+      const ctx = makeInversionContext(40);
+      const [f] = heroHierarchyInversion.evaluate(ctx);
+      expect(f.refs?.ctaRef).toBe('cta-primary');
+      expect(f.refs?.clickedCtaRef).toBe('cta-secondary');
+    });
   });
 });

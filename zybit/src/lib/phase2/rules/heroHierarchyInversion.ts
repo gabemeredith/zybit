@@ -31,7 +31,9 @@ import type {
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
+import type { VariantModification } from "@/lib/experiments/types";
 
 const MIN_CTA_CLICKS = 30;
 
@@ -82,10 +84,63 @@ function describeVisualTreatment(signals: readonly string[]): string {
   return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
 
+const FALLBACK_SECONDARY_COLOR = '#666';
+const ANNOTATION_HEAVY_COLOR = '#ef4444';
+const ANNOTATION_CLICKED_COLOR = '#22c55e';
+
 export const heroHierarchyInversion: AuditRule = {
   id: "hero-hierarchy-inversion",
   name: "Hero hierarchy inversion",
   category: "hierarchy",
+
+  proposeModifications(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[][] {
+    const heavyRef = finding.refs?.ctaRef;
+    if (!heavyRef) return [];
+    const heavy = ctx.snapshot.data.ctas.find((cta) => cta.ref === heavyRef);
+    if (!heavy || !heavy.cssSelector) return [];
+
+    const secondary = ctx.designTokens?.secondaryColor ?? FALLBACK_SECONDARY_COLOR;
+    return [[
+      {
+        type: 'css-inject',
+        selector: heavy.cssSelector,
+        css: `background: transparent; color: ${secondary}; font-weight: 400; border: 1px solid currentColor;`,
+      },
+    ]];
+  },
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    const mods: VariantModification[] = [];
+    const heavyRef = finding.refs?.ctaRef;
+    const clickedRef = finding.refs?.clickedCtaRef;
+    const heavy = heavyRef
+      ? ctx.snapshot.data.ctas.find((cta) => cta.ref === heavyRef)
+      : null;
+    const clicked = clickedRef
+      ? ctx.snapshot.data.ctas.find((cta) => cta.ref === clickedRef)
+      : null;
+    if (heavy?.cssSelector) {
+      mods.push({
+        type: 'css-inject',
+        selector: heavy.cssSelector,
+        css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
+      });
+    }
+    if (clicked?.cssSelector) {
+      mods.push({
+        type: 'css-inject',
+        selector: clicked.cssSelector,
+        css: `outline: 3px dashed ${ANNOTATION_CLICKED_COLOR} !important; outline-offset: 4px;`,
+      });
+    }
+    return mods;
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];
@@ -255,7 +310,11 @@ function evaluatePage(
     impactEstimate,
     recommendation,
     evidence,
-    refs: { snapshotId: snapshot.id, ctaRef: heavy.ref },
+    refs: {
+      snapshotId: snapshot.id,
+      ctaRef: heavy.ref,
+      ...(clickedCta ? { clickedCtaRef: clickedCta.ref } : {}),
+    },
   };
 }
 
@@ -425,5 +484,9 @@ function evaluatePageWithCapture(
     impactEstimate,
     recommendation,
     evidence,
+    refs: {
+      ctaRef: heavy.ref,
+      ...(clickedCta ? { clickedCtaRef: clickedCta.ref } : {}),
+    },
   };
 }

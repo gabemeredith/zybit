@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { getServerAuth } from "@/lib/auth/serverAuth";
 import { getDb } from "@/lib/db/client";
 import { zybitFindings } from "@/lib/db/schema";
+import AnnotatedFindingPreview from "@/components/app/AnnotatedFindingPreview";
 import EvidencePanel from "@/components/app/EvidencePanel";
 import FindingStatusActions from "@/components/app/FindingStatusActions";
 import ExperimentBriefCard from "@/components/app/ExperimentBriefCard";
@@ -164,6 +165,16 @@ export default async function FindingDetailPage({
         impactEstimate={finding.impactEstimate as AuditFindingImpactEstimate | null}
         snapshotDiagram={finding.snapshotDiagram as unknown as SnapshotDiagram | null}
       />
+
+      {/* Annotated preview (Slice 2) — static screenshot with click-to-expand modal iframe */}
+      {finding.pathRef && (
+        <AnnotatedFindingPreview
+          findingId={finding.id}
+          ruleId={finding.ruleId}
+          initialScreenshotUrl={finding.screenshotUrl ?? null}
+          pageName={finding.pathRef === "/" ? "your homepage" : `your ${finding.pathRef.replace(/^\//, "")} page`}
+        />
+      )}
 
       {/* Layer 2 calibration panel — shown when the rule's threshold was tuned for this site */}
       {learn?.calibration && (
