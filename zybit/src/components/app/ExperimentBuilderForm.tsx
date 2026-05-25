@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { saveExperimentBriefAction } from "@/app/app/findings/[id]/experiment/actions";
-import type { ChangeType, SelectorSuggestion } from "@/app/app/findings/[id]/experiment/page";
+import type { ChangeType, InsertPosition, SelectorSuggestion } from "@/app/app/findings/[id]/experiment/page";
 import type { CssSystem } from "@/lib/phase2/snapshots/cssSystemDetector";
 import { copyHints } from "@/lib/experiments/copyHint";
 
@@ -14,6 +14,7 @@ interface FormDefaults {
   variantDescription: string;
   primaryMetric: string;
   hypothesis: string;
+  insertPosition: InsertPosition;
 }
 
 interface Props {
@@ -56,6 +57,14 @@ const CHANGE_TYPE_OPTIONS: Array<{ value: ChangeType; label: string; hint: strin
   { value: "copy", label: "Change text copy", hint: "Replaces element text content" },
   { value: "style", label: "Swap CSS classes", hint: "Adds/removes class names" },
   { value: "hide", label: "Hide element", hint: "Sets display: none on element" },
+  { value: "insert", label: "Add new section", hint: "Splices a new block of HTML next to the anchor element" },
+];
+
+const INSERT_POSITION_OPTIONS: Array<{ value: InsertPosition; label: string; hint: string }> = [
+  { value: "before", label: "Before anchor", hint: "Insert as the previous sibling" },
+  { value: "prepend", label: "Inside, at top", hint: "Insert as the first child of the anchor" },
+  { value: "append", label: "Inside, at bottom", hint: "Insert as the last child of the anchor" },
+  { value: "after", label: "After anchor", hint: "Insert as the next sibling" },
 ];
 
 const INPUT_CLASS =
@@ -193,6 +202,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
   const [selector, setSelector] = useState(defaults.selector);
   const [changeType, setChangeType] = useState<ChangeType>(defaults.changeType);
   const [newValue, setNewValue] = useState(defaults.newValue);
+  const [insertPosition, setInsertPosition] = useState<InsertPosition>(defaults.insertPosition);
   const [variantDescription, setVariantDescription] = useState(defaults.variantDescription);
   const [primaryMetric, setPrimaryMetric] = useState(defaults.primaryMetric);
   const [hypothesis, setHypothesis] = useState(defaults.hypothesis);
@@ -275,6 +285,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
         variantDescription,
         primaryMetric,
         hypothesis,
+        insertPosition: changeType === "insert" ? insertPosition : undefined,
       });
       if (result?.type === "validation_error") {
         setServerError(result.message);
@@ -383,29 +394,76 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
         </div>
       )}
 
+      {/* Insert position — only for the "insert" change type */}
+      {changeType === "insert" && (
+        <div>
+          <span className={SECTION_LABEL}>Where to insert</span>
+          <div className="flex flex-wrap gap-2">
+            {INSERT_POSITION_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                title={opt.hint}
+                onClick={() => setInsertPosition(opt.value)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  insertPosition === opt.value
+                    ? "bg-[#111] text-[#FAFAF8]"
+                    : "bg-black/[0.04] text-[#6B6B6B] hover:bg-black/[0.07]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-[#9B9B9B] mt-1.5">
+            {INSERT_POSITION_OPTIONS.find((o) => o.value === insertPosition)?.hint}
+          </p>
+        </div>
+      )}
+
       {/* New value — hidden for "hide" type */}
       {changeType !== "hide" && (
         <div>
           <label className={SECTION_LABEL} htmlFor="new-value">
-            {changeType === "copy" ? "Variant copy" : "CSS classes to apply"}
+            {changeType === "copy"
+              ? "Variant copy"
+              : changeType === "insert"
+                ? "New section HTML"
+                : "CSS classes to apply"}
           </label>
-          <input
-            id="new-value"
-            type="text"
-            value={newValue}
-            onChange={(e) => setNewValue(e.target.value)}
-            placeholder={
-              changeType === "copy"
-                ? "e.g. Get started — free"
-                : "e.g. bg-blue-600 text-white font-bold"
-            }
-            required
-            className={changeType === "style" ? `${INPUT_CLASS} font-mono` : INPUT_CLASS}
-          />
+          {changeType === "insert" ? (
+            <textarea
+              id="new-value"
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              placeholder={
+                '<section class="quick-answer">\n  <h2>Looking for checking accounts?</h2>\n  <p>Compare options and apply in 5 minutes.</p>\n  <a href="#apply">See accounts</a>\n</section>'
+              }
+              required
+              rows={8}
+              className={`${INPUT_CLASS} font-mono resize-y`}
+            />
+          ) : (
+            <input
+              id="new-value"
+              type="text"
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              placeholder={
+                changeType === "copy"
+                  ? "e.g. Get started — free"
+                  : "e.g. bg-blue-600 text-white font-bold"
+              }
+              required
+              className={changeType === "style" ? `${INPUT_CLASS} font-mono` : INPUT_CLASS}
+            />
+          )}
           <p className="text-[11px] text-[#9B9B9B] mt-1.5">
             {changeType === "copy"
               ? "The replacement text the script writes into the element"
-              : "Space-separated class names added to the element in the variant"}
+              : changeType === "insert"
+                ? "Allowed tags: section, nav, div, h1-h6, p, ul/ol/li, a, button, img, span, strong, em. Scripts, styles, iframes, and event handlers are stripped before the markup ships to your visitors."
+                : "Space-separated class names added to the element in the variant"}
           </p>
           {/* Copy-quality hints (Zybit-125) — advisory, deterministic, non-blocking */}
           {changeType === "copy" && (() => {

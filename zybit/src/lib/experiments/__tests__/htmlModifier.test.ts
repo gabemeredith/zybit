@@ -48,6 +48,112 @@ describe('applyModifications — happy path', () => {
   });
 });
 
+describe('applyModifications — element-insert', () => {
+  it('inserts before the anchor (previous sibling)', () => {
+    const out = applyModifications(SIMPLE_HTML, [
+      {
+        type: 'element-insert',
+        selector: '.banner',
+        position: 'before',
+        html: '<section class="quick-answer"><h2>Need help?</h2></section>',
+      },
+    ]);
+    // The inserted section appears in the document immediately before the
+    // anchor's opening tag.
+    const idxInserted = out.indexOf('<section class="quick-answer">');
+    const idxBanner = out.indexOf('<div class="banner">');
+    expect(idxInserted).toBeGreaterThan(-1);
+    expect(idxInserted).toBeLessThan(idxBanner);
+  });
+
+  it('inserts after the anchor (next sibling)', () => {
+    const out = applyModifications(SIMPLE_HTML, [
+      {
+        type: 'element-insert',
+        selector: '.title',
+        position: 'after',
+        html: '<p class="subtitle">Subtitle copy</p>',
+      },
+    ]);
+    const idxTitle = out.indexOf('<h1 class="title">');
+    const idxInserted = out.indexOf('<p class="subtitle">');
+    expect(idxInserted).toBeGreaterThan(idxTitle);
+  });
+
+  it('prepends inside the anchor (first child)', () => {
+    const out = applyModifications(
+      '<html><body><nav class="primary"><a href="/a">A</a></nav></body></html>',
+      [
+        {
+          type: 'element-insert',
+          selector: 'nav.primary',
+          position: 'prepend',
+          html: '<a href="/home">Home</a>',
+        },
+      ],
+    );
+    expect(out).toMatch(/<nav class="primary"><a href="\/home">Home<\/a><a href="\/a">A<\/a><\/nav>/);
+  });
+
+  it('appends inside the anchor (last child)', () => {
+    const out = applyModifications(
+      '<html><body><ul class="links"><li>A</li></ul></body></html>',
+      [
+        {
+          type: 'element-insert',
+          selector: 'ul.links',
+          position: 'append',
+          html: '<li>B</li>',
+        },
+      ],
+    );
+    expect(out).toMatch(/<ul class="links"><li>A<\/li><li>B<\/li><\/ul>/);
+  });
+
+  it('sanitizes inserted markup — script and onclick are stripped before the HTML reaches the page', () => {
+    const out = applyModifications(SIMPLE_HTML, [
+      {
+        type: 'element-insert',
+        selector: '.banner',
+        position: 'before',
+        html: '<div><script>alert(1)</script><button onclick="evil()">Hi</button></div>',
+      },
+    ]);
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('onclick');
+    expect(out).toContain('<button');
+    expect(out).toContain('Hi');
+  });
+
+  it('is a silent no-op when the anchor selector matches nothing', () => {
+    const out = applyModifications(SIMPLE_HTML, [
+      {
+        type: 'element-insert',
+        selector: '.does-not-exist',
+        position: 'before',
+        html: '<p>nope</p>',
+      },
+    ]);
+    expect(out).not.toContain('<p>nope</p>');
+  });
+
+  it('is a silent no-op when sanitization strips all markup (only disallowed tags supplied)', () => {
+    const out = applyModifications(SIMPLE_HTML, [
+      {
+        type: 'element-insert',
+        selector: '.banner',
+        position: 'before',
+        html: '<script>alert(1)</script>',
+      },
+    ]);
+    // Script tag sanitizes to '' so nothing is inserted and the document
+    // round-trips unchanged through the parser+serializer pair.
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('alert(1)');
+    expect(out).toContain('<div class="banner">');
+  });
+});
+
 describe('applyModifications — fail-open contract', () => {
   it('returns input unchanged when modifications array is empty', () => {
     const out = applyModifications(SIMPLE_HTML, []);

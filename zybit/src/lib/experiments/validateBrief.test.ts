@@ -46,4 +46,43 @@ describe("validateBriefShape", () => {
     expect(validateBriefShape("copy", " ", "x")?.field).toBeUndefined();
     expect(validateBriefShape("copy", "ok", " ")?.field).toBeUndefined();
   });
+
+  describe("insert change type", () => {
+    it("accepts an insert brief with selector, position, and valid HTML", () => {
+      expect(
+        validateBriefShape(
+          "insert",
+          ".banner",
+          "<section><h2>Quick answer</h2><p>copy</p></section>",
+          "before",
+        ),
+      ).toBeNull();
+    });
+
+    it("rejects an insert brief missing an insertPosition", () => {
+      const err = validateBriefShape("insert", ".banner", "<p>x</p>", undefined);
+      expect(err?.field).toBe("insertPosition");
+    });
+
+    it("rejects an insert brief with an unknown insertPosition", () => {
+      const err = validateBriefShape("insert", ".banner", "<p>x</p>", "sideways");
+      expect(err?.field).toBe("insertPosition");
+    });
+
+    it("rejects an insert brief with empty HTML", () => {
+      const err = validateBriefShape("insert", ".banner", "   ", "before");
+      expect(err?.field).toBe("newValue");
+    });
+
+    it("rejects insert HTML that sanitizes to nothing (only script/iframe)", () => {
+      const err = validateBriefShape(
+        "insert",
+        ".banner",
+        "<script>alert(1)</script><iframe></iframe>",
+        "before",
+      );
+      expect(err?.field).toBe("newValue");
+      expect(err?.message).toMatch(/allowed tags/i);
+    });
+  });
 });

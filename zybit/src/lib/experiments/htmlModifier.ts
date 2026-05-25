@@ -1,5 +1,13 @@
 import { parse } from 'node-html-parser';
-import type { VariantModification } from './types';
+import type { VariantModification, InsertPosition } from './types';
+import { sanitizeInsertHtml } from './sanitizeInsertHtml';
+
+const INSERT_POSITION_MAP: Record<InsertPosition, 'beforebegin' | 'afterbegin' | 'beforeend' | 'afterend'> = {
+  before: 'beforebegin',
+  prepend: 'afterbegin',
+  append: 'beforeend',
+  after: 'afterend',
+};
 
 /**
  * Applies variant modifications to an HTML string. Fails open: any thrown
@@ -42,6 +50,14 @@ export function applyModifications(
         case 'attribute-set': {
           const el = root.querySelector(mod.selector);
           if (el) el.setAttribute(mod.attr, mod.value);
+          break;
+        }
+        case 'element-insert': {
+          const anchor = root.querySelector(mod.selector);
+          if (!anchor) break;
+          const safeHtml = sanitizeInsertHtml(mod.html);
+          if (safeHtml.length === 0) break;
+          anchor.insertAdjacentHTML(INSERT_POSITION_MAP[mod.position], safeHtml);
           break;
         }
         case 'element-reorder': {
