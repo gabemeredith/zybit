@@ -55,6 +55,43 @@ export interface SiteManifest {
   exitHazard?: Record<string, number>;
   expectedConversionEvent?: string;
   primaryCtaSelector?: string;
+  /**
+   * Selector of a CTA that simulated users will "rage click" — they click,
+   * nothing useful happens, they click again. Driver emits `rage_click`
+   * events tagged with the snapshot CTA's text + element_tag so the
+   * `rage-click-target` rule can fire. The selector must match a CTA the
+   * snapshot parser picks up. Optional: omit and no rage_click events emit.
+   */
+  rageCtaSelector?: string;
+  /** Per-pageview probability of emitting a rage_click on the rage target. */
+  rageClickRate?: number;
+  /**
+   * Paths where simulated users dwell long enough to register as
+   * "hesitating" — driver attaches `activeSeconds≥45` to `page_view`
+   * events on these paths. Feeds the `hesitation-pattern` rule.
+   */
+  hesitationPaths?: string[];
+  /**
+   * Paths whose layout is so long that users scroll less than a persona's
+   * baseline (LIGHTHOUSE.md §13 #5, light version). The driver multiplies
+   * the sampled scroll-depth percent by 0.5 on these paths so editorial /
+   * long-scroll pages can fire `above-fold-coverage` without requiring the
+   * persona mix to be bouncy. Optional.
+   */
+  lowScrollPaths?: string[];
+  /**
+   * Declared narratives for the site — "from page A, the user is supposed
+   * to progress to page B." Lets rules like `return-visit-thrash` defer
+   * for sessions that followed the expected progression, so a scenario
+   * can be engineered to fire ONE rule cleanly instead of surfacing every
+   * rule that happens to overlap with "user got stuck on this page."
+   */
+  narratives?: Array<{
+    id: string;
+    label: string;
+    sourcePathRef: string;
+    expectedPathRefs: string[];
+  }>;
   requiresTunnel: boolean;
   isSpa: boolean;
   businessProfile: BusinessProfile;

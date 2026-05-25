@@ -15,6 +15,7 @@ import { resolveStaticPath, serveStatic } from './static';
 // Side-effect imports: each scenario file calls registerScenario at module load.
 import '../lib/scenarios/acmebank';
 import '../lib/scenarios/wovenbasics';
+import '../lib/scenarios/kilnandclay';
 
 const PORT = Number.parseInt(process.env.LIGHTHOUSE_PORT ?? '3001', 10);
 
@@ -69,8 +70,13 @@ const server = createServer(async (req, res) => {
     notFound(res);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown error';
-    res.writeHead(500, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ error: 'internal', message }));
+    console.error(`[lighthouse] ${method} ${url.pathname} threw:`, err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'internal', message }));
+    } else {
+      res.end();
+    }
   }
 });
 
