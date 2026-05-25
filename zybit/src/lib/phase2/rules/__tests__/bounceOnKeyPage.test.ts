@@ -123,7 +123,7 @@ describe('bounceOnKeyPage rule', () => {
     const findings = bounceOnKeyPage.evaluate(ctx);
     expect(findings.length).toBeGreaterThanOrEqual(1);
     expect(findings[0].impactEstimate).toBeDefined();
-    expect(findings[0].impactEstimate!.unit).toBe('USD');
+    expect(findings[0].impactEstimate!.unit).toBe('conversions');
   });
 
   it('finding id includes ruleId', () => {

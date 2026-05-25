@@ -43,7 +43,10 @@ export type AuditFindingCategory =
   | 'error'            // JS exception clusters
   | 'thrash'           // return-visit loops without progression
   // Flow-shaped
-  | 'flow';            // inter-step drop-off across the product flow graph
+  | 'flow'             // inter-step drop-off across the product flow graph
+  // Structural — grounded in snapshot data, no behavioral events required
+  | 'accessibility'    // missing alt text, unlabelled inputs, generic link text
+  | 'seo';             // missing meta description, canonical, heading structure
 
 /**
  * One named piece of structured evidence the rule used to make its
@@ -67,7 +70,7 @@ export interface AuditFindingImpactEstimate {
   unit: string;
   /** Period, always 'monthly' for now. */
   period: 'monthly';
-  /** Human-readable formatted string ready for display, e.g. '~$1,200/month'. */
+  /** Human-readable formatted string ready for display, e.g. '~150 conversions/month'. */
   formatted: string;
   /** Napkin-math basis so the estimate is auditable. */
   basis: string;

@@ -85,6 +85,22 @@ export interface CtaCandidate {
   disabled: boolean;
 }
 
+export interface ImageItem {
+  /** `src` attribute value (may be relative or data URI). */
+  src: string;
+  /** `alt` attribute value, or `null` if the attribute is absent. */
+  alt: string | null;
+  /** True when the `alt` attribute is present (even if empty string). */
+  hasAlt: boolean;
+  /** `width` attribute as a number, or `null` if absent/non-numeric. */
+  width: number | null;
+  /** `height` attribute as a number, or `null` if absent/non-numeric. */
+  height: number | null;
+  /** Whether the image is inside the `<a>` or `<button>` that makes it a CTA (already handled). */
+  isCtaChild: boolean;
+  documentIndex: number;
+}
+
 export interface FormInputItem {
   type: string;
   name: string | null;
@@ -109,6 +125,8 @@ export interface PageSnapshotData {
   headings: HeadingItem[];
   ctas: CtaCandidate[];
   forms: FormCandidate[];
+  /** All <img> elements found in the page body. Used by structural/accessibility rules. Absent on snapshots captured before schema v1.1. */
+  images?: ImageItem[];
   /** sha256 hex of normalized HTML — used to detect drift across re-fetches. */
   contentHash: string;
   /** Bytes of the original HTML response. */

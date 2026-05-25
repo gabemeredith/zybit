@@ -1,12 +1,15 @@
 /**
  * Phase 2 — Audit rules barrel.
  *
- * Two flavors live here:
+ * Three layers live here:
  *   - **Design rules** (Layer C): hierarchy/fold/nav/asymmetry findings
  *     grounded in page snapshots + click distribution.
  *   - **Pain rules**   (Layer D): abandonment / help-seeking / hesitation /
  *     bounce / error / thrash / cohort-pain findings grounded in session
  *     traces + structured PostHog signals.
+ *   - **Structural rules** (Layer E): accessibility + SEO findings grounded
+ *     entirely in snapshot data — no behavioral events required. These fire
+ *     on every site from the first snapshot, even before PostHog data exists.
  *
  * Each rule is a pure `AuditRule` that consumes a `AuditRuleContext` and
  * returns zero or more `AuditFinding`s. `runAuditRules` is the orchestration
@@ -42,6 +45,14 @@ import { returnVisitThrash } from "./returnVisitThrash";
 // Flow rules
 import { flowInterStepDropoff } from "./flowInterStepDropoff";
 
+// Structural rules (Layer E) — snapshot-only, no behavioral events required
+import { headingHierarchyJump } from "./headingHierarchyJump";
+import { formLabelMissing } from "./formLabelMissing";
+import { imageAltTextMissing } from "./imageAltTextMissing";
+import { linkTextGeneric } from "./linkTextGeneric";
+import { missingMetaDescription } from "./missingMetaDescription";
+import { missingCanonicalUrl } from "./missingCanonicalUrl";
+
 export { aboveFoldCoverage } from "./aboveFoldCoverage";
 export { heroHierarchyInversion } from "./heroHierarchyInversion";
 export { mobileEngagementAsymmetry } from "./mobileEngagementAsymmetry";
@@ -55,6 +66,12 @@ export { helpSeekingSpike } from "./helpSeekingSpike";
 export { hesitationPattern } from "./hesitationPattern";
 export { returnVisitThrash } from "./returnVisitThrash";
 export { flowInterStepDropoff } from "./flowInterStepDropoff";
+export { headingHierarchyJump } from "./headingHierarchyJump";
+export { formLabelMissing } from "./formLabelMissing";
+export { imageAltTextMissing } from "./imageAltTextMissing";
+export { linkTextGeneric } from "./linkTextGeneric";
+export { missingMetaDescription } from "./missingMetaDescription";
+export { missingCanonicalUrl } from "./missingCanonicalUrl";
 
 export function getRuleById(ruleId: string): AuditRule | null {
   return ALL_AUDIT_RULES.find((r) => r.id === ruleId) ?? null;
@@ -75,8 +92,15 @@ export const ALL_AUDIT_RULES: readonly AuditRule[] = [
   hesitationPattern,
   returnVisitThrash,
   cohortPainAsymmetry,
-  // Flow (Layer E)
+  // Flow rules
   flowInterStepDropoff,
+  // Structural / accessibility / SEO (Layer E) — snapshot-only
+  headingHierarchyJump,
+  formLabelMissing,
+  imageAltTextMissing,
+  linkTextGeneric,
+  missingMetaDescription,
+  missingCanonicalUrl,
 ];
 
 const SEVERITY_RANK: Record<AuditFindingSeverity, number> = {

@@ -86,7 +86,7 @@ Events are normalized to a canonical schema (`CanonicalEvent v2`) with deduplica
 
 ### Identify — Audit Rules (`src/lib/phase2/rules/`)
 
-13 deterministic rules. Pure functions. Same input → same output.
+19 deterministic rules. Pure functions. Same input → same output.
 
 **Design rules (5):** hero-hierarchy-inversion, above-fold-coverage, rage-click-target, mobile-engagement-asymmetry, nav-dispersion
 
@@ -94,7 +94,9 @@ Events are normalized to a canonical schema (`CanonicalEvent v2`) with deduplica
 
 **Flow rules (1):** flow-inter-step-dropoff (PRD Milestone 1) — identifies the mid-flow route with the highest session loss; only fires on nodes with inbound navigation edges (excludes pure landing pages); routed through Layer 2 calibration; emits a `flow-funnel` snapshot diagram.
 
-Each finding includes: severity, confidence, priority score, structured evidence array, text prescription (what to change, why, variant description), and revenue impact estimate.
+**Structural rules (6) — snapshot-only, no behavioral events required:** heading-hierarchy-jump, form-label-missing, image-alt-text-missing, link-text-generic, missing-meta-description, missing-canonical-url
+
+Each finding includes: severity, confidence, priority score, structured evidence array, text prescription (what to change, why, variant description), and conversion impact estimate. Dollar figures are intentionally absent — impact expressed as conversion counts to prevent fabricated revenue projections when site ARPU is not configured.
 
 ### Flow-Graph Advisory (`src/lib/phase2/flow/`)
 
@@ -467,7 +469,7 @@ See Priority 1 (Guardrail Metrics). The proxy side: when `experiment.status = 's
 **Architecture:**
 - `src/lib/phase2/rules/ruleCalibration.ts` — pure fn `computeRuleCalibrations(outcomes)`. Aggregates **per ruleId** (site-global — a rule's threshold is one module constant shared across pages, so there's nothing per-path to tune). Per-outcome signal reuses Layer 1's shape: `clamp(liftPct, ±20) × confidence × 0.01`, guardrail breach stacks `−0.10`. Net signal clamped to ±0.30 → multiplier `clamp(1 − netSignal, 0.7, 1.3)`. Gated behind `MIN_CONCLUSIVE_OUTCOMES = 3` (neutral 1.0 below that, so one noisy result can't move detection).
 - `calibratedFloor(ctx, ruleId, base)` scales a **lower-bound** detection floor (signal must exceed it — most rules). `calibratedCap(ctx, ruleId, cap)` scales an **upper-bound** cap (signal must stay below it — `form-abandonment` submit rate, `nav-dispersion` Gini) via the complementary-gap transform `1 − (1 − cap) × multiplier`, clamped to [0, 1]. Both default to the base threshold when no calibration is present, so the rules stay pure and the helper is a no-op in unit tests.
-- 11 of the 12 rules route their detection floor through these helpers (the set is enumerated in `CALIBRATED_RULE_IDS`). Statistical sample-size guards (e.g. `MIN_ENTRIES`, `MIN_FORM_VIEWS`) are deliberately **not** calibrated, so calibration changes sensitivity without firing on under-powered samples. `hero-hierarchy-inversion` is **exempt**: its only gate is a sample-size minimum (`MIN_CTA_CLICKS`) and the inversion it detects is binary with no magnitude knob, so there is no signal-strength floor to tune.
+- 11 of the 12 behavioral rules route their detection floor through these helpers (the set is enumerated in `CALIBRATED_RULE_IDS`). The 6 structural rules (Layer E) are not calibrated — they are binary snapshot checks with no behavioral signal floor to tune. Statistical sample-size guards (e.g. `MIN_ENTRIES`, `MIN_FORM_VIEWS`) are deliberately **not** calibrated. `hero-hierarchy-inversion` is **exempt**: its only gate is a sample-size minimum (`MIN_CTA_CLICKS`) and the inversion it detects is binary.
 - Wired in `runInsightsPipeline`: past outcomes are fetched once and reused — `computeRuleCalibrations` feeds `AuditRuleContext.calibration` before `runAuditRules`, then `applyLearnRerank` (Layer 1) re-ranks the result. Active calibrations surface in `AuditRuleDiagnostic.calibration` for observability.
 - 24 unit tests in `src/lib/phase2/rules/__tests__/ruleCalibration.test.ts` (gating, direction, bounds, per-rule independence, the hero exemption, helper math, and an end-to-end firing-change check on `rageClickTarget`).
 
@@ -587,7 +589,7 @@ Four things. In this order. Everything else is a distraction until these exist.
 - Cross-site global priors (not before 50+ customers with outcomes)
 
 **Never build:**
-Sentiment analysis, GitHub PR generation, own event collection SDK / PostHog replacement, elaborate new audit rules, cross-site priors before sample size justifies it.
+Sentiment analysis, GitHub PR generation, own event collection SDK / PostHog replacement, more behavioral (event-based) rules, cross-site priors before sample size justifies it. New rules must be structural/snapshot-grounded and deterministic.
 
 ---
 
@@ -596,7 +598,7 @@ Sentiment analysis, GitHub PR generation, own event collection SDK / PostHog rep
 After cleanup (this session):
 
 - **16,240 lines** of domain logic across 79 source files
-- **193 tests**, all passing
+- **545 tests**, all passing
 - **Single storage backend** (Postgres via Drizzle — blob driver removed)
 - **Zero dead code** (backend shell, duplicate onboarding page, blob repository all deleted)
 - **Clean type system** (TypeScript strict mode, no `any` leaks in domain code)

@@ -25,12 +25,46 @@ export const appUsers = pgTable(
     status: text('status').notNull().default('approved'), // 'approved' | 'revoked'
     source: text('source'), // origin tag: 'public_audit' for auto-provisioned audit users; NULL for pre-existing users.
     sourceAuditId: text('source_audit_id'),
+    /** Auto-detected from first audit URL (e.g. 'saas', 'ecommerce', 'media', 'fintech'). */
+    industry: text('industry'),
+    /** PM / founder / engineer / designer etc. — free-form, set during onboarding. */
+    roleTitle: text('role_title'),
+    /** ISO timestamp of the last time this user triggered a public audit. */
+    lastAuditAt: timestamp('last_audit_at', { withTimezone: true }),
+    /** Acquisition funnel: 'magic_link' | 'audit_funnel' | 'invite'. */
+    signupSource: text('signup_source').notNull().default('magic_link'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     emailIdx: uniqueIndex('app_users_email_idx').on(table.email),
     orgIdx: index('app_users_org_idx').on(table.organizationId),
     sourceAuditIdx: index('app_users_source_audit_idx').on(table.sourceAuditId),
+  })
+);
+
+/**
+ * Queryable log of which audit rules have fired for a user.
+ * Written whenever the insights pipeline surfaces a finding for an org
+ * that has an associated user (post-signup). Used for personalization,
+ * onboarding analytics, and "rules found on your site" UI.
+ */
+export const appUserRulesFired = pgTable(
+  'app_user_rules_fired',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    orgId: text('org_id').notNull(),
+    siteId: text('site_id').notNull(),
+    findingId: text('finding_id'),
+    ruleId: text('rule_id').notNull(),
+    firedAt: timestamp('fired_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdx: index('app_user_rules_fired_user_idx').on(table.userId),
+    ruleIdx: index('app_user_rules_fired_rule_idx').on(table.ruleId),
+    orgIdx: index('app_user_rules_fired_org_idx').on(table.orgId),
+    siteIdx: index('app_user_rules_fired_site_idx').on(table.siteId),
   })
 );
 

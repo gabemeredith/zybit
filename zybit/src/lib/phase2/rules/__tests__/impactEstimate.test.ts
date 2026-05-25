@@ -10,46 +10,45 @@ describe('computeImpactEstimate', () => {
     signalDescription: 'pageviews on /pricing',
   };
 
-  // 1. revenue with ARPU
-  it('revenue: value matches math, unit=USD, formatted starts with ~$, basis contains ARPU', () => {
+  // 1. revenue → conversions count, no dollar figures
+  it('revenue: value=conversions count, unit=conversions, no $ in formatted', () => {
     const result = computeImpactEstimate({
       ...BASE,
       goalType: 'revenue',
       goalConfig: { arpu: 47, baselineConversionRate: 0.03 },
     });
     // affectedMonthly = 0.5 * (300/30) * 30 = 150
-    // convertedMonthly = 150 * 0.03 = 4.5
-    // value = round(4.5 * 47) = 212 (rounded)
-    expect(result.unit).toBe('USD');
+    // convertedMonthly = 150 * 0.03 = 4.5 → value = 5
+    expect(result.unit).toBe('conversions');
     expect(result.period).toBe('monthly');
-    expect(result.formatted).toMatch(/^~\$/);
-    expect(result.basis).toContain('ARPU');
-    expect(result.value).toBe(Math.round(4.5 * 47));
+    expect(result.formatted).not.toContain('$');
+    expect(result.formatted).toContain('conversions/month');
+    expect(result.value).toBe(Math.round(4.5));
   });
 
-  // 2. revenue without ARPU → falls back to engagement
-  it('revenue without arpu → falls back to sessions', () => {
+  // 2. revenue without ARPU → still conversions (no fallback to sessions needed)
+  it('revenue without arpu → conversions', () => {
     const result = computeImpactEstimate({
       ...BASE,
       goalType: 'revenue',
       goalConfig: {},
     });
-    expect(result.unit).toBe('sessions');
-    expect(result.formatted).toContain('sessions/month');
+    expect(result.unit).toBe('conversions');
+    expect(result.formatted).toContain('conversions/month');
   });
 
-  // 3. ecommerce with aov
-  it('ecommerce with aov=120 → unit=USD, value matches math', () => {
+  // 3. ecommerce → conversions count, no dollar figures
+  it('ecommerce → unit=conversions, no $ in formatted', () => {
     const result = computeImpactEstimate({
       ...BASE,
       goalType: 'ecommerce',
       goalConfig: { aov: 120, baselineConversionRate: 0.03 },
     });
-    // affectedMonthly = 150, converted = 4.5, value = round(4.5*120) = 540
-    expect(result.unit).toBe('USD');
-    expect(result.value).toBe(Math.round(4.5 * 120));
-    expect(result.formatted).toMatch(/^~\$/);
-    expect(result.basis).toContain('AOV');
+    // affectedMonthly = 150, converted = 4.5 → value = 5
+    expect(result.unit).toBe('conversions');
+    expect(result.value).toBe(Math.round(4.5));
+    expect(result.formatted).not.toContain('$');
+    expect(result.formatted).toContain('conversions/month');
   });
 
   // 4. growth
@@ -135,37 +134,30 @@ describe('computeImpactEstimate', () => {
     expect(result.value).toBe(0);
   });
 
-  // 13. currency symbols
-  it.each([
-    ['GBP', '£'],
-    ['EUR', '€'],
-    ['USD', '$'],
-    ['XYZ', 'XYZ'], // unknown → code itself
-  ])('currency %s renders symbol %s', (code, symbol) => {
+  // 13. revenue/ecommerce never emit currency symbols regardless of currencyCode config
+  it.each(['revenue', 'ecommerce'] as const)('%s goal never contains $ in formatted', (goalType) => {
     const result = computeImpactEstimate({
       ...BASE,
-      goalType: 'revenue',
-      goalConfig: { arpu: 100, currencyCode: code, baselineConversionRate: 0.03 },
+      goalType,
+      goalConfig: { arpu: 100, aov: 100, currencyCode: 'USD', baselineConversionRate: 0.03 },
     });
-    if (result.unit !== 'sessions') {
-      // revenue path was taken (arpu was set)
-      expect(result.formatted).toContain(symbol);
-    }
+    expect(result.formatted).not.toContain('$');
+    expect(result.formatted).not.toContain('£');
+    expect(result.formatted).not.toContain('€');
   });
 
-  // 14. large value → k notation
-  it('value >= 10000 formats as k notation', () => {
-    // affectedMonthly = 1 * (100000/30) * 30 = 100000, converted = 100000*0.03*47
+  // 14. large conversion count → k notation
+  it('large conversion count formats as k notation', () => {
     const result = computeImpactEstimate({
       affectedRate: 1,
       windowVolume: 100_000,
       windowDays: 30,
       goalType: 'revenue',
-      goalConfig: { arpu: 1000, currencyCode: 'USD', baselineConversionRate: 0.1 },
+      goalConfig: { baselineConversionRate: 0.1 },
       signalDescription: 'sessions',
     });
-    // value = round(100000 * 0.1 * 1000) = 10,000,000 → very large
-    expect(result.formatted).toMatch(/k\/month$/);
+    // affectedMonthly = 100000, converted = 10000 → 10k conversions/month
+    expect(result.formatted).toMatch(/^~\d+k conversions\/month$/);
   });
 
   // 15. period is always monthly
