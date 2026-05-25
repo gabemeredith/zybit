@@ -128,4 +128,53 @@ describe('formAbandonment rule', () => {
     const ctx = makeContext(events, [snapshot]);
     expect(formAbandonment.evaluate(ctx)).toEqual([]);
   });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { formRef?: string }) {
+      return {
+        id: 'form-abandonment:/signup:f',
+        ruleId: 'form-abandonment',
+        category: 'abandonment' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: PATH,
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('returns one red outline mod when formRef resolves to a form with a selector', () => {
+      const form = { ...makeForm('signup-form', [{ name: 'email', required: true }, { name: 'pw', required: true }]), cssSelector: 'form#signup' };
+      const out = formAbandonment.proposeAnnotations!(
+        makeFinding({ formRef: 'signup-form' }),
+        { snapshot: makeSnapshot(PATH, [], [], [form]), designTokens: null },
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'form#signup' });
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+    });
+
+    it('returns [] when formRef present but the form has no cssSelector', () => {
+      const form = makeForm('signup-form', [{ name: 'email', required: true }, { name: 'pw', required: true }]);
+      expect(form.cssSelector).toBeNull();
+      const out = formAbandonment.proposeAnnotations!(
+        makeFinding({ formRef: 'signup-form' }),
+        { snapshot: makeSnapshot(PATH, [], [], [form]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns [] when refs.formRef is absent', () => {
+      const form = { ...makeForm('signup-form', [{ name: 'email', required: true }]), cssSelector: 'form#signup' };
+      const out = formAbandonment.proposeAnnotations!(
+        makeFinding({}),
+        { snapshot: makeSnapshot(PATH, [], [], [form]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+  });
 });

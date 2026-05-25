@@ -8,8 +8,11 @@
  * (or aren't resolving).
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
+import type { PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { GoalConfig, GoalType, NarrativeConfig } from "@/lib/phase2/types";
 
+import { ANNOTATION_WARN_COLOR } from "./annotationColors";
 import type { SessionTrace } from "./helpers";
 import {
   clamp,
@@ -17,6 +20,7 @@ import {
   groupSessions,
   modeStringProp,
   pct,
+  pickPrimaryCta,
   quote,
   round,
   sanitizeIdSegment,
@@ -29,6 +33,7 @@ import type {
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const MIN_PATH_SESSIONS = 50;
@@ -50,6 +55,21 @@ export const returnVisitThrash: AuditRule = {
   id: "return-visit-thrash",
   name: "Return-visit thrash",
   category: "thrash",
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    return [{
+      type: 'css-inject',
+      selector: cta.cssSelector,
+      css: `outline: 3px dashed ${ANNOTATION_WARN_COLOR} !important; outline-offset: 4px;`,
+    }];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessions = groupSessions(ctx.events);
@@ -91,7 +111,7 @@ export const returnVisitThrash: AuditRule = {
       if (agg.pathSessions < MIN_PATH_SESSIONS) continue;
       const thrashRate = agg.thrashSessions / agg.pathSessions;
       if (thrashRate <= minThrashRate) continue;
-      findings.push(buildFinding(agg, thrashRate, narrativesBySource.get(agg.pathRef), windowDays, ctx.config.goalType, ctx.config.goalConfig));
+      findings.push(buildFinding(agg, thrashRate, narrativesBySource.get(agg.pathRef), windowDays, ctx.config.goalType, ctx.config.goalConfig, ctx.pageSnapshotsByPath.get(agg.pathRef)));
     }
     return findings;
   },
@@ -158,8 +178,9 @@ function buildFinding(
   thrashRate: number,
   narrative: NarrativeConfig | undefined,
   windowDays: number,
-  goalType?: GoalType,
-  goalConfig?: GoalConfig,
+  goalType: GoalType | undefined,
+  goalConfig: GoalConfig | undefined,
+  snapshot: PageSnapshot | undefined,
 ): AuditFinding {
   const median = round(medianOf(agg.pathCountsAcrossThrash), 1);
   const deviceMode = topOf(agg.deviceTags);
@@ -240,6 +261,12 @@ function buildFinding(
       `Primary metric: return-visit rate and funnel progression rate from ${agg.pathRef}.`,
   };
 
+  // Anchor for the finding-detail visual: the page's primary CTA. The
+  // diagnostic story isn't "this CTA is broken" — it's "this is what
+  // visitors see when they keep coming back, and the answer they need
+  // isn't here." Same mechanism as `bounce-on-key-page`.
+  const primary = snapshot ? pickPrimaryCta(snapshot.data.ctas) : null;
+
   return {
     id: `return-visit-thrash:${sanitizeIdSegment(agg.pathRef)}`,
     ruleId: "return-visit-thrash",
@@ -254,6 +281,14 @@ function buildFinding(
     impactEstimate,
     recommendation: [docPara, narrativePara],
     evidence,
+    ...(snapshot
+      ? {
+          refs: {
+            snapshotId: snapshot.id,
+            ...(primary ? { ctaRef: primary.ref } : {}),
+          },
+        }
+      : {}),
   };
 }
 

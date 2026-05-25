@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  ANNOTATION_CLICKED_COLOR,
+  ANNOTATION_HEAVY_COLOR,
+  ANNOTATION_WARN_COLOR,
+} from "@/lib/phase2/rules/annotationColors";
+
 interface Props {
   findingId: string;
   ruleId: string;
@@ -29,16 +35,90 @@ const LEGENDS: Record<
   "hero-hierarchy-inversion": [
     {
       label: "Your design emphasizes this",
-      color: "#ef4444",
+      color: ANNOTATION_HEAVY_COLOR,
       description: "The visually-heaviest CTA — the one your styling pulls the eye toward.",
     },
     {
       label: "Your users click this",
-      color: "#22c55e",
+      color: ANNOTATION_CLICKED_COLOR,
       description: "The CTA that wins clicks despite being visually quieter.",
     },
   ],
+  "above-fold-coverage": [
+    {
+      label: "Hidden below the fold",
+      color: ANNOTATION_HEAVY_COLOR,
+      description: "Your primary CTA — most visitors never scroll far enough to see it.",
+    },
+  ],
+  "rage-click-target": [
+    {
+      label: "Users are angrily clicking here",
+      color: ANNOTATION_HEAVY_COLOR,
+      description: "This element looks clickable but doesn't behave like one — repeated rage clicks.",
+    },
+  ],
+  "form-abandonment": [
+    {
+      label: "Users drop off in this form",
+      color: ANNOTATION_HEAVY_COLOR,
+      description: "Visitors start but don't finish — usually a required-field or commitment-copy issue.",
+    },
+  ],
+  "bounce-on-key-page": [
+    {
+      label: "Primary CTA on the bounce page",
+      color: ANNOTATION_HEAVY_COLOR,
+      description: "Most visitors arrive on this page and leave without clicking — your primary CTA isn't pulling them in.",
+    },
+  ],
+  "help-seeking-spike": [
+    {
+      label: "Users are asking for help here",
+      color: ANNOTATION_WARN_COLOR,
+      description: "The help/contact CTA visitors click instead of converting — answer inline above this.",
+    },
+  ],
+  "hesitation-pattern": [
+    {
+      label: "Users dwell here without clicking",
+      color: ANNOTATION_WARN_COLOR,
+      description: "Your primary CTA — long active dwell with no follow-up is a value-clarity gap.",
+    },
+  ],
+  "flow-inter-step-dropoff": [
+    {
+      label: "Users drop out of the flow here",
+      color: ANNOTATION_HEAVY_COLOR,
+      description: "The primary CTA on the step that loses the most users between flow steps.",
+    },
+  ],
+  "return-visit-thrash": [
+    {
+      label: "What visitors see when they keep coming back",
+      color: ANNOTATION_WARN_COLOR,
+      description: "Your primary CTA on the looping page — visitors return because the answer they need isn't here. Add a TL;DR or anchor nav above this.",
+    },
+  ],
 };
+
+/**
+ * Rule-specific empty-state copy for findings whose violation isn't
+ * anchored to a single DOM element (site-wide signals, JS-error
+ * clusters, cohort comparisons, etc.). Falls back to the generic
+ * caption when the rule has annotations but they couldn't anchor.
+ */
+const EMPTY_STATE_CAPTIONS: Record<string, string> = {
+  "nav-dispersion":
+    "Navigation findings span the whole site — there isn't one page to outline.",
+  "error-exposure":
+    "JavaScript exception clusters live in code, not in a single page element.",
+  "cohort-pain-asymmetry":
+    "Cohort-vs-cohort comparisons aren't anchored to a single page element.",
+  "mobile-engagement-asymmetry":
+    "Mobile/desktop step asymmetry is a site-wide signal — no single element to outline.",
+};
+const DEFAULT_EMPTY_STATE_CAPTION = "Visual preview not available for this finding type.";
 
 export default function AnnotatedFindingPreview({
   findingId,
@@ -164,7 +244,7 @@ export default function AnnotatedFindingPreview({
 
       {state.kind === "ready" && state.annotationsCount === 0 && (
         <p className="mt-3 text-xs text-[#6B6B6B]">
-          Visual preview not available for this finding type.
+          {EMPTY_STATE_CAPTIONS[ruleId] ?? DEFAULT_EMPTY_STATE_CAPTION}
         </p>
       )}
 

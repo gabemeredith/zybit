@@ -137,4 +137,52 @@ describe('bounceOnKeyPage rule', () => {
     const [f] = bounceOnKeyPage.evaluate(ctx);
     expect(f.evidence.length).toBeGreaterThan(0);
   });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { ctaRef?: string }) {
+      return {
+        id: 'bounce-on-key-page:_pricing',
+        ruleId: 'bounce-on-key-page',
+        category: 'bounce' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: KEY_PATH,
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('returns one red outline mod when the primary CTA has a selector', () => {
+      const cta = { ...makeCta('Get started', 0.9, 'above', 'primary'), cssSelector: 'a.cta' };
+      const out = bounceOnKeyPage.proposeAnnotations!(
+        makeFinding({ ctaRef: 'primary' }),
+        { snapshot: makeSnapshot(KEY_PATH, [cta]), designTokens: null },
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'a.cta' });
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+    });
+
+    it('returns [] when ctaRef is present but the CTA has no cssSelector', () => {
+      const cta = makeCta('Get started', 0.9, 'above', 'primary');
+      const out = bounceOnKeyPage.proposeAnnotations!(
+        makeFinding({ ctaRef: 'primary' }),
+        { snapshot: makeSnapshot(KEY_PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns [] when refs.ctaRef is absent (no snapshot at finding time)', () => {
+      const cta = { ...makeCta('Get started', 0.9, 'above', 'primary'), cssSelector: 'a.cta' };
+      const out = bounceOnKeyPage.proposeAnnotations!(
+        makeFinding({}),
+        { snapshot: makeSnapshot(KEY_PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+  });
 });

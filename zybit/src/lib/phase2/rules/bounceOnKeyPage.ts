@@ -8,9 +8,11 @@
  * ≥ 100 and bounce rate exceeds 50%.
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
 import type { CtaCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { GoalConfig, GoalType } from "@/lib/phase2/types";
 
+import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
 import {
   clamp,
   formatCount,
@@ -32,6 +34,7 @@ import type {
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const MIN_ENTRIES = 100;
@@ -59,6 +62,21 @@ export const bounceOnKeyPage: AuditRule = {
   id: "bounce-on-key-page",
   name: "Bounce on key page",
   category: "bounce",
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    return [{
+      type: 'css-inject',
+      selector: cta.cssSelector,
+      css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
+    }];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessions = groupSessions(ctx.events);

@@ -205,6 +205,13 @@ export interface AuditFinding {
    */
   refs?: {
     snapshotId?: string;
+    /**
+     * The primary CTA this finding is about — semantics per rule:
+     * `hero-hierarchy-inversion` = the visually-heaviest CTA;
+     * `rage-click-target` = the rage target; `help-seeking-spike` = the help CTA;
+     * `hesitation-pattern` = the dwelt-on CTA;
+     * `flow-inter-step-dropoff` = the predecessor-page exit CTA.
+     */
     ctaRef?: string;
     /** For inversion-shaped findings: the CTA the user actually clicks most. */
     clickedCtaRef?: string;

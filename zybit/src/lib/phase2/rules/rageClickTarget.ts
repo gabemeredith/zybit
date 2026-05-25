@@ -7,8 +7,10 @@
  * its page rage-click it, the affordance is misleading — emit a finding.
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
 import type { CanonicalEvent } from "@/lib/phase2/types";
 
+import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
 import {
   clamp,
   formatCount,
@@ -26,6 +28,7 @@ import type {
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const MIN_RAGE_CLICKS = 5;
@@ -46,6 +49,21 @@ export const rageClickTarget: AuditRule = {
   id: "rage-click-target",
   name: "Rage-click target cluster",
   category: "rage",
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    return [{
+      type: 'css-inject',
+      selector: cta.cssSelector,
+      css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
+    }];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessionsByPath = countSessionsByPath(ctx.events);
@@ -187,7 +205,11 @@ function evaluateGroup(
 
   const idSlug =
     matchedRef ?? group.rageTargetRef ?? (sanitizeIdSegment(displayText) || "_");
-  const refsCtaRef = matchedRef ?? group.rageTargetRef ?? undefined;
+  // Only persist ctaRef when it resolved against snapshot.data.ctas — the
+  // event-side `rage_target_ref` lives in a different namespace and would
+  // mislead downstream consumers (e.g. the AI Advisor) that treat ctaRef
+  // as a snapshot-CTA reference.
+  const refsCtaRef = matchedRef ?? undefined;
 
   const impactEstimate = computeImpactEstimate({
     affectedRate: rageRate,

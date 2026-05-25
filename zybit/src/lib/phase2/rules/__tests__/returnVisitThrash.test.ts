@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { returnVisitThrash } from '@/lib/phase2/rules/returnVisitThrash';
-import { makeContext, makeEvent, makeGoalConfig, makeConfig } from './fixtures';
+import { makeContext, makeCta, makeEvent, makeGoalConfig, makeConfig, makeSnapshot } from './fixtures';
 
 const PATH = '/docs';
 
@@ -145,5 +145,53 @@ describe('returnVisitThrash rule', () => {
     const ctx = makeThrashContext(40, 60);
     const [f] = returnVisitThrash.evaluate(ctx);
     expect(f.evidence.length).toBeGreaterThan(0);
+  });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { ctaRef?: string }) {
+      return {
+        id: 'return-visit-thrash:_docs',
+        ruleId: 'return-visit-thrash',
+        category: 'thrash' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: PATH,
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('returns one amber outline mod when the primary CTA has a selector', () => {
+      const cta = { ...makeCta('Open account', 0.9, 'above', 'open-cta'), cssSelector: 'a.open' };
+      const out = returnVisitThrash.proposeAnnotations!(
+        makeFinding({ ctaRef: 'open-cta' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'a.open' });
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#f59e0b');
+    });
+
+    it('returns [] when ctaRef is present but the CTA has no cssSelector', () => {
+      const cta = makeCta('Open account', 0.9, 'above', 'open-cta');
+      const out = returnVisitThrash.proposeAnnotations!(
+        makeFinding({ ctaRef: 'open-cta' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns [] when refs.ctaRef is absent (no snapshot at finding time)', () => {
+      const cta = { ...makeCta('Open account', 0.9, 'above', 'open-cta'), cssSelector: 'a.open' };
+      const out = returnVisitThrash.proposeAnnotations!(
+        makeFinding({}),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
   });
 });

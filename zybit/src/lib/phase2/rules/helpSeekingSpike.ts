@@ -8,11 +8,15 @@
  * looking for help instead of letting them act — emit a finding.
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
+import type { PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { CanonicalEvent, GoalConfig, GoalType } from "@/lib/phase2/types";
 
+import { ANNOTATION_WARN_COLOR } from "./annotationColors";
 import {
   clamp,
   formatCount,
+  matchCtaToEvent,
   pct,
   quote,
   readStringProp,
@@ -29,6 +33,7 @@ import type {
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const HELP_TEXT_REGEX = /(\bhelp\b|\bsupport\b|\bcontact\b|\bfaq\b|chat|talk to (sales|us))/i;
@@ -57,6 +62,21 @@ export const helpSeekingSpike: AuditRule = {
   id: "help-seeking-spike",
   name: "Help-seeking spike",
   category: "help",
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    return [{
+      type: 'css-inject',
+      selector: cta.cssSelector,
+      css: `outline: 3px dashed ${ANNOTATION_WARN_COLOR} !important; outline-offset: 4px;`,
+    }];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const baselineRate = siteBaselineRate(
@@ -114,6 +134,7 @@ export const helpSeekingSpike: AuditRule = {
           baselineRate,
           multiple: localRate / baselineRate,
           helpEvents,
+          snapshot: ctx.pageSnapshotsByPath.get(pathRef),
           windowDays: windowDaysFromTimeWindow(ctx.window),
           goalType: ctx.config.goalType,
           goalConfig: ctx.config.goalConfig,
@@ -134,6 +155,7 @@ interface FindingInputs {
   baselineRate: number;
   multiple: number;
   helpEvents: CanonicalEvent[];
+  snapshot: PageSnapshot | undefined;
   windowDays: number;
   goalType?: GoalType;
   goalConfig?: GoalConfig;
@@ -150,6 +172,7 @@ function buildFinding(inputs: FindingInputs): AuditFinding {
     baselineRate,
     multiple,
     helpEvents,
+    snapshot,
     windowDays,
     goalType,
     goalConfig,
@@ -158,6 +181,21 @@ function buildFinding(inputs: FindingInputs): AuditFinding {
   const topGroups = topByCount(helpEvents, (e) => readStringProp(e.properties, "cta_text") ?? "")
     .filter((g) => g.key.length > 0)
     .slice(0, 3);
+
+  // Walk the frequency-ranked groups so the outline lands on the
+  // dominant help CTA, not the first one chronologically.
+  let matchedCtaRef: string | null = null;
+  if (snapshot) {
+    outer: for (const group of topGroups) {
+      for (const event of group.items) {
+        const matched = matchCtaToEvent(snapshot, event);
+        if (matched) {
+          matchedCtaRef = matched.ref;
+          break outer;
+        }
+      }
+    }
+  }
   const topQuoted = topGroups.map((g) => quote(g.key));
   const topClause =
     topQuoted.length >= 2
@@ -236,5 +274,13 @@ function buildFinding(inputs: FindingInputs): AuditFinding {
     impactEstimate,
     recommendation,
     evidence,
+    ...(matchedCtaRef !== null || snapshot
+      ? {
+          refs: {
+            ...(snapshot ? { snapshotId: snapshot.id } : {}),
+            ...(matchedCtaRef !== null ? { ctaRef: matchedCtaRef } : {}),
+          },
+        }
+      : {}),
   };
 }

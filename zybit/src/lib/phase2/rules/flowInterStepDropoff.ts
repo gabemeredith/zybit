@@ -15,14 +15,17 @@
  * Layer 2 calibration via `calibratedFloor`.
  */
 
+import type { VariantModification } from '@/lib/experiments/types';
 import type { FlowEdge } from '@/lib/phase2/flow/types';
-import { clamp, formatCount, pct } from './helpers';
+import { ANNOTATION_HEAVY_COLOR } from './annotationColors';
+import { clamp, formatCount, pct, pickPrimaryCta } from './helpers';
 import { calibratedFloor } from './ruleCalibration';
 import type {
   AuditFinding,
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from './types';
 
 const RULE_ID = 'flow-inter-step-dropoff';
@@ -42,6 +45,21 @@ export const flowInterStepDropoff: AuditRule = {
   id: RULE_ID,
   name: 'Flow inter-step drop-off',
   category: 'flow',
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    return [{
+      type: 'css-inject',
+      selector: cta.cssSelector,
+      css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
+    }];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const graph = ctx.flowGraph;
@@ -147,6 +165,12 @@ export const flowInterStepDropoff: AuditRule = {
       { label: 'Continued in the product', value: continued },
     ];
 
+    // For the finding-detail preview: persist the chokepoint page's primary
+    // CTA so the annotation overlay can outline "the thing users see but
+    // don't engage with" at the moment they drop out of the flow.
+    const chokepointSnapshot = ctx.pageSnapshotsByPath.get(node.route);
+    const chokepointPrimary = chokepointSnapshot ? pickPrimaryCta(chokepointSnapshot.data.ctas) : null;
+
     return [
       {
         id: `${RULE_ID}:${node.route}`,
@@ -173,6 +197,14 @@ export const flowInterStepDropoff: AuditRule = {
             `Give ${node.route} one clear next action so the ${exitPct}% who ` +
             `abandon it continue through the flow instead.`,
         },
+        ...(chokepointSnapshot
+          ? {
+              refs: {
+                snapshotId: chokepointSnapshot.id,
+                ...(chokepointPrimary ? { ctaRef: chokepointPrimary.ref } : {}),
+              },
+            }
+          : {}),
       },
     ];
   },

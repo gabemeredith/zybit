@@ -10,15 +10,18 @@
  * Aggregate per page: emit when ≥ 30 distinct sessions hesitate.
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
 import type { CtaCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { CanonicalEvent, GoalConfig, GoalType } from "@/lib/phase2/types";
 
+import { ANNOTATION_WARN_COLOR } from "./annotationColors";
 import {
   clamp,
   formatCount,
   groupSessions,
   nextEventAfter,
   pct,
+  pickPrimaryCta,
   quote,
   sanitizeIdSegment,
   share,
@@ -30,6 +33,7 @@ import type {
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const MIN_ACTIVE_SECONDS = 45;
@@ -51,6 +55,21 @@ export const hesitationPattern: AuditRule = {
   id: "hesitation-pattern",
   name: "Hesitation pattern",
   category: "hesitation",
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    return [{
+      type: 'css-inject',
+      selector: cta.cssSelector,
+      css: `outline: 3px dashed ${ANNOTATION_WARN_COLOR} !important; outline-offset: 4px;`,
+    }];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessions = groupSessions(ctx.events);
@@ -225,23 +244,15 @@ function buildFinding(inputs: FindingInputs): AuditFinding {
     impactEstimate,
     recommendation,
     evidence,
-    ...(snapshot ? { refs: { snapshotId: snapshot.id } } : {}),
+    ...(snapshot
+      ? {
+          refs: {
+            snapshotId: snapshot.id,
+            ...(primary ? { ctaRef: primary.ref } : {}),
+          },
+        }
+      : {}),
   };
-}
-
-function pickPrimaryCta(ctas: readonly CtaCandidate[]): CtaCandidate | null {
-  let best: CtaCandidate | null = null;
-  for (const cta of ctas) {
-    if (cta.disabled) continue;
-    if (
-      best === null ||
-      cta.visualWeight > best.visualWeight ||
-      (cta.visualWeight === best.visualWeight && cta.documentIndex < best.documentIndex)
-    ) {
-      best = cta;
-    }
-  }
-  return best;
 }
 
 function medianRounded(values: readonly number[]): number {

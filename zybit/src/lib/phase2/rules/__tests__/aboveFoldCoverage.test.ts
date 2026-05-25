@@ -126,4 +126,53 @@ describe('aboveFoldCoverage rule', () => {
     const ctx = makeContext(events, [snapshot]);
     expect(aboveFoldCoverage.evaluate(ctx)).toEqual([]);
   });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { ctaRef?: string }) {
+      return {
+        id: 'above-fold-coverage:/pricing',
+        ruleId: 'above-fold-coverage',
+        category: 'fold' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: PATH,
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('returns one red outline mod when the CTA resolves to a stable selector', () => {
+      const cta = { ...makeCta('Get started', 0.85, 'below', 'cta-x'), cssSelector: 'button.get-started' };
+      const out = aboveFoldCoverage.proposeAnnotations!(
+        makeFinding({ ctaRef: 'cta-x' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.get-started' });
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+    });
+
+    it('returns [] when ctaRef present but the CTA has no cssSelector', () => {
+      const cta = makeCta('Get started', 0.85, 'below', 'cta-x');
+      expect(cta.cssSelector).toBeNull();
+      const out = aboveFoldCoverage.proposeAnnotations!(
+        makeFinding({ ctaRef: 'cta-x' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns [] when refs.ctaRef is absent', () => {
+      const cta = { ...makeCta('Get started', 0.85, 'below', 'cta-x'), cssSelector: 'button.x' };
+      const out = aboveFoldCoverage.proposeAnnotations!(
+        makeFinding({}),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+  });
 });

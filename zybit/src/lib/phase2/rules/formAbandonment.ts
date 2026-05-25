@@ -9,9 +9,11 @@
  * costing the funnel — emit one finding per form.
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
 import type { FormCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { CanonicalEvent, GoalConfig, GoalType } from "@/lib/phase2/types";
 
+import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
 import {
   clamp,
   formatCount,
@@ -29,6 +31,7 @@ import type {
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const MIN_FIELD_COUNT = 2;
@@ -40,6 +43,21 @@ export const formAbandonment: AuditRule = {
   id: "form-abandonment",
   name: "Form abandonment",
   category: "abandonment",
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    const ref = finding.refs?.formRef;
+    if (!ref) return [];
+    const form = ctx.snapshot.data.forms.find((f) => f.ref === ref);
+    if (!form?.cssSelector) return [];
+    return [{
+      type: 'css-inject',
+      selector: form.cssSelector,
+      css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
+    }];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];

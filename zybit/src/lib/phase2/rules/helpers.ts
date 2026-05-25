@@ -11,6 +11,26 @@ import type {
 } from "@/lib/phase2/types";
 import type { CtaCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
 
+/**
+ * Pick the visually-dominant non-disabled CTA. Visual weight desc,
+ * documentIndex asc as tiebreak. Returns null if there are no eligible CTAs.
+ * Shared across rules that annotate "the page's primary CTA."
+ */
+export function pickPrimaryCta(ctas: readonly CtaCandidate[]): CtaCandidate | null {
+  let best: CtaCandidate | null = null;
+  for (const cta of ctas) {
+    if (cta.disabled) continue;
+    if (
+      best === null ||
+      cta.visualWeight > best.visualWeight ||
+      (cta.visualWeight === best.visualWeight && cta.documentIndex < best.documentIndex)
+    ) {
+      best = cta;
+    }
+  }
+  return best;
+}
+
 /** Lowercase + collapse whitespace for fuzzy text matching. */
 export function normalizeText(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ");

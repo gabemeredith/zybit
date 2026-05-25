@@ -56,6 +56,71 @@ verification panel, proxy moved to settings. What remains:
 
 ---
 
+## 2a. AI Variant Advisor — refuse out-of-scope findings 🔴 trust-blocker
+
+**Surfaced 2026-05-24** by PM-driving a `return-visit-thrash` finding on
+a banking `/checking-accounts` page. The Advisor proposed a CTA copy
+change (*"Open a checking account" → "Get started for free"*) — wrong
+on three independent axes:
+
+1. **Doesn't match the diagnosis.** The rule's `prescription.whatToChange`
+   is *"add a TL;DR / anchor navigation at the top of the page"* — an
+   IA fix. A CTA copy change cannot move the metric the rule measures
+   (return-visit rate).
+2. **Domain-inappropriate copy.** Generic SaaS playbook applied to
+   regulated retail banking — *"free"* on a checking-account page is
+   trust-eroding at best, a compliance flag at worst.
+3. **Metric mismatch.** Even on the most charitable read, the variant
+   attacks first-visit CTR; the finding measured returners. PM would
+   ship it, see no movement, and conclude "thrash is unfixable" —
+   when actually they tested the wrong thing.
+
+**Why it happens (structural, not a prompt bug):** Per CLAUDE.md
+Zybit-144, the Advisor's selector allowlist is *CTAs + forms only*.
+Headings, sections, and anchor-nav scaffolds are deliberately out of
+scope (the structural snapshot lacks per-heading `cssSelector`). When
+a structural-fix rule (`return-visit-thrash`, `nav-dispersion`,
+`flow-inter-step-dropoff`) hits the Advisor, it has no way to suggest
+the actual recommended fix and silently degrades to a CTA copy change
+that pattern-matches on `refs.ctaRef`.
+
+**Why this is a trust-blocker, not a nit:** The whole credibility of
+the "AI suggests, PM ships" loop depends on the suggestion being
+*about the right thing*. One bad suggestion shown to a PM in a demo
+or first-week pilot reads as *"the AI doesn't understand my product"*
+— and they're right. We'd rather show nothing than show a
+domain-inappropriate, metric-irrelevant variant.
+
+**Fix, in order of cost:**
+
+1. **(cheapest, ~1-2hr)** Per-`ruleId` opt-out list. For rules whose
+   recommended fix is structural (anchor-nav / TL;DR / section add),
+   the "AI suggest" button is hidden and the PM gets a manual brief.
+   Rules to start: `return-visit-thrash`, `nav-dispersion`,
+   `flow-inter-step-dropoff`, `error-exposure`, `cohort-pain-asymmetry`,
+   `mobile-engagement-asymmetry`.
+2. **(medium, ~½ day)** Structured "out-of-scope" Advisor response —
+   the API returns `{ outOfScope: true, reason: 'Recommended fix is
+   structural (anchor-nav); not expressible in CTA/form allowlist.' }`,
+   the UI shows this verbatim with a link to the rule's
+   `prescription.whatToChange`.
+3. **(expensive, multi-day)** Extend the snapshot to carry per-heading
+   `cssSelector` so the Advisor can express `attribute-set` / `css-inject`
+   insertions for anchor nav. Unlocks structural variants in-loop.
+
+**Recommended:** ship option 1 immediately (one route handler check,
+one component condition), then plan option 2 alongside the next
+Advisor iteration. Option 3 is real product work and should be
+scoped against pilot demand, not done speculatively.
+
+**Cross-reference:** the rule-aware empty-state pattern shipped for
+the annotated-preview surface
+(`AnnotatedFindingPreview.EMPTY_STATE_CAPTIONS`,
+`feat/preview-annotations-rules`) is the right template — "honest
+'we don't support this for this rule' beats misleading output."
+
+---
+
 ## 3. Preview + suggest pipeline 🔴 product depth
 
 **Why third, not later:** This is what makes the advisory *actionable*

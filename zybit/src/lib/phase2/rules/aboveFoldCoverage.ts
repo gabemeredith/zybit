@@ -14,6 +14,9 @@ import type { CtaCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { CtaCandidateMeasured, PageCapture } from "@/lib/phase2/capture/types";
 import type { CanonicalEvent } from "@/lib/phase2/types";
 
+import type { VariantModification } from "@/lib/experiments/types";
+
+import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
 import { clamp, formatCount, pct, quote, readScrollFraction } from "./helpers";
 import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
@@ -22,6 +25,7 @@ import type {
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
   SnapshotDiagram,
   SnapshotDiagramItem,
 } from "./types";
@@ -35,6 +39,21 @@ export const aboveFoldCoverage: AuditRule = {
   id: "above-fold-coverage",
   name: "Above-fold CTA coverage",
   category: "fold",
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    return [{
+      type: 'css-inject',
+      selector: cta.cssSelector,
+      css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
+    }];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];
@@ -364,5 +383,11 @@ function evaluatePageWithCapture(
     impactEstimate,
     snapshotDiagram,
     evidence,
+    refs: {
+      ...(ctx.pageSnapshotsByPath.get(pathRef)?.id
+        ? { snapshotId: ctx.pageSnapshotsByPath.get(pathRef)!.id }
+        : {}),
+      ctaRef: primary.ref,
+    },
   };
 }

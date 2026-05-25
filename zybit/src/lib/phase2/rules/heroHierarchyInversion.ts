@@ -25,6 +25,7 @@ import {
   share,
   topByCount,
 } from "./helpers";
+import { ANNOTATION_CLICKED_COLOR, ANNOTATION_HEAVY_COLOR } from "./annotationColors";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -85,8 +86,6 @@ function describeVisualTreatment(signals: readonly string[]): string {
 }
 
 const FALLBACK_SECONDARY_COLOR = '#666';
-const ANNOTATION_HEAVY_COLOR = '#ef4444';
-const ANNOTATION_CLICKED_COLOR = '#22c55e';
 
 export const heroHierarchyInversion: AuditRule = {
   id: "hero-hierarchy-inversion",

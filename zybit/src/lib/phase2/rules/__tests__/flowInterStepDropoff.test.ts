@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FlowEdge, FlowGraph, FlowNode } from '@/lib/phase2/flow/types';
 import { flowInterStepDropoff } from '../flowInterStepDropoff';
 import type { AuditRuleContext } from '../types';
-import { makeContext } from './fixtures';
+import { makeContext, makeCta, makeSnapshot } from './fixtures';
 
 function node(route: string, sessions: number, exits: number): FlowNode {
   return {
@@ -139,5 +139,53 @@ describe('flowInterStepDropoff', () => {
     const out = flowInterStepDropoff.evaluate(ctx(g));
     const inbound = out[0].evidence.find((e) => e.label === 'Top inbound path');
     expect(inbound?.value).toBe('/cart → /checkout');
+  });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { ctaRef?: string }) {
+      return {
+        id: 'flow-inter-step-dropoff:/checkout',
+        ruleId: 'flow-inter-step-dropoff',
+        category: 'flow' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: '/checkout',
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('returns one red outline mod when the chokepoint primary CTA has a selector', () => {
+      const cta = { ...makeCta('Place order', 0.9, 'above', 'order-cta'), cssSelector: 'button.order' };
+      const out = flowInterStepDropoff.proposeAnnotations!(
+        makeFinding({ ctaRef: 'order-cta' }),
+        { snapshot: makeSnapshot('/checkout', [cta]), designTokens: null },
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.order' });
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+    });
+
+    it('returns [] when ctaRef present but the CTA has no cssSelector', () => {
+      const cta = makeCta('Place order', 0.9, 'above', 'order-cta');
+      const out = flowInterStepDropoff.proposeAnnotations!(
+        makeFinding({ ctaRef: 'order-cta' }),
+        { snapshot: makeSnapshot('/checkout', [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns [] when refs.ctaRef is absent (no chokepoint snapshot at finding time)', () => {
+      const cta = { ...makeCta('Place order', 0.9, 'above', 'order-cta'), cssSelector: 'button.order' };
+      const out = flowInterStepDropoff.proposeAnnotations!(
+        makeFinding({}),
+        { snapshot: makeSnapshot('/checkout', [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
   });
 });

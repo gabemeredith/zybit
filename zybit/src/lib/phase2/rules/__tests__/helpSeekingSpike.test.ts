@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { helpSeekingSpike } from '@/lib/phase2/rules/helpSeekingSpike';
-import { makeContext, makeCtaClick, makeGoalConfig } from './fixtures';
+import { makeContext, makeCta, makeCtaClick, makeGoalConfig, makeSnapshot } from './fixtures';
 
 /**
  * helpSeekingSpike needs:
@@ -118,5 +118,54 @@ describe('helpSeekingSpike rule', () => {
     for (const f of helpSeekingSpike.evaluate(ctx)) {
       expect(f.id).toContain('help-seeking-spike');
     }
+  });
+
+  describe('proposeAnnotations', () => {
+    const PATH = '/pricing';
+    function makeFinding(refs: { ctaRef?: string }) {
+      return {
+        id: 'help-seeking-spike:_pricing',
+        ruleId: 'help-seeking-spike',
+        category: 'help' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: PATH,
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('returns one amber outline mod when the help CTA has a selector', () => {
+      const cta = { ...makeCta('Talk to us', 0.4, 'above', 'help-cta'), cssSelector: 'a.help' };
+      const out = helpSeekingSpike.proposeAnnotations!(
+        makeFinding({ ctaRef: 'help-cta' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'a.help' });
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#f59e0b');
+    });
+
+    it('returns [] when ctaRef present but the CTA has no cssSelector', () => {
+      const cta = makeCta('Talk to us', 0.4, 'above', 'help-cta');
+      const out = helpSeekingSpike.proposeAnnotations!(
+        makeFinding({ ctaRef: 'help-cta' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns [] when refs.ctaRef is absent (no snapshot match)', () => {
+      const cta = { ...makeCta('Talk to us', 0.4, 'above', 'help-cta'), cssSelector: 'a.help' };
+      const out = helpSeekingSpike.proposeAnnotations!(
+        makeFinding({}),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
   });
 });
