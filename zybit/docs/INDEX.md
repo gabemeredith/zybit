@@ -113,9 +113,9 @@ current truth is in [`../AGENTS.md`](../AGENTS.md) + [`sprints/REMEDIATION.md`](
 
 | File | One-line summary |
 |---|---|
-| [`sprints/sprint-0.md`](./sprints/sprint-0.md) | Verification & hardening — confirm built features actually work under live conditions |
-| [`sprints/sprint-1.md`](./sprints/sprint-1.md) | Demo readiness — full demo script runnable end-to-end |
-| [`sprints/sprint-2.md`](./sprints/sprint-2.md) | Selector robustness — experiments never silently break after customer redeploys |
+| [`sprints/_archive/sprint-0.md`](./sprints/_archive/sprint-0.md) | Verification & hardening — confirm built features actually work under live conditions (archived: complete) |
+| [`sprints/_archive/sprint-1.md`](./sprints/_archive/sprint-1.md) | Demo readiness — full demo script runnable end-to-end (archived: complete) |
+| [`sprints/_archive/sprint-2.md`](./sprints/_archive/sprint-2.md) | Selector robustness — experiments never silently break after customer redeploys (archived: complete) |
 | [`sprints/sprint-3.md`](./sprints/sprint-3.md) | Design capture & AI variant advisor (largely deferred per PRD — see `sprint-3-deferred.md`) |
 | [`sprints/sprint-3R.md`](./sprints/sprint-3R.md) | Sprint 3 *replacement* proposal (client runtime & flow experiments) — superseded by the PRD |
 | [`sprints/sprint-4.md`](./sprints/sprint-4.md) | Observability & multi-customer ops — supportable remotely |

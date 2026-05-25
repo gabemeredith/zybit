@@ -12,9 +12,9 @@
 
 | Sprint | Name | Duration | Status | Gate |
 |--------|------|----------|--------|------|
-| [0](sprint-0.md) | Verification & Hardening | 1w | 🟢 6/7 done (Zybit-118 partial) | Core loop confirmed live; Stripe verified; auth protected |
-| [1](sprint-1.md) | Demo Readiness | 1.5w | 🟢 5/8 done (124 partial; 127/128 not built) | Full demo script runnable without ad-hoc fixes |
-| [2](sprint-2.md) | Selector Robustness | 1.5w | ✅ 5/5 complete | Selector staleness detected, PM notified before silent breakage |
+| [0](_archive/sprint-0.md) | Verification & Hardening | 1w | 🟢 6/7 done (Zybit-118 partial) | Core loop confirmed live; Stripe verified; auth protected |
+| [1](_archive/sprint-1.md) | Demo Readiness | 1.5w | 🟢 5/8 done (124 partial; 127/128 not built) | Full demo script runnable without ad-hoc fixes |
+| [2](_archive/sprint-2.md) | Selector Robustness | 1.5w | ✅ 5/5 complete | Selector staleness detected, PM notified before silent breakage |
 | [3](sprint-3.md) | Design Capture & AI Variant Advisor | 3w | 🟡 0/9 (141/142 in PR #58; 143–146/148/149 not built) | PM goes from finding → AI-drafted variant → launch in <10 min |
 | [4](sprint-4.md) | Observability & Multi-Customer Ops | 1w | 🟢 4/5 done (156 not built) | First paying customer supportable remotely |
 | [5](sprint-5.md) | Learn — Layer 2 | 2w | 🟢 2/5 done; 161/162 superseded; 165 not built | Per-site rule thresholds calibrated from outcome history |
