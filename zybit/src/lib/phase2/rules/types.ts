@@ -210,7 +210,7 @@ export interface AuditFinding {
      * `hero-hierarchy-inversion` = the visually-heaviest CTA;
      * `rage-click-target` = the rage target; `help-seeking-spike` = the help CTA;
      * `hesitation-pattern` = the dwelt-on CTA;
-     * `flow-inter-step-dropoff` = the predecessor-page exit CTA.
+     * `flow-inter-step-dropoff` = the primary CTA on the chokepoint (drop-off) step page.
      */
     ctaRef?: string;
     /** For inversion-shaped findings: the CTA the user actually clicks most. */
