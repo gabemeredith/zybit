@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { after } from 'next/server';
 import { getDb } from '@/lib/db/client';
+import { auditCookieOptions, signAuditCookie } from '@/lib/audit/cookies';
 
 // node:crypto + after() require the Node runtime — pin so an Edge default
 // flip can't break this route silently.
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (row.consumed_at) {
     // Already confirmed — redirect to the audit page if we can find it
-    return redirectToAudit(row.audit_id);
+    return redirectToAudit(row.audit_id, { setCookie: false });
   }
 
   if (new Date(row.expires_at) < new Date()) {
@@ -63,8 +64,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   if (audit.status !== 'pending') {
-    // Already triggered — just redirect
-    return redirectToAudit(audit.id);
+    // Already triggered — just redirect.
+    return redirectToAudit(audit.id, { setCookie: false });
   }
 
   // Atomic token consumption — only the first concurrent caller wins the row.
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   `);
   if ((consumed.rows as unknown[]).length === 0) {
     // Concurrent click already consumed this token — redirect without re-dispatching.
-    return redirectToAudit(audit.id);
+    return redirectToAudit(audit.id, { setCookie: false });
   }
 
   const auditUpdate = await db.execute(sql`
@@ -87,8 +88,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   `);
   if ((auditUpdate.rows as unknown[]).length === 0) {
     // Status changed under us (race with another path) — don't dispatch a second run.
-    return redirectToAudit(audit.id);
+    return redirectToAudit(audit.id, { setCookie: false });
   }
+
+  // Auto-provision an approved appUsers row + organization for this email so
+  // the report-email signup CTA can drop them straight into the dashboard.
+  // Fail-soft: if either insert errors, the audit still runs and the user
+  // still gets the report. The signup CTA falls back to the existing
+  // request-link flow which will surface "no account" and let them request
+  // access manually.
+  await autoProvisionUser(audit.email, audit.domain, audit.id);
 
   // Kick off the pipeline asynchronously. The confirm endpoint responds
   // immediately; the run endpoint does the heavy lifting (45-90s) and sends
@@ -116,15 +125,71 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
   });
 
-  return redirectToAudit(audit.id);
+  return redirectToAudit(audit.id, { setCookie: true });
 }
 
-function redirectToAudit(auditId: string): NextResponse {
+// `setCookie` is intentionally required at the call site: the audit
+// confirmation cookie binds /api/audit/public/status to a single auditId,
+// so overwriting it from "already consumed" / "already triggered" /
+// concurrent-dedupe branches would clobber a different in-flight audit's
+// cookie. Only the success path that just provisioned the user gets it.
+function redirectToAudit(
+  auditId: string,
+  opts: { setCookie: boolean },
+): NextResponse {
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL ??
     process.env.APP_BASE_URL ??
     'https://getzybit.com';
-  return NextResponse.redirect(`${appUrl}/audit/${auditId}`, { status: 302 });
+  const response = NextResponse.redirect(`${appUrl}/audit/${auditId}`, { status: 302 });
+  if (opts.setCookie) {
+    response.cookies.set({
+      ...auditCookieOptions,
+      value: signAuditCookie(auditId),
+    });
+  }
+  return response;
+}
+
+async function autoProvisionUser(
+  email: string,
+  domain: string,
+  auditId: string,
+): Promise<void> {
+  const db = getDb();
+  try {
+    // Skip everything if the user already exists — they keep their existing
+    // org. Cheaper than catching a unique-constraint violation downstream.
+    const existing = await db.execute<{ id: string }>(sql`
+      SELECT id FROM app_users WHERE email = ${email} LIMIT 1
+    `);
+    if (existing.rows.length > 0) return;
+
+    // Org + user in a single CTE — neon-http has no transaction support, but
+    // a single statement is atomic per Postgres semantics. If the user
+    // INSERT fails (e.g. unique-conflict on email from a race), the org
+    // is still committed. That's tolerable per the fail-soft contract:
+    // worst case is one orphaned organizations row.
+    const orgId = randomUUID();
+    const userId = randomUUID();
+    await db.execute(sql`
+      WITH new_org AS (
+        INSERT INTO organizations (id, name)
+        VALUES (${orgId}, ${domain})
+        RETURNING id
+      )
+      INSERT INTO app_users (id, email, organization_id, role, source, source_audit_id)
+      SELECT ${userId}, ${email}, new_org.id, 'admin', 'public_audit', ${auditId}
+      FROM new_org
+      ON CONFLICT (email) DO NOTHING
+    `);
+  } catch (err) {
+    console.error('[audit/confirm] auto-provision failed', {
+      auditId,
+      email,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 function htmlError(message: string): NextResponse {

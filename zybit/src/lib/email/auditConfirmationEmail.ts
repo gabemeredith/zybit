@@ -137,10 +137,10 @@ export async function sendAuditConfirmationEmail(
     const html = renderAuditConfirmationEmailHtml(req);
     const resend = new Resend(key);
     const { error } = await resend.emails.send({
-      // Matches the AUTH_FROM_EMAIL default used by /api/auth/request-link.
-      // resend.dev is Resend's sandbox sender — fine while no custom domain is
-      // verified, but it only delivers to the Resend account owner's address.
-      from: process.env.AUDIT_FROM_EMAIL ?? 'Zybit <onboarding@resend.dev>',
+      // AUDIT_FROM_EMAIL is the same env var auditReportEmail uses, so both
+      // sides of the funnel come from the same verified domain. Default is
+      // a getzybit.com address; needs Resend DNS verified to deliver.
+      from: process.env.AUDIT_FROM_EMAIL ?? 'Zybit <asad@getzybit.com>',
       to: req.recipientEmail,
       subject: `Confirm your Zybit audit of ${req.domain}`,
       html,

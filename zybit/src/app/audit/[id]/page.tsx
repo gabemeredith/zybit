@@ -1,14 +1,21 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 
 const INK = '#111';
 const CREAM = '#FAFAF8';
 const MUTED = '#6B6B6B';
 
 type AuditStatus = 'running' | 'done' | 'unreachable' | 'failed' | 'unknown';
+type SigninState = 'sent' | 'no-account' | 'rate-limited' | null;
+
+interface InlineFinding {
+  title: string;
+  severity: string;
+  whyItMatters?: string;
+}
 
 interface StatusResponse {
   id: string;
@@ -16,6 +23,8 @@ interface StatusResponse {
   domain: string;
   completedAt: string | null;
   error: string | null;
+  findings: InlineFinding[] | null;
+  signupLink: string | null;
 }
 
 function Dots() {
@@ -27,13 +36,98 @@ function Dots() {
   return <span aria-hidden> {'.'.repeat(n)}</span>;
 }
 
-export default function AuditStatusPage() {
+function SigninBanner({ state, email }: { state: SigninState; email: string | null }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (!state || dismissed) return null;
+
+  const palette =
+    state === 'sent'
+      ? { bg: '#E8F4EA', border: INK, label: 'Sign-in link sent' }
+      : state === 'no-account'
+        ? { bg: '#FFF4E5', border: INK, label: "Couldn't find an account" }
+        : { bg: '#FFF4E5', border: INK, label: 'Too many sign-in attempts' };
+
+  const body =
+    state === 'sent'
+      ? email
+        ? `Check your inbox — we sent a sign-in link to ${email}.`
+        : 'Check your inbox — we just sent you a sign-in link.'
+      : state === 'no-account'
+        ? "We couldn't find an account for this email. Email jad@getzybit.com and we'll help."
+        : 'Too many sign-in attempts. Try again in a few minutes.';
+
+  return (
+    <div
+      role="status"
+      style={{
+        position: 'fixed',
+        top: 16,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        maxWidth: 560,
+        width: 'calc(100% - 32px)',
+        background: palette.bg,
+        border: `2px solid ${palette.border}`,
+        boxShadow: `4px 4px 0 ${INK}`,
+        padding: '14px 16px',
+        zIndex: 10,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 12,
+      }}
+    >
+      <div style={{ flex: 1 }}>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            color: MUTED,
+            marginBottom: 4,
+          }}
+        >
+          {palette.label}
+        </div>
+        <div style={{ fontSize: 14, lineHeight: 1.5, color: INK }}>{body}</div>
+      </div>
+      <button
+        type="button"
+        onClick={() => setDismissed(true)}
+        aria-label="Dismiss"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          fontSize: 18,
+          lineHeight: 1,
+          cursor: 'pointer',
+          color: INK,
+          padding: 4,
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function AuditStatusPageInner() {
   const params = useParams();
   const auditId = typeof params?.id === 'string' ? params.id : null;
+
+  const searchParams = useSearchParams();
+  const rawSignin = searchParams?.get('signin');
+  const signinState: SigninState =
+    rawSignin === 'sent' || rawSignin === 'no-account' || rawSignin === 'rate-limited'
+      ? rawSignin
+      : null;
+  const signinEmail = searchParams?.get('email') ?? null;
 
   const [status, setStatus] = useState<AuditStatus>('running');
   const [domain, setDomain] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [findings, setFindings] = useState<InlineFinding[] | null>(null);
+  const [signupLink, setSignupLink] = useState<string | null>(null);
 
   useEffect(() => {
     if (!auditId) return;
@@ -53,6 +147,8 @@ export default function AuditStatusPage() {
         if (cancelled) return;
 
         setDomain(data.domain);
+        if (data.findings) setFindings(data.findings);
+        if (data.signupLink) setSignupLink(data.signupLink);
 
         if (data.status === 'done') {
           setStatus('done');
@@ -99,6 +195,7 @@ export default function AuditStatusPage() {
         fontFamily: '-apple-system, BlinkMacSystemFont, Inter, sans-serif',
       }}
     >
+      <SigninBanner state={signinState} email={signinEmail} />
       {status === 'running' && (
         <div
           style={{
@@ -154,7 +251,7 @@ export default function AuditStatusPage() {
             border: `2px solid ${INK}`,
             boxShadow: `8px 8px 0 ${INK}`,
             padding: '36px 32px',
-            maxWidth: 520,
+            maxWidth: 560,
             width: '100%',
           }}
         >
@@ -180,35 +277,82 @@ export default function AuditStatusPage() {
               color: INK,
             }}
           >
-            Your report is in your inbox.
+            Your audit of {domain || 'your site'} is ready.
           </h1>
-          <p style={{ margin: '0 0 24px', fontSize: 15, lineHeight: 1.6, color: INK }}>
-            We emailed you the four priority findings — evidence, what to change, and a
-            rough dollar estimate for each. Want to walk through them live?
-          </p>
+
+          {findings && findings.length > 0 ? (
+            <>
+              <p style={{ margin: '0 0 16px', fontSize: 14, lineHeight: 1.6, color: MUTED }}>
+                Top {findings.length} {findings.length === 1 ? 'finding' : 'findings'} from this audit
+                — full report is in your inbox.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
+                {findings.map((f, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      border: `1px solid ${INK}`,
+                      padding: '14px 16px',
+                      background: CREAM,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.18em',
+                        textTransform: 'uppercase',
+                        color: MUTED,
+                        marginBottom: 6,
+                      }}
+                    >
+                      {f.severity}
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.35, color: INK }}>
+                      {f.title}
+                    </div>
+                    {f.whyItMatters ? (
+                      <p style={{ margin: '8px 0 0', fontSize: 13, lineHeight: 1.5, color: INK }}>
+                        {f.whyItMatters}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p style={{ margin: '0 0 24px', fontSize: 15, lineHeight: 1.6, color: INK }}>
+              The full report — with evidence, what to change, and a rough dollar estimate
+              for each finding — was emailed to the address you submitted. Findings only
+              appear here for the original requester.
+            </p>
+          )}
+
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            {signupLink ? (
+              <a
+                href={signupLink}
+                style={{
+                  display: 'inline-block',
+                  padding: '12px 24px',
+                  background: INK,
+                  color: CREAM,
+                  textDecoration: 'none',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  boxShadow: `4px 4px 0 ${INK}`,
+                  border: `1px solid ${INK}`,
+                }}
+              >
+                Open in your dashboard →
+              </a>
+            ) : null}
             <a
               href={bookCallUrl}
               target="_blank"
               rel="noreferrer"
-              style={{
-                display: 'inline-block',
-                padding: '12px 24px',
-                background: INK,
-                color: CREAM,
-                textDecoration: 'none',
-                fontSize: 13,
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-                boxShadow: `4px 4px 0 ${INK}`,
-                border: `1px solid ${INK}`,
-              }}
-            >
-              Book 30 minutes with us →
-            </a>
-            <Link
-              href="/audit"
               style={{
                 display: 'inline-block',
                 padding: '12px 24px',
@@ -222,9 +366,30 @@ export default function AuditStatusPage() {
                 textTransform: 'uppercase',
               }}
             >
+              Or book 30 min →
+            </a>
+            <Link
+              href="/audit"
+              style={{
+                display: 'inline-block',
+                padding: '12px 24px',
+                background: 'transparent',
+                color: MUTED,
+                textDecoration: 'underline',
+                fontSize: 13,
+                letterSpacing: '0.05em',
+              }}
+            >
               Audit another site
             </Link>
           </div>
+
+          {signupLink ? (
+            <p style={{ margin: '20px 0 0', fontSize: 12, lineHeight: 1.5, color: MUTED }}>
+              Account&rsquo;s already set up for <strong style={{ color: INK }}>{domain}</strong>.
+              The dashboard button will email you a one-tap sign-in link.
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -418,5 +583,13 @@ export default function AuditStatusPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function AuditStatusPage() {
+  return (
+    <Suspense fallback={null}>
+      <AuditStatusPageInner />
+    </Suspense>
   );
 }

@@ -300,6 +300,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     process.env.ZYBIT_BOOK_CALL_URL ?? 'https://calendly.com/asad-getzybit/30min';
 
   const report: AuditReport = {
+    auditId: audit.id,
     domain: audit.domain,
     url: audit.url,
     prospect: { email: audit.email, role: audit.role },

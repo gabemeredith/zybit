@@ -23,11 +23,14 @@ export const appUsers = pgTable(
     organizationId: text('organization_id').notNull(),
     role: text('role').notNull().default('member'), // 'member' | 'admin'
     status: text('status').notNull().default('approved'), // 'approved' | 'revoked'
+    source: text('source'), // origin tag: 'public_audit' for auto-provisioned audit users; NULL for pre-existing users.
+    sourceAuditId: text('source_audit_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     emailIdx: uniqueIndex('app_users_email_idx').on(table.email),
     orgIdx: index('app_users_org_idx').on(table.organizationId),
+    sourceAuditIdx: index('app_users_source_audit_idx').on(table.sourceAuditId),
   })
 );
 
