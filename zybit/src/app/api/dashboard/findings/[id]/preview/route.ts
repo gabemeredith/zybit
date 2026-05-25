@@ -10,7 +10,11 @@
  *
  * Response headers:
  *   X-Zybit-Annotations: <integer>  — count of overlay mods applied (0 = none)
- *   Content-Security-Policy: frame-ancestors 'self'  (+ lighthouse:3001 for synthetic)
+ *   Content-Security-Policy: locks the response down so customer-controlled
+ *     HTML cannot execute scripts on the Zybit origin if a user navigates
+ *     directly to this URL (iframe parent uses sandbox="" as belt+braces).
+ *     `script-src 'none'` blocks both <script> tags and inline event
+ *     handlers; `stripScripts` removes them at the source as well.
  */
 
 import { NextResponse } from 'next/server';
@@ -18,6 +22,25 @@ import { resolveZybitActor } from '@/lib/auth/actor';
 import { buildAnnotatedFindingHtml } from '@/lib/phase2/findings/preview';
 
 export const runtime = 'nodejs';
+
+// Locks down everything that could exfiltrate or execute on the Zybit
+// origin while still allowing the page to render visually for screenshots
+// and the click-to-expand modal. Images and fonts are allowed from any
+// origin because customer pages reference external CDNs; styles are
+// allowed inline so the injected `<style data-zybit-variant>` overlay
+// block renders.
+const PREVIEW_CSP_LOCKDOWN =
+  "default-src 'none'; " +
+  "script-src 'none'; " +
+  "object-src 'none'; " +
+  "base-uri 'none'; " +
+  "form-action 'none'; " +
+  "img-src * data: blob:; " +
+  "style-src 'self' 'unsafe-inline' *; " +
+  "font-src * data:; " +
+  "connect-src 'none'; " +
+  "media-src 'none'; " +
+  "frame-src 'none'; ";
 
 export async function GET(
   request: Request,
@@ -41,7 +64,7 @@ export async function GET(
       'content-type': 'text/html; charset=utf-8',
       'x-robots-tag': 'noindex',
       'x-zybit-annotations': String(result.annotationsCount),
-      'content-security-policy': `frame-ancestors ${frameAncestors}`,
+      'content-security-policy': `${PREVIEW_CSP_LOCKDOWN}frame-ancestors ${frameAncestors}`,
     }),
   });
 }

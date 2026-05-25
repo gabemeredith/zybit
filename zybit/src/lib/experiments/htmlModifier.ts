@@ -101,11 +101,31 @@ function safeSerialize(root: ReturnType<typeof parse>, fallback: string): string
   }
 }
 
+// Attributes whose value can execute JavaScript when the page is rendered
+// outside a sandboxed iframe. The screenshot pipeline (Browserless) renders
+// the HTML in a real Chrome with scripting enabled, so CSP alone is not
+// sufficient — these have to be stripped at the source.
+const URL_ATTRS_WITH_JS_SCHEME = new Set([
+  'href',
+  'src',
+  'action',
+  'formaction',
+  'xlink:href',
+  'background',
+  'poster',
+]);
+
 /**
- * Remove all `<script>` tags (inline + external) from an HTML string. Used
- * by preview surfaces that render less-trusted content inside an iframe —
- * we're showing visual changes, not running the customer's runtime. Fails
+ * Remove all `<script>` tags (inline + external) plus inline event-handler
+ * attributes (`onerror`, `onclick`, `onload`, …) and `javascript:` URIs from
+ * an HTML string. Used by preview surfaces that render less-trusted content
+ * — we're showing visual changes, not running the customer's runtime. Fails
  * open: parser failure returns the original markup unchanged.
+ *
+ * CSP on the preview route additionally blocks script execution in the
+ * direct-nav case; this function is the only line of defense for the
+ * screenshot path (Browserless renders the HTML in headless Chrome, where
+ * inline handlers would otherwise fire and could exfiltrate to remote URLs).
  */
 export function stripScripts(html: string): string {
   let root: ReturnType<typeof parse>;
@@ -116,6 +136,22 @@ export function stripScripts(html: string): string {
   }
   try {
     for (const el of root.querySelectorAll('script')) el.remove();
+    for (const el of root.querySelectorAll('*')) {
+      const attrs = el.attributes;
+      for (const name of Object.keys(attrs)) {
+        const lower = name.toLowerCase();
+        if (lower.startsWith('on')) {
+          el.removeAttribute(name);
+          continue;
+        }
+        if (URL_ATTRS_WITH_JS_SCHEME.has(lower)) {
+          const value = attrs[name] ?? '';
+          if (/^\s*javascript:/i.test(value)) {
+            el.removeAttribute(name);
+          }
+        }
+      }
+    }
   } catch {
     return html;
   }

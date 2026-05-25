@@ -193,4 +193,43 @@ describe('stripScripts', () => {
     expect(out).toContain('<h1>hello</h1>');
     expect(out).not.toContain('<script');
   });
+
+  it('removes inline event-handler attributes (onerror, onclick, onload, …)', () => {
+    const html =
+      '<html><body>' +
+      '<img src="x" onerror="alert(1)">' +
+      '<a href="/ok" onclick="steal()">link</a>' +
+      '<body onload="boom()">' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/\bon[a-z]+\s*=/i);
+    expect(out).not.toContain('alert(1)');
+    expect(out).not.toContain('steal()');
+    expect(out).not.toContain('boom()');
+    expect(out).toContain('<img');
+    expect(out).toContain('href="/ok"');
+  });
+
+  it('strips javascript: URIs in href/src/action/formaction', () => {
+    const html =
+      '<html><body>' +
+      '<a href="javascript:alert(1)">a</a>' +
+      '<iframe src="JaVaScRiPt:foo()"></iframe>' +
+      '<form action="javascript:bad()"><button formaction="javascript:bad2()">x</button></form>' +
+      '<a href="https://example.com/safe">safe</a>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/javascript:/i);
+    expect(out).toContain('href="https://example.com/safe"');
+  });
+
+  it('preserves legitimate inline styles and CSS classes', () => {
+    const html =
+      '<html><head><style>.x { color: red }</style></head>' +
+      '<body><div class="hero" style="color: blue">hi</div></body></html>';
+    const out = stripScripts(html);
+    expect(out).toContain('class="hero"');
+    expect(out).toContain('style="color: blue"');
+    expect(out).toContain('.x { color: red }');
+  });
 });
