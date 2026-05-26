@@ -5,6 +5,7 @@ import { saveExperimentBriefAction } from "@/app/app/findings/[id]/experiment/ac
 import type { ChangeType, InsertPosition, SelectorSuggestion } from "@/app/app/findings/[id]/experiment/page";
 import type { CssSystem } from "@/lib/phase2/snapshots/cssSystemDetector";
 import { copyHints } from "@/lib/experiments/copyHint";
+import AiAdvisorPanel, { type AppliedProposal } from "./AiAdvisorPanel";
 
 interface FormDefaults {
   experimentName: string;
@@ -249,6 +250,13 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
     debounceRef.current = setTimeout(() => validateSelector(val), 500);
   }
 
+  function applyAiProposal(proposal: AppliedProposal) {
+    setChangeType(proposal.changeType);
+    setNewValue(proposal.newValue);
+    if (proposal.insertPosition) setInsertPosition(proposal.insertPosition);
+    handleSelectorChange(proposal.selector);
+  }
+
   // Validate initial selector on mount (deferred so setState runs outside effect body)
   useEffect(() => {
     if (defaults.selector) {
@@ -298,6 +306,9 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* AI variant advisor (Zybit-145) */}
+      <AiAdvisorPanel findingId={findingId} onApply={applyAiProposal} />
+
       {/* Experiment name */}
       <div>
         <label className={SECTION_LABEL} htmlFor="experiment-name">
