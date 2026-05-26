@@ -238,6 +238,9 @@ export default function AnnotatedFindingPreview({
               src={state.url}
               alt={`Annotated view of ${pageName}`}
               className="block w-full h-auto"
+              onError={() =>
+                setState({ kind: "fallback", reason: "image_load_failed" })
+              }
             />
           </button>
         )}
@@ -291,6 +294,7 @@ export default function AnnotatedFindingPreview({
         <div
           role="dialog"
           aria-modal="true"
+          aria-labelledby={`finding-preview-modal-title-${findingId}`}
           onClick={() => setModalOpen(false)}
           className="fixed inset-0 z-[9999] flex items-center justify-center p-6 bg-black/60"
         >
@@ -299,7 +303,10 @@ export default function AnnotatedFindingPreview({
             className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden"
           >
             <div className="flex items-center justify-between px-4 py-2 border-b border-black/[0.05]">
-              <span className="text-sm font-medium text-[#111]">
+              <span
+                id={`finding-preview-modal-title-${findingId}`}
+                className="text-sm font-medium text-[#111]"
+              >
                 Live preview — {pageName}
               </span>
               <button

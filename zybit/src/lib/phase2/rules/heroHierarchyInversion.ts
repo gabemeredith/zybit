@@ -98,7 +98,7 @@ export const heroHierarchyInversion: AuditRule = {
   ): VariantModification[][] {
     const heavyRef = finding.refs?.ctaRef;
     if (!heavyRef) return [];
-    const heavy = ctx.snapshot.data.ctas.find((cta) => cta.ref === heavyRef);
+    const heavy = ctx.snapshot.data?.ctas?.find((cta) => cta.ref === heavyRef);
     if (!heavy || !heavy.cssSelector) return [];
 
     const secondary = ctx.designTokens?.secondaryColor ?? FALLBACK_SECONDARY_COLOR;
@@ -119,10 +119,10 @@ export const heroHierarchyInversion: AuditRule = {
     const heavyRef = finding.refs?.ctaRef;
     const clickedRef = finding.refs?.clickedCtaRef;
     const heavy = heavyRef
-      ? ctx.snapshot.data.ctas.find((cta) => cta.ref === heavyRef)
+      ? ctx.snapshot.data?.ctas?.find((cta) => cta.ref === heavyRef)
       : null;
     const clicked = clickedRef
-      ? ctx.snapshot.data.ctas.find((cta) => cta.ref === clickedRef)
+      ? ctx.snapshot.data?.ctas?.find((cta) => cta.ref === clickedRef)
       : null;
     if (heavy?.cssSelector) {
       mods.push({
