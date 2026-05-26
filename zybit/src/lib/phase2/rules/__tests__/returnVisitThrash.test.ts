@@ -104,7 +104,7 @@ describe('returnVisitThrash rule', () => {
     const findings = returnVisitThrash.evaluate(ctx);
     expect(findings.length).toBeGreaterThanOrEqual(1);
     expect(findings[0].impactEstimate).toBeDefined();
-    expect(findings[0].impactEstimate!.unit).toBe('USD');
+    expect(findings[0].impactEstimate!.unit).toBe('conversions');
   });
 
   it('with narrative config → thrash at 3+ visits (not 4)', () => {

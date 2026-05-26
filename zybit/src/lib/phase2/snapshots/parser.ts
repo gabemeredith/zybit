@@ -19,6 +19,7 @@ import {
   type FormCandidate,
   type FormInputItem,
   type HeadingItem,
+  type ImageItem,
   type PageLandmark,
   type PageSnapshotMeta,
   type SnapshotParser,
@@ -39,6 +40,7 @@ const MAX_HEADINGS = 100;
 const MAX_CTAS = 200;
 const MAX_FORMS = 30;
 const MAX_INPUTS_PER_FORM = 30;
+const MAX_IMAGES = 200;
 const TEXT_CAP = 200;
 
 const LANDMARK_TAGS = ['header', 'nav', 'main', 'aside', 'footer', 'dialog'] as const;
@@ -300,6 +302,30 @@ function hashFormRef(action: string, innerSnippet: string): string {
   return createHash('sha256').update(`${action}|${innerSnippet}`).digest('hex').slice(0, 16);
 }
 
+function findImages(target: HTMLElement, ctaElements: Set<HTMLElement>): ImageItem[] {
+  const elements = target.querySelectorAll('img');
+  const results: ImageItem[] = [];
+  let documentIndex = 0;
+  for (const el of elements) {
+    if (results.length >= MAX_IMAGES) break;
+    const src = el.getAttribute('src') ?? '';
+    if (!src) continue;
+    const altAttr = el.getAttribute('alt');
+    const hasAlt = altAttr !== null;
+    const alt = hasAlt ? altAttr!.trim() : null;
+    const widthAttr = el.getAttribute('width');
+    const heightAttr = el.getAttribute('height');
+    const width = widthAttr != null && /^\d+$/.test(widthAttr) ? parseInt(widthAttr, 10) : null;
+    const height = heightAttr != null && /^\d+$/.test(heightAttr) ? parseInt(heightAttr, 10) : null;
+    // ctaElements holds the img elements themselves (queried via
+    // `a img, button img`), so a direct membership check is sufficient.
+    const isCtaChild = ctaElements.has(el);
+    results.push({ src: src.slice(0, TEXT_CAP), alt, hasAlt, width, height, isCtaChild, documentIndex });
+    documentIndex++;
+  }
+  return results;
+}
+
 function findForms(root: HTMLElement, target: HTMLElement): FormCandidate[] {
   const forms = target.querySelectorAll('form');
   const results: FormCandidate[] = [];
@@ -363,6 +389,12 @@ export const parseSnapshot: SnapshotParser = async (input) => {
     const headings = findHeadings(target);
     const ctas = findCtas(target, body);
     const forms = findForms(root, target);
+    // Build a set of <img> elements that are direct children of CTA anchors/buttons
+    // so imageAltTextMissing can skip them (CTA images already handled by the CTA parser).
+    const ctaImgSet = new Set<HTMLElement>(
+      target.querySelectorAll('a img, button img') as unknown as HTMLElement[],
+    );
+    const images = findImages(target, ctaImgSet);
     // Strip <script>, <style>, and <noscript> before hashing — they often
     // carry per-request noise (nonces, csrf tokens, build hashes, analytics
     // payloads) that would otherwise drift contentHash on every fetch even
@@ -383,6 +415,7 @@ export const parseSnapshot: SnapshotParser = async (input) => {
       headings,
       ctas,
       forms,
+      images,
       contentHash: contentHashHex,
       rawByteSize: input.rawByteSize,
       parsedAt: new Date().toISOString(),

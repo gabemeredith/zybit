@@ -86,7 +86,7 @@ describe('heroHierarchyInversion rule', () => {
     const ctx = makeContext(events, [snapshot], config);
     const [f] = heroHierarchyInversion.evaluate(ctx);
     expect(f.impactEstimate).toBeDefined();
-    expect(f.impactEstimate!.unit).toBe('USD');
+    expect(f.impactEstimate!.unit).toBe('conversions');
   });
 
   it('finding id includes ruleId', () => {

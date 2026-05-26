@@ -123,7 +123,7 @@ Zybit's long-term moat is outcome-labeled data, not raw event collection. Models
 - A sentiment analyzer, voice-of-customer tool, or NLP pipeline. Not loop-advancing; pulls us into PII and consent complexity. Never build this.
 - A GitHub PR generator or code deployment system. Cool demo; zero deal-closing value for the PM buyer. Never build this.
 - A PostHog ingestion replacement or direct behavioral event SDK. Fights an incumbent on their strongest ground while abandoning our structural moat. Never build this.
-- A system with more audit rules as the answer. The bottleneck is measurement accuracy and loop closure, not rule count. The 12 rules we have are sufficient for now; more rules do not close the measurement gap.
+- A system where adding behavioral rules (event-based) closes the measurement gap. The 12 behavioral rules are frozen at that count — the bottleneck is loop closure, not behavioral rule count. New rules must be structural/snapshot-grounded (SEO, accessibility, HTML structure) and deterministic pure functions — no LLM calls in rule logic.
 - A cross-site learning system before 50+ customers with real outcome data. The priors mean nothing without the sample size. Build the single-customer loop first.
 
 ---
@@ -157,11 +157,16 @@ deliberately **one milestone**, not a platform build.
    pipeline → manual outcome entry → richer modifications → one-click
    deploy).
 
+### Recently completed
+
+6 new structural rules added (Layer E — snapshot-only, no events required): `headingHierarchyJump`, `formLabelMissing`, `imageAltTextMissing`, `linkTextGeneric`, `missingMetaDescription`, `missingCanonicalUrl`. Dollar figures removed from `impactEstimate` — revenue/ecommerce goal types now return conversion counts. User profile extended (`industry`, `role_title`, `last_audit_at`) + `app_user_rules_fired` table added. Acquisition tracking lives on `app_users.source` (from the audit funnel). Snapshot parser extended with `images[]`.
+
 ### What is deliberately not being built
 
 Sentiment analysis, GitHub PR generation, PostHog replacement / direct
-SDK, more audit rules, cross-site priors before 50 customers with
-outcomes. See "What Zybit is not" above for the rationale on each.
+SDK, more behavioral (event-based) rules, cross-site priors before 50
+customers with outcomes. See "What Zybit is not" above for the rationale
+on each.
 
 ---
 
@@ -187,7 +192,7 @@ zybit/
   src/lib/phase2/         — Canonical events, audit rules, connectors, snapshots
     connectors/posthog/   — PostHog sync + event mapping
     connectors/segment/   — Segment webhook receiver
-    rules/                — 12 audit rules (design + pain) with 193 tests
+    rules/                — 18 audit rules (design + pain + structural) with 545 tests
     snapshots/            — Static HTML parse + visual-weight analysis
     rollups/              — Event → InsightInput aggregation pipeline
   src/lib/auth/           — Invite-only magic-link auth + M2M API keys

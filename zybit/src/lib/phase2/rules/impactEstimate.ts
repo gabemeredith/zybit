@@ -2,14 +2,18 @@
  * Impact estimate helper for Phase 2 audit rules.
  *
  * Computes a finding's estimated monthly impact in the site's goal units —
- * revenue, signups, sessions, or a custom metric — from the behavioral signal
- * each rule already measures (affected rate, daily volume).
+ * signups, sessions, conversions, or a custom metric — from the behavioral
+ * signal each rule already measures (affected rate, daily volume).
  *
  * The result is honest napkin math, not a guarantee:
- *   - For revenue/ecommerce: affected sessions × baseline conversion × ARPU/AOV × 30 days
+ *   - For revenue/ecommerce: affected sessions × baseline conversion × 30 days → conversions
  *   - For growth: affected sessions × baseline conversion × 30 days
  *   - For engagement / default: affected sessions × 30 days
  *   - For custom: affected sessions × baseline conversion × customMetricValue × 30 days
+ *
+ * Dollar figures are intentionally omitted — conversion counts are always
+ * available; ARPU/AOV are not reliably set and fabricated $ numbers undermine
+ * trust in the audit. Use the conversion count to frame the finding.
  *
  * When the site has no goalConfig, we default to 'engagement' (sessions
  * affected) so every finding always shows something meaningful.
@@ -33,16 +37,6 @@ export interface ImpactInput {
   signalDescription: string;
 }
 
-function formatCurrency(value: number, currency = 'USD'): string {
-  const symbols: Record<string, string> = {
-    USD: '$', EUR: '€', GBP: '£', CAD: 'CA$', AUD: 'A$',
-  };
-  const symbol = symbols[currency.toUpperCase()] ?? currency;
-  if (value >= 10_000) return `${symbol}${Math.round(value / 1000)}k`;
-  if (value >= 1_000)  return `${symbol}${(value / 1000).toFixed(1).replace(/\.0$/, '')}k`;
-  return `${symbol}${Math.round(value)}`;
-}
-
 function formatCount(value: number): string {
   if (value >= 10_000) return `${Math.round(value / 1000)}k`;
   if (value >= 1_000)  return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}k`;
@@ -64,31 +58,17 @@ export function computeImpactEstimate(input: ImpactInput): AuditFindingImpactEst
   const affectedMonthly = safeRate * dailyVolume * 30;
 
   const baselineConv = goalConfig.baselineConversionRate ?? 0.03; // 3% default
-  const currency = goalConfig.currencyCode ?? 'USD';
 
   switch (goalType) {
-    case 'revenue': {
-      const arpu = goalConfig.arpu;
-      if (!arpu) break; // fall through to engagement
-      const convertedMonthly = affectedMonthly * baselineConv;
-      const value = Math.round(convertedMonthly * arpu);
-      const formatted = `~${formatCurrency(value, currency)}/month`;
-      const basis =
-        `${Math.round(safeRate * 100)}% affected rate × ${Math.round(dailyVolume)} ${signalDescription}/day × ` +
-        `${Math.round(baselineConv * 100)}% baseline conversion × ${currency} ${arpu} ARPU × 30 days`;
-      return { value, unit: currency, period: 'monthly', formatted, basis };
-    }
-
+    case 'revenue':
     case 'ecommerce': {
-      const aov = goalConfig.aov;
-      if (!aov) break;
       const convertedMonthly = affectedMonthly * baselineConv;
-      const value = Math.round(convertedMonthly * aov);
-      const formatted = `~${formatCurrency(value, currency)}/month`;
+      const value = Math.round(convertedMonthly);
+      const formatted = `~${formatCount(value)} conversions/month`;
       const basis =
         `${Math.round(safeRate * 100)}% affected rate × ${Math.round(dailyVolume)} ${signalDescription}/day × ` +
-        `${Math.round(baselineConv * 100)}% baseline conversion × ${currency} ${aov} AOV × 30 days`;
-      return { value, unit: currency, period: 'monthly', formatted, basis };
+        `${Math.round(baselineConv * 100)}% baseline conversion × 30 days`;
+      return { value, unit: 'conversions', period: 'monthly', formatted, basis };
     }
 
     case 'growth': {

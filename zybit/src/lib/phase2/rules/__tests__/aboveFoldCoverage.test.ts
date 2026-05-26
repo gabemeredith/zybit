@@ -72,7 +72,7 @@ describe('aboveFoldCoverage rule', () => {
     const ctxWithConfig = makeContext(ctx.events, ctx.pageSnapshots, config);
     const [f] = aboveFoldCoverage.evaluate(ctxWithConfig);
     expect(f.impactEstimate).toBeDefined();
-    expect(f.impactEstimate!.unit).toBe('USD');
+    expect(f.impactEstimate!.unit).toBe('conversions');
     expect(f.impactEstimate!.value).toBeGreaterThan(0);
   });
 
