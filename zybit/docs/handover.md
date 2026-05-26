@@ -278,20 +278,18 @@ This is already architecturally correct (the cron exists, the drift detection ex
 
 ---
 
-## 4. PR merge sequence (do this before any new feature work)
+## 4. PR merge sequence — DONE
 
-These PRs are in flight and must merge before the next feature build begins, in this exact order:
+**Status (2026-05-26 revision):** All PRs in the original merge-sequence
+plan landed on `main` earlier today. The merge-train cleanup commit is
+`785b62d`. Concretely: **#73–#82 merged**, plus follow-up sanitizer/validator
+fixes on #82 and #83. Migration numbering settled at `0022_*.sql`. There
+is no longer a sequencing constraint blocking new feature work — the only
+open PR is **#84** (this branch).
 
-| PR | Description | Status | Migration |
-|----|-------------|--------|-----------|
-| **#76** | Preview highlight context + selector auto-fill | MERGEABLE NOW | none |
-| **#77** | Audit funnel auto-provision + signed signup links | Fix renumber → merge | **0017** (was 0020) |
-| **#78** | CSP/XSS hardening (stripScripts + sandbox="" + header hardening) | Fix renumber → merge | **0018** (was 0020/0021) |
-| **#79** | JSDoc + rule annotations | Fix renumber → merge; must adopt #78's `stripScripts` | **0019** (was post-0020) |
-
-**#76 is the priority** — it unblocks the interactive visualization work (the highlight context it adds is the foundation for the overlay system described in Section 5).
-
-**Migration renumbering:** `drizzle/` filenames must be sequential. Before merging #77, rename its migration file from `0020_*.sql` to `0017_*.sql`. Same pattern for #78 (→ 0018) and #79 (→ 0019).
+PR #84 status: **paused, draft, do-not-merge** while the bug list below
+clears. The advisor + brand-DNA work (3c, 3d, AI Variant Advisor UI) is
+all on this branch. See §10 below for the per-bug status.
 
 ---
 
@@ -488,3 +486,28 @@ Per doctrine — do not attempt these even if they seem useful:
 - Cross-site priors before 50+ customers with outcome data.
 - GitHub PR generation, sentiment analysis, PostHog replacement.
 - Voice-of-customer / NLP pipelines (PII + consent complexity, not loop-advancing).
+
+---
+
+## 10. PR #84 follow-up fixes (this session — 2026-05-26 second pass)
+
+Status as of close-of-session:
+
+| PR #84 item | Status | Notes |
+|---|---|---|
+| **Bug #1** — posthog.com capture crash on >2 MB DOM | ✅ **Fixed** | `parser.ts` — every `el.text.trim()` now uses `(el.text ?? '').trim()` (`findHeadings`, `findCtas`, `directText` paths). A truncated/malformed DOM no longer poisons the audit run. |
+| **Bug #2** — silent screenshot upload failures | ✅ **Observability fixed** | `capture/screenshots.ts` now logs `capture.screenshot.skipped` (no token) and `capture.screenshot.failed` (upload error) via the structured logger under `service: 'capture-record'`. Failure is no longer silent. Root-cause trace deferred until Axiom shows where the failures cluster (need a fresh capture to see). |
+| **Bug #3** — CTA vocabulary contaminated by nav | ✅ **Fixed** | `/api/audit/public/run` + `/api/dashboard/experiments/ai-suggest` both filter `cta.landmark !== 'nav' && !== 'header'` before building `ctaVocabulary`. Audit funnel additionally ranks by `visualWeight` before taking the top 5 so hero CTAs win over footer links. |
+| **Bug #4** — advisor never proposes element-insert + never sees headings | ✅ **Fixed end-to-end** | (a) `HeadingItem` now carries `cssSelector` (parser computes via `computeCssSelector`); (b) `buildMinimalHtml` re-emits heading attrs so the validator agrees; (c) `collectAllowedSelectors` in `ai-suggest/route.ts` now includes heading selectors; (d) `aiAdvisor.ts` schema offered to Gemini lists `element-insert` with `position` + `html`; (e) validator runs `sanitizeInsertHtml` and rejects empty-after-sanitize payloads; (f) 3 new tests cover the happy path, invalid position, and all-stripped HTML. |
+| **Bug #5** — paired with #4 above | ✅ **Fixed** | Same diff. Heading selectors now in the allowlist. |
+| **Brand-DNA terminology rename** | ✅ **Fixed in email** | `auditReportEmail.ts` relabeled: "Primary"→"CTA fill", "Secondary"→"Heading", "Type scale"→"Observed type sizes", "CTA voice"→"Conversion copy". Section heading "Your brand DNA"→"What we observed". `cssSystem: null` now renders an "unknown (compiled or hashed utility classes)" row instead of being silently skipped. Storage field names (`primaryColor`/`secondaryColor`/`typeScale`) kept as-is to stay drop-in with the existing `extractDesignTokens` writer; a future storage-side rename is non-blocking. |
+
+**Still NOT in this branch (carried forward, scope-out per the PR description):**
+
+- Phase 2 — confirm-time rebinding (synthetic org → real org). Cofounder-locked spec; ~half day.
+- Multi-viewport brand-DNA. Blocked on a schema change — `phase2_site_design_snapshot` is keyed `(siteId, pathRef)` and needs a `breakpoint` column added to the primary key before mobile won't clobber desktop on upsert. Capture-layer array shape is already forward-compatible.
+- Computed-styles pipeline expansion (the prerequisite for color-contrast, tap-target, and design-token-drift rules — multi-day, depends on Browserless permanent activation).
+- New evidence rules (`colorContrastInsufficient`, `mobileTapTargetSmall`, `largeUncompressedImages`, `noSocialProof`, `formFieldCountExcessive`, `ctaAboveFoldMissing`, `redirectChain`, `missingStructuredData`) — all snapshot-grounded, ~8 rules; sequenced after the Browserless activation.
+- Resend sender domain verification (env config, not code).
+
+**`npm run verify` baseline after this session:** 74 test files, 931 tests, 0 failures; TypeScript clean; ESLint clean (4 pre-existing warnings); build clean.
