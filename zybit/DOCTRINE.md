@@ -159,7 +159,7 @@ deliberately **one milestone**, not a platform build.
 
 ### Recently completed
 
-6 new structural rules added (Layer E — snapshot-only, no events required): `headingHierarchyJump`, `formLabelMissing`, `imageAltTextMissing`, `linkTextGeneric`, `missingMetaDescription`, `missingCanonicalUrl`. Dollar figures removed from `impactEstimate` — revenue/ecommerce goal types now return conversion counts. User profile extended (`industry`, `role_title`, `last_audit_at`) + `app_user_rules_fired` table added. Acquisition tracking lives on `app_users.source` (from the audit funnel). Snapshot parser extended with `images[]`.
+19 audit rules now live (5 design + 7 pain + 1 flow + 6 structural). The 6 structural rules are Layer E — snapshot-only, no behavioral events required: `headingHierarchyJump`, `formLabelMissing`, `imageAltTextMissing`, `linkTextGeneric`, `missingMetaDescription`, `missingCanonicalUrl`. Dollar figures removed from `impactEstimate` — revenue/ecommerce goal types return conversion counts. `proposeAnnotations` rewritten across 9 rules so each preview anchor matches its prescription, and `AnnotatedFindingPreview` renders a per-rule "why this is highlighted" callout. `app_users` extended with `industry`, `role_title`, `last_audit_at` and a new `app_user_rules_fired` table scaffolds per-PM personalization (migration `0022`). `VariantModification` gained a 7th type — `element-insert` (splices new HTML at `before`/`after`/`prepend`/`append` of an anchor, sanitized by `sanitizeInsertHtml` with a tag+attr allowlist, no `<script>`/`<iframe>`/`<form>`, no inline handlers, no `javascript:`/`data:` URLs). Audit funnel hardened: cookie hex-format guard, email normalization for HMAC so Outlook safelinks survive, `AUDIT_FROM_EMAIL` precedence cleaned up, `signupLink` only minted at `status === 'done'`. CSP/XSS hardening: `stripScripts` fails closed and defeats the `javascript:` entity bypass, SSRF guard re-checks on every redirect hop, lighthouse preview origin env-gated via `LIGHTHOUSE_PREVIEW_ORIGIN`. Selector auto-fill in the experiment builder fixed (was emitting `[data-zybit-ref=…]` placeholders instead of real CSS selectors).
 
 ### What is deliberately not being built
 
@@ -192,7 +192,7 @@ zybit/
   src/lib/phase2/         — Canonical events, audit rules, connectors, snapshots
     connectors/posthog/   — PostHog sync + event mapping
     connectors/segment/   — Segment webhook receiver
-    rules/                — 18 audit rules (design + pain + structural) with 545 tests
+    rules/                — 19 audit rules (5 design + 7 pain + 1 flow + 6 structural); 72 test files in repo
     snapshots/            — Static HTML parse + visual-weight analysis
     rollups/              — Event → InsightInput aggregation pipeline
   src/lib/auth/           — Invite-only magic-link auth + M2M API keys

@@ -1,6 +1,6 @@
 # Sprint Status & Remaining Work — Sprints 0–5
 
-**Created:** 2026-05-21 · **Last audited:** 2026-05-23
+**Created:** 2026-05-21 · **Last audited:** 2026-05-26
 **Why this exists:** the single source of truth for what is genuinely shipped
 across sprints 0–5 vs. what remains. Supersedes the stale "all merged" claims
 that `AGENTS.md` once carried. Audited by file-existence + behaviour checks
@@ -20,9 +20,9 @@ variant runtime; see Sprint 3). The ROADMAP ID ranges 129–132, 138–140,
 | 1 — Demo Readiness | 8 | 5 | 1 | 2 | — |
 | 2 — Selector Robustness | 5 | 5 | 0 | 0 | — |
 | 3 — Design Capture & AI Advisor | 9 | 0 | 1 | 3 | 2 in open PR #58, 3 in open PR #66 |
-| 4 — Observability & Multi-Customer Ops | 5 | 4 | 0 | 1 | — |
+| 4 — Observability & Multi-Customer Ops | 5 | 5 | 0 | 0 | — |
 | 5 — Learn Layer 2 | 5 | 2 | 0 | 1 | 2 superseded |
-| **Total** | **39** | **22** | **3** | **7** | **7** |
+| **Total** | **39** | **23** | **3** | **6** | **7** |
 
 **The deterministic six-step loop (Understand → Watch → Identify → Propose →
 Test → Measure → Learn) is built, live-verified, and customer-ready.** What
@@ -89,7 +89,7 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 | Zybit-153 | Axiom log drain | ✅ Done — active once `AXIOM_DATASET` is set in Vercel (`AXIOM_TOKEN` confirmed working) |
 | Zybit-154 | Connector circuit breaker | ✅ Done |
 | Zybit-155 | Cron failure email alert | ✅ Done |
-| Zybit-156 | Operator org dashboard | ❌ **Not built** — no `/app/operator` route |
+| Zybit-156 | Operator org dashboard | ✅ **Shipped (2026-05-23)** — read-only `/admin/ops` (one row per org/site with plan, per-provider connector health, last event timestamp, snapshot count + age, open-finding count; sortable, filterable; reuses `ADMIN_COOKIE` gate; 19 unit tests on pure helpers) |
 | Zybit-157 | GA4 "Identify/Propose only" gate | ✅ Done |
 
 ### Sprint 5 — Learn — Layer 2
@@ -114,9 +114,8 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 | Zybit-128 | Synthetic outcome data for demo measurement view | ~0.5d | No — sales/demo aid |
 | Zybit-145 | AI Variant Advisor UI | ~1d | No — Sprint 3 surface |
 | Zybit-146 | DOM tree element picker + screenshot thumbnail | ~2d | No — Sprint 3 surface |
-| Zybit-149 | Client-side variant runtime (complex & SPA-safe changes) | ~6d | No — unlocks SPA experiments + richer variants beyond the six simple types; **without it, the Zybit-144 advisor only proposes — nothing applies its modifications to a live DOM** |
-| Zybit-156 | Operator org dashboard (`/app/operator`) | ~2d | **Soft** — needed to support customers remotely |
-| Zybit-165 | Operator calibration visibility | ~1d | No — depends on Zybit-156 |
+| Zybit-149 | Client-side variant runtime (complex & SPA-safe changes) | ~6d | No — unlocks SPA experiments + richer variants beyond the seven simple types (now including `element-insert`); **without it, the Zybit-144 advisor only proposes — nothing applies its modifications to a live DOM** |
+| Zybit-165 | Operator calibration visibility | ~1d | No — was blocked on Zybit-156; now buildable on top of `/admin/ops` |
 
 ### ⚠️ Partial — needs finishing (3 tickets)
 
@@ -176,8 +175,8 @@ The core loop is customer-ready. Remaining sequencing:
 
 1. **Merge PR #59 → PR #58** — closes the empty-selector loophole and lands the
    Sprint 3 data layer (Zybit-141/142). Migration `0016` already applied.
-2. **Zybit-156 — operator dashboard** (~2d) — the only soft customer-blocker;
-   needed to support a customer remotely.
+2. ~~**Zybit-156 — operator dashboard**~~ **Shipped 2026-05-23** — read-only
+   `/admin/ops` is live.
 3. **Sprint 1 demo polish** — Zybit-127/128 (demo seed + synthetic outcomes)
    and Zybit-124 finish, if a populated demo environment is wanted for sales.
 4. **Sprint 3 proper** — Zybit-143 / 144 / 148 shipped in PR #66 (merge after
@@ -205,7 +204,13 @@ The core loop is customer-ready. Remaining sequencing:
   variant entry). Vercel Blob tier still needed for Zybit-142 (PR #58).
 - Migration `0017_phase2_flow_graph` applied to Neon 2026-05-22 (table +
   `phase2_flow_graph_org_idx` verified live).
+- Migrations `0019_public_audits`, `0020_app_users_audit_source`,
+  `0021_findings_screenshot`, and **`0022_user_profile_and_audit_tracking`**
+  applied to Neon. `0022` adds `app_users.industry / role_title /
+  last_audit_at` + the `app_user_rules_fired` table (writers TBD;
+  scaffolding only).
 - Migration journal (`drizzle/meta/_journal.json`) is stale — it lists only
-  0000–0002 though 0000–0018 are applied (0018 ships with PR #66), and there
-  is no `drizzle.__drizzle_migrations` tracking table (migrations applied
-  manually). Reconcile before relying on `drizzle-kit migrate`.
+  0000–0002 though 0000–0022 are applied (0018 ships with PR #66 which is
+  still parked), and there is no `drizzle.__drizzle_migrations` tracking
+  table (migrations applied manually). Reconcile before relying on
+  `drizzle-kit migrate`.

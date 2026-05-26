@@ -1,6 +1,15 @@
 # Preview system — render the suggested fix without deploying it
 
 **Status:** Proposal. **Date:** 2026-05-23.
+**Partial progress (2026-05-26):** the per-rule annotation surface
+underneath this spec has filled in — PR #76 added the "why this is
+highlighted" callout to `AnnotatedFindingPreview`, and PR #82 rewrote
+`proposeAnnotations` across all 9 currently-annotated rules so each
+preview anchor matches the rule's prescription (e.g. quick-answer
+above hero for `return-visit-thrash`, FAQ above CTA for
+`help-seeking-spike`). That is the *anchor* layer Option A relies on;
+the **side-by-side iframe preview surface on the finding page** (the
+core of Phase A below) is still unbuilt.
 **Owner:** triggered by founder ask — adds the depth missing today
 ("show me what the page would look like with this fix applied")
 without unfreezing the deploy loop. Sits squarely inside PRD §3.5
@@ -118,7 +127,7 @@ decision in this spec.
 
 ### Option A — Per-rule deterministic templates (recommended)
 
-Each of the 13 audit rules ships a
+Each of the 19 audit rules ships a
 `proposeModifications(finding, context)` method that returns 1–3
 templated `VariantModification[]` options, using design tokens
 already in the snapshot.

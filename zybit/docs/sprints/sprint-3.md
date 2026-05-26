@@ -238,7 +238,7 @@ Return JSON only — no explanation, no markdown.
 ---
 
 ## Zybit-149 — Client-side variant runtime for complex & SPA-safe changes
-**Estimate:** 6d | **Owner:** —
+**Estimate:** 6d | **Owner:** — | **Status:** ❌ Not built. Schema-extension half partially landed: `element-insert` (7th variant modification type) shipped on the **server-side** proxy path in PR #82 with `sanitizeInsertHtml.ts` (tag+attribute allowlist; no `<script>`/`<iframe>`/`<form>`/inline handlers/`javascript:`/`data:`). The client runtime + SPA re-application + anti-flicker remain unbuilt.
 
 **Context:** Today the proxy applies `VariantModification[]` to the origin's
 **server-rendered HTML in-flight** (`htmlModifier.ts` → `applyModifications`).

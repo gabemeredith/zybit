@@ -13,7 +13,7 @@ Analysis engine is live. The PM-facing dashboard and A/B deployment layer are in
 What works today:
 - Full-site design audits via static page snapshots
 - PostHog and Segment behavioral data ingestion
-- 12 audit rules (design + pain) producing specific, evidence-backed findings
+- 19 audit rules (5 design + 7 pain + 1 flow + 6 structural) producing specific, evidence-backed findings
 - A/B test prescriptions with revenue impact estimates
 - Audit receipt export (JSON + Markdown)
 
@@ -53,7 +53,8 @@ Open `http://localhost:3000`. Before opening a PR: `npm run verify` (lint + Type
 | `ZYBIT_BOOK_CALL_URL` | Public URL-audit report email | Calendly link used as the report-email CTA. Falls back to a hardcoded default when unset. |
 | `NEXT_PUBLIC_APP_URL` / `APP_BASE_URL` | Public URL-audit | Base URL used to mint the confirmation link in the double-opt-in email and the `/audit/[id]` redirect target. Falls back to `https://getzybit.com`. |
 | `PUBLIC_AUDIT_SIGNING_SECRET` | Public URL-audit funnel | HMAC secret for the confirmation cookie (`zb_audit_confirmed`) and the report-email signup CTA URL. Required in production — `/api/auth/request-link-from-audit` rejects every request without it set. |
-| `AUDIT_FROM_EMAIL` | Public URL-audit | `from` field for both the confirmation email and the report email. Default is `asad@getzybit.com`; needs a verified Resend domain before mail actually delivers. |
+| `AUDIT_FROM_EMAIL` | Public URL-audit | `from` field for both the confirmation email and the report email. Default is `asad@getzybit.com`; needs a verified Resend domain before mail actually delivers. Precedence fixed so a missing value falls through cleanly. |
+| `LIGHTHOUSE_PREVIEW_ORIGIN` | Optional (dev-only) | Origin used in the Lighthouse preview CSP `frame-ancestors` directive. Validated as `scheme://host[:port]` at startup; defaults to `frame-ancestors 'self'` when unset. |
 
 To run without Postgres: `PHASE1_STORAGE_DRIVER=blob npm run dev`
 
@@ -68,9 +69,15 @@ zybit/
     lib/
       phase1/         — Readiness scoring + insights engine
       phase2/         — Audit pipeline: canonical events, rules, connectors, snapshots
+        rules/        — 19 audit rules (5 design + 7 pain + 1 flow + 6 structural Layer E:
+                        headingHierarchyJump, formLabelMissing, imageAltTextMissing,
+                        linkTextGeneric, missingMetaDescription, missingCanonicalUrl)
+                        + annotationHelpers.ts for per-rule preview anchors
       auth/           — Invite-only magic-link auth + M2M API keys
       db/             — Drizzle schema + client
-  drizzle/            — SQL migrations (apply before first run with Postgres)
+  drizzle/            — SQL migrations 0000–0022 (apply before first run with Postgres; latest:
+                        0022_user_profile_and_audit_tracking adds app_users.industry/role_title/
+                        last_audit_at + app_user_rules_fired scaffolding)
   docs/               — Technical reference
 ```
 

@@ -451,8 +451,13 @@ interface AuditRule {
     | 'hierarchy' | 'fold' | 'nav' | 'mismatch'
     // Pain-shaped
     | 'rage' | 'asymmetry' | 'abandonment' | 'help'
-    | 'hesitation' | 'bounce' | 'error' | 'thrash';
+    | 'hesitation' | 'bounce' | 'error' | 'thrash'
+    // Flow-shaped
+    | 'flow'
+    // Structural — Layer E
+    | 'structural';
   evaluate(ctx: AuditRuleContext): AuditFinding[];
+  proposeAnnotations?(finding: AuditFinding, ctx: AuditRuleContext): PreviewAnnotation[];
 }
 
 interface AuditFinding {
@@ -470,13 +475,39 @@ interface AuditFinding {
 Rules are pure, deterministic, and own their own minimum-sample
 thresholds — they return `[]` rather than firing on shaky data.
 
+`proposeAnnotations` is the preview-anchoring contract. Each
+finding-bearing rule (9 of the 19) anchors its annotations to the
+literal element its prescription names: `return-visit-thrash` places a
+quick-answer placeholder above the hero; `help-seeking-spike` anchors
+an inline FAQ above the primary CTA; `hesitation-pattern` adds a proof
+line above the CTA; `above-fold-coverage` shows the duplicate-CTA
+placement; `bounce-on-key-page` captions the first heading. The
+contract is "anchor to what the prescription says", not "outline the
+primary CTA".
+
+#### Annotation helpers (`src/lib/phase2/rules/annotationHelpers.ts`)
+
+Pure helpers shared by every `proposeAnnotations` implementation:
+
+| Helper | Purpose |
+|---|---|
+| `missingPlaceholder(kind, selector)` | Synthesize a placeholder node when the prescription proposes inserting new content (quick-answer block, inline FAQ). |
+| `annotationCaption(rule, prescription)` | Deterministic preview caption voiced from the prescription text. |
+| `outlineMod({ selector, mode })` | Outline-only annotation for "look here" anchors without DOM mutation. |
+| `snapshotHeadingSelector(snapshot, level, index)` | Resolve a stable selector for the nth heading at a given level. |
+| `nthOfTypeIndex(snapshot, ref)` | Compute the `:nth-of-type` index needed to disambiguate repeated tags. |
+
 > **Rename note (Layer D):** `DesignFinding`, `DesignRule`,
 > `DesignRuleContext`, `runDesignRules`, `ALL_DESIGN_RULES` and the
 > response field `designReport` were renamed to their `Audit*` /
 > `auditReport` equivalents in this PR. The semantics are unchanged;
 > the new naming captures the broader scope (design **and** pain).
 
-### 12.2 Design rules shipping in v1
+### 12.2 Audit rules shipping in v1
+
+Total: **19 rules** — 5 design + 7 pain + 1 flow + 6 structural (Layer E).
+
+Design rules (5):
 
 | Rule id | Trigger | Recommendation voice |
 |---|---|---|
@@ -486,7 +517,11 @@ thresholds — they return `[]` rather than firing on shaky data.
 | `mobile-engagement-asymmetry` | An onboarding step's mobile completion rate trails desktop by > 15 percentage points (≥ 50 mobile starts) | *"Mobile users complete `Verify email` at 18% vs 41% on desktop — a 23-point gap across 1,240 mobile starts. Touch targets and layout likely break at small viewports."* |
 | `nav-dispersion` | Site-wide nav clicks: ≥ 50 clicks across ≥ 6 destinations with Gini < 0.3 | *"1,820 nav clicks across 9 destinations with Gini 0.18. Click distribution is essentially uniform — the IA isn't telling visitors where to start. Demote 5 entries into a secondary menu."* |
 
-### 12.3 Output
+### 12.3 Impact estimate output shape
+
+`impactEstimate` (in `src/lib/phase2/rules/impactEstimate.ts`) attaches a deterministic, configurable estimate to each finding. For revenue and ecommerce `goalType`s the output is now **conversion counts** (`~N conversions/month`), not currency amounts. Dollar figures were removed because most sites have not configured ARPU and synthetic dollar amounts were misleading PMs. Findings still carry a numeric `expectedLiftPct` and a confidence interval — only the formatted label changed.
+
+### 12.4 Output
 
 `POST /api/phase2/insights/run` now returns an `auditReport` field
 (formerly `designReport` — see rename note above):
@@ -512,7 +547,7 @@ elements, quoting class signals, citing share/click counts, quoting
 actual error messages and form field labels — so the audit reads like a
 critique instead of a dashboard.
 
-### 12.4 Deferred design rules (future)
+### 12.5 Deferred design rules (future)
 
 - `landing-promise-mismatch` — campaign tokens vs page H1/OG tokens
 - `cta-form-mismatch` — high-intent CTA leading into long form
@@ -605,7 +640,54 @@ then `confidence`.
 
 ---
 
-## 15. Out of scope for Phase 2 (deferred)
+## 15. Structural rules — Layer E (snapshot-only)
+
+Layer E rules read only `ctx.pageSnapshotsByPath`. They ignore
+behavioral events entirely, which means they fire on any site that
+has page snapshots — even with zero events ingested. This is the
+activation surface for the public URL-audit lead magnet and for new
+sites still in connector setup.
+
+| Rule id | Trigger |
+|---|---|
+| `heading-hierarchy-jump` | Headings skip levels (e.g., `h1` → `h3`). |
+| `form-label-missing` | Form input has no associated `<label>` and no `aria-label`. |
+| `image-alt-text-missing` | `<img>` has no `alt` attribute and no `aria-label`. |
+| `link-text-generic` | Anchor text matches frequency-only generic patterns (`Learn more`, `Click here`, `Read more`, `Get started`, etc.). |
+| `missing-meta-description` | `<head>` lacks `<meta name="description">`. |
+| `missing-canonical-url` | `<head>` lacks `<link rel="canonical">`. |
+
+Behavioral (event-based) rules are frozen at 12 (5 design + 7 pain).
+New rules must follow the Layer E pattern: deterministic, snapshot-
+grounded, no LLM calls, no invented numbers.
+
+---
+
+## 16. Variant modification types
+
+`VariantModification` (`src/lib/experiments/types.ts`) supports **7
+modification types**:
+
+| Type | Purpose |
+|---|---|
+| `text-replace` | Replace the text content of an element. |
+| `attribute-set` | Set or update an attribute on an element (allowlisted attribute names). |
+| `css-inject` | Inject a `<style>` block scoped to the page. |
+| `style-swap` | Add/remove class tokens on an element. |
+| `element-hide` | Hide an element. |
+| `element-reorder` | Reorder siblings within a parent. |
+| `element-insert` | Splice new HTML next to an anchor; `insertPosition` ∈ `'before' \| 'after' \| 'prepend' \| 'append'`. |
+
+`element-insert` payloads pass through
+`src/lib/experiments/sanitizeInsertHtml.ts` — a tag + attribute
+allowlist that drops `<script>`, `<iframe>`, and `<form>`, strips
+`on*` handlers, rejects `javascript:` and `data:` URLs, fails closed
+on parse error, and enforces a max input size cap. The sanitizer
+runs at both the brief-validation and runtime-modifier boundaries.
+
+---
+
+## 17. Out of scope for Phase 2 (deferred)
 
 - Other providers (Shopify Admin, Segment write-key receiver, GA4 BigQuery
   export). They reuse the same `Phase2Connector`-shaped path.

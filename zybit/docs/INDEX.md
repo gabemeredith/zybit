@@ -34,8 +34,9 @@ points back to it.
 1. [`../AGENTS.md`](../AGENTS.md) — codebase map, conventions, build-state table
 2. [`ARCHITECTURE.md`](./ARCHITECTURE.md) — per-component file paths, schema, design decisions
 3. [`PHASE2_EVIDENCE_MODEL.md`](./PHASE2_EVIDENCE_MODEL.md) — canonical event schema + audit-rule contract
-4. [`phase2-rules-architecture.md`](./phase2-rules-architecture.md) — how the 13 rules compose
+4. [`phase2-rules-architecture.md`](./phase2-rules-architecture.md) — how the 19 rules compose
 5. [`BACKLOG.md`](./BACKLOG.md) — prioritized epics + ticket IDs
+6. [`handover.md`](./handover.md) — engineering handover for the audit engine + interactive visualization roadmap
 
 **…operating Zybit (cron alerts, customer escalations, live debugging)** —
 1. [`CAPTURE_RUNBOOK.md`](./CAPTURE_RUNBOOK.md) — headless-capture (Browserless) ops
@@ -77,7 +78,8 @@ points back to it.
 |---|---|
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Per-component file paths, schema, design decisions (the *technical* reference; status lives in AGENTS.md) |
 | [`PHASE2_EVIDENCE_MODEL.md`](./PHASE2_EVIDENCE_MODEL.md) | Canonical event schema + audit-rule contract — for integrators and design-partner engineers |
-| [`phase2-rules-architecture.md`](./phase2-rules-architecture.md) | How the 13 audit rules compose; modularity + scalability analysis |
+| [`phase2-rules-architecture.md`](./phase2-rules-architecture.md) | How the 19 audit rules compose; modularity + scalability analysis |
+| [`handover.md`](./handover.md) | Engineering handover for the audit engine + interactive visualization roadmap (impact-estimate revamp, image inventory, user profile schema) |
 
 ### Operator runbooks
 

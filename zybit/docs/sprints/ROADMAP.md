@@ -15,17 +15,18 @@
 | [0](_archive/sprint-0.md) | Verification & Hardening | 1w | 🟢 6/7 done (Zybit-118 partial) | Core loop confirmed live; Stripe verified; auth protected |
 | [1](_archive/sprint-1.md) | Demo Readiness | 1.5w | 🟢 5/8 done (124 partial; 127/128 not built) | Full demo script runnable without ad-hoc fixes |
 | [2](_archive/sprint-2.md) | Selector Robustness | 1.5w | ✅ 5/5 complete | Selector staleness detected, PM notified before silent breakage |
-| [3](sprint-3.md) | Design Capture & AI Variant Advisor | 3w | 🟡 0/9 (141/142 in PR #58; 143–146/148/149 not built) | PM goes from finding → AI-drafted variant → launch in <10 min |
-| [4](sprint-4.md) | Observability & Multi-Customer Ops | 1w | 🟢 4/5 done (156 not built) | First paying customer supportable remotely |
+| [3](sprint-3.md) | Design Capture & AI Variant Advisor | 3w | 🟡 0/9 (141/142 in PR #58; 143/144/148 in parked PR #66; 145/146/149 not built; 147 partial) | PM goes from finding → AI-drafted variant → launch in <10 min |
+| [4](sprint-4.md) | Observability & Multi-Customer Ops | 1w | ✅ 5/5 done (Zybit-156 shipped 2026-05-23) | First paying customer supportable remotely |
 | [5](sprint-5.md) | Learn — Layer 2 | 2w | 🟢 2/5 done; 161/162 superseded; 165 not built | Per-site rule thresholds calibrated from outcome history |
 
 **Total: ~10w sprint time + 1–2w customer incident slack = 11–13w to customer 3.**
 
-> **Audit (2026-05-22):** 39 tickets — 22 done, 3 partial, 10 not built, 2 in
-> open PR #58, 2 superseded. The deterministic six-step loop is built and
-> live-verified. Remaining work is concentrated in Sprint 3 (the AI/design
-> surface, now including Zybit-149 — a client-side variant runtime for complex
-> & SPA-safe changes) plus the Zybit-156 operator dashboard. Per-ticket detail
+> **Audit (2026-05-26):** 39 tickets — 23 done, 3 partial, 6 not built, 2 in
+> open PR #58, 3 in parked PR #66, 2 superseded. The deterministic six-step
+> loop is built and live-verified. Zybit-156 (operator dashboard) shipped
+> 2026-05-23. Remaining work is concentrated in Sprint 3 (the AI/design
+> surface, including Zybit-149 — a client-side variant runtime for complex &
+> SPA-safe changes), all deferred per the contracted PRD. Per-ticket detail
 > and the definitive remaining-work list: [`REMEDIATION.md`](REMEDIATION.md).
 
 ---
@@ -51,7 +52,7 @@ The proxy is not deprecated.
 
 **Experiment collision:** Overlap allowed by default. A second experiment on the same page triggers a mandatory acknowledgment warning ("results may be confounded if both target the same element"). `forge_experiments.overlappingExperimentIds: string[]` stored on launch so outcomes can be flagged. `exclusionGroup` mutual exclusion is a later feature (deferred until customers run enough concurrent experiments to need it).
 
-**AI in the loop:** AI is used only in the Propose phase (Sprint 3). Identification stays fully deterministic — 12 rules, pure functions, no model. AI Variant Advisor input is constrained to real selectors from the snapshot; output is constrained to the `VariantModification[]` schema. PM approves before anything deploys. AI never acts autonomously.
+**AI in the loop:** AI is used only in the Propose phase (Sprint 3). Identification stays fully deterministic — 19 rules (12 behavioral + 1 flow-aware + 6 structural Layer E shipped in PR #80), pure functions, no model. AI Variant Advisor input is constrained to real selectors from the snapshot; output is constrained to the `VariantModification[]` schema (now seven types including `element-insert`, PR #82). PM approves before anything deploys. AI never acts autonomously.
 
 **GA4:** Aggregate-grain only. Documented as Identify/Propose support only — not joinable to visitor assignments for measurement. Full loop requires PostHog or Segment.
 
@@ -87,7 +88,7 @@ Demo flow:
 - Sentiment analysis
 - GitHub PR generation or source-code modification
 - Own event SDK / PostHog replacement
-- More than 12 audit rules
+- More than 12 behavioral (event-based) audit rules — frozen at 12; new rules must be snapshot-grounded (structural/SEO/accessibility) and deterministic
 - Autonomous deployment (PM approval gate is non-negotiable)
 - Cross-site priors before 50+ customers (Layer 3 Learn)
 

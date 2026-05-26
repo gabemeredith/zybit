@@ -126,7 +126,7 @@ their own product.
 
 ## 2. What it produces
 
-12 of the 13 audit rules fire from a static crawl — the
+18 of the 19 audit rules fire from a static crawl — the
 flow-aware rule (`flow-inter-step-dropoff`) needs session data
 and stays gated to connected customers. **That is a feature, not
 a limitation:** it gives us a concrete upsell story
@@ -138,6 +138,9 @@ Rules that fire from a static crawl include:
   nav-dispersion, dead-state, snapshot-drift)
 - The 7 pain rules that read from rule-specific signals derived
   from the page itself (not from user behaviour)
+- The 6 Layer E structural rules (heading-hierarchy-jump,
+  form-label-missing, image-alt-text-missing, link-text-generic,
+  missing-meta-description, missing-canonical-url) shipped in PR #80
 
 Lighthouse URL-audit against posthog.com produced findings
 spanning hero-hierarchy-inversion, rage-click-target, and
@@ -486,6 +489,16 @@ minimum charge on failure, Browserless screenshot uploaded to Vercel
 Blob, optional Gemini vision caption, `PUBLIC_AUDIT_ENABLED` kill
 switch. Turnstile not yet integrated — the email gate is the primary
 abuse control for now.
+
+**Funnel hardening shipped on top (PR #77):** strict hex-format guard
+on the `zb_audit_confirmed` cookie before HMAC verify (rejects
+mutated values before the constant-time compare); email normalization
+(lowercase + trim) applied before HMAC so Outlook safelink rewrites
+survive the round trip; `AUDIT_FROM_EMAIL` env precedence fixed so a
+missing value falls through cleanly; `signupLink` only minted when
+`status === 'done'` (no premature dashboard hand-off); email param
+dropped from the post-confirm redirect URL; auto-provision failures
+now log structured errors instead of silently swallowing.
 
 5. `public_audits` schema + migration + `audit_verification_tokens`
    sibling table (one-shot 24h TTL tokens for double opt-in).

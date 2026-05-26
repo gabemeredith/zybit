@@ -213,6 +213,16 @@ The analysis engine is built. This epic builds the product surface that lets a P
 
 ---
 
+## New items (revealed by recent merges)
+
+| ID | Story | Notes | Tier |
+|----|-------|-------|------|
+| **Zybit-170** | Wire writers for `app_user_rules_fired` — table is scaffolded (id, user_id, org_id, site_id, finding_id nullable, rule_id, fired_at, created_at; 4 indexes) but has no writers. Insert a row each time a finding is emitted for a signed-up user so personalization/onboarding analytics has a real signal to read. | Table + migration `0022_user_profile_and_audit_tracking.sql` already applied to Neon. Writer belongs at the finding-emit boundary in `runAuditRules`, gated on `app_users` membership for the org/site. | P1 |
+| **Zybit-171** | `link-text-generic` — extend frequency-only patterns. The `Get started` fix proved the pattern list is incomplete; audit real customer pages for additional generic phrases and add them to the rule's matcher. | Snapshot-only rule, no event dependency. Keep deterministic — no LLM phrase generation. | P2 |
+| **Zybit-172** | Document the structural-rules architecture sub-pattern — Layer E rules are snapshot-only and ignore `ctx.events`. Write a short architecture note in `docs/` covering: when to add a structural vs. behavioral rule, the snapshot-grounding requirement, the `proposeAnnotations` contract, and the lead-magnet/zero-event activation surface they enable. | Currently the pattern is only described in `phase2-rules-architecture.md` §1 and `PHASE2_EVIDENCE_MODEL.md` §15. A dedicated mini-doc would be the canonical reference for new rule contributors. | P2 |
+
+---
+
 ## Out of scope — never build
 
 - Sentiment analysis or voice-of-customer NLP

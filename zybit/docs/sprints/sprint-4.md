@@ -74,7 +74,19 @@
 ---
 
 ## Zybit-156 — Operator org dashboard
-**Estimate:** 2d | **Owner:** —
+**Estimate:** 2d | **Owner:** — | **Status:** ✅ Shipped (2026-05-23)
+
+**Shipped notes — deviations from the spec below, justified:**
+- Route is `/admin/ops`, not `/app/operator`. Reuses the existing `ADMIN_COOKIE`
+  gate rather than introducing a new `role: 'operator'` field on `app_users`.
+- One row per org/site with plan, **per-provider** connector health dot +
+  consecutive-failure count + last error code, last event timestamp, snapshot
+  count + age, open-finding count. Sortable by urgency / last-event / org;
+  filterable by org or domain.
+- Pure helpers (`formatTimeAgo`, `connectorHealth`, `siteHealth`) covered by
+  19 unit tests.
+- No customer-data exposure (no findings text, no events) — operational
+  health only, per the spec.
 
 **What:** A protected `/app/operator` route (requires `role: 'operator'` on the user record, set manually in DB for now) showing all orgs, site counts, sync health, and experiment states at a glance.
 

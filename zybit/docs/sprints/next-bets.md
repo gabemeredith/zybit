@@ -14,14 +14,18 @@ quarterly anchoring exercise.
 
 ## 1. Public URL-audit lead magnet 🔴 highest leverage
 
-> **Phases A + B shipped 2026-05-23 (PR #69).** `/audit` page,
-> double-opt-in confirmation, real `runUrlAudit` pipeline, SSRF
+> **Phases A + B shipped 2026-05-23 (PR #69); Phase D + audit→product
+> funnel + funnel hardening all shipped (PR #77 + earlier).** `/audit`
+> page, double-opt-in confirmation, real `runUrlAudit` pipeline, SSRF
 > re-validation at run time, multi-dimensional rate limits + $25/day
 > budget cap, screenshot via Browserless + Vercel Blob, optional
-> Gemini vision caption. **Positioning reversed:** teaser-on-site +
-> full report by email, not anonymous on-page results. See
-> `url-audit-lead-magnet.md` §0 + §6. Phase C (founder approval queue)
-> remains deferred.
+> Gemini vision caption. **Funnel hardening (PR #77):** strict hex-
+> format guard on the confirmation cookie before HMAC verify, email
+> normalization (lowercase + trim) so Outlook safelinks survive,
+> `AUDIT_FROM_EMAIL` precedence fix, `signupLink` only minted when
+> `status === 'done'`, email param dropped from the post-confirm
+> redirect, auto-provision failures log structured errors. Phase C
+> (founder approval queue) remains deferred.
 
 **Why first:** Solves the Day-0 friction (the PostHog setup wall)
 without removing it from the upsell story. The engine already
@@ -57,6 +61,15 @@ verification panel, proxy moved to settings. What remains:
 ---
 
 ## 2a. AI Variant Advisor — refuse out-of-scope findings 🔴 trust-blocker
+
+> **Docs guard shipped (PR #82):** the `proposeAnnotations` rewrite across
+> all 9 annotated rules + `AnnotatedFindingPreview`'s per-rule "why this
+> is highlighted" callout (PR #76) bake the rule-specific prescription
+> into the preview surface, so structural-fix rules visibly anchor to a
+> structural placeholder (quick-answer above hero, FAQ above CTA, etc.)
+> instead of degrading to a CTA hint. The Advisor `ruleId` opt-out
+> (option 1 below) remains the right next code change.
+
 
 **Surfaced 2026-05-24** by PM-driving a `return-visit-thrash` finding on
 a banking `/checking-accounts` page. The Advisor proposed a CTA copy
@@ -159,10 +172,11 @@ existing `outcomes` repository.
 
 **Why here, not higher:** The variant vocabulary today
 (`text-replace`, `css-inject`, `hide`, `show`, `attribute-set`,
-`element-reorder`) is sufficient for ~80% of CRO experiments. The
-remaining 20% (custom event handlers, element injection, sequence
-animations) is real but only matters once a customer has pulled the
-deploy loop and asked for it.
+`element-reorder`, and now `element-insert` shipped in PR #82 with an
+allowlist-based `sanitizeInsertHtml.ts`) is sufficient for ~80% of CRO
+experiments. The remaining 20% (custom event handlers, sequence
+animations, SPA-safe re-application post-hydration) is real but only
+matters once a customer has pulled the deploy loop and asked for it.
 
 The proxy works on server-rendered HTML; the client runtime is the
 piece that makes variants survive React hydration. Until a customer
@@ -231,6 +245,19 @@ tools that email them. ~1 dev-day for v1, lots of room to tune.
 The operator dashboard shipped (Zybit-156) but there is no document
 that says "when a customer DMs you 'Zybit hasn't shown me anything',
 do these 5 things." Write it. ~1 hour. Live in `docs/sprints/`.
+
+### F. Wire `app_user_rules_fired` writers 🟡 scaffolding only
+
+Migration `0022` shipped (PR #80) `app_user_rules_fired` (with `app_users.industry`,
+`role_title`, `last_audit_at`) — schema and indexes exist on Neon. **No
+writers yet.** The natural emit point is per signed-up user at
+finding-emit time inside the insights pipeline (one row per
+(user, finding) tuple); blocked on deciding the write granularity (every
+rerun? first-fire-only? deduped per audit cycle?) and the join from
+`organizationId` → eligible `app_users`. Until writers land, downstream
+personalization, weekly digest targeting, and industry-level rule
+benchmarking have no source data. ~1 dev-day once the granularity call
+is made.
 
 ---
 

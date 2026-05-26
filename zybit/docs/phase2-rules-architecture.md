@@ -12,6 +12,7 @@ export interface AuditRule {
   category: AuditFindingCategory;
   name: string;
   evaluate(ctx: AuditRuleContext): AuditFinding[];
+  proposeAnnotations?(finding: AuditFinding, ctx: AuditRuleContext): PreviewAnnotation[];
 }
 ```
 
@@ -19,18 +20,31 @@ Key design properties:
 - `evaluate` is a **pure function**: same inputs → same outputs, no I/O.
 - Rules **never throw** on missing data; they return `[]`.
 - Each rule owns its own minimum-sample threshold so callers run them blindly.
+- `proposeAnnotations` is also pure. Each finding-bearing rule anchors its preview annotations to the literal element its prescription names — `return-visit-thrash` anchors a quick-answer placeholder above the hero; `help-seeking-spike` anchors a FAQ above the primary CTA; `above-fold-coverage` shows the duplicate-CTA placement; `bounce-on-key-page` captions the first heading; etc. The contract is "anchor to what the prescription actually says", not "outline the primary CTA".
+
+### Shared annotation helpers (`src/lib/phase2/rules/annotationHelpers.ts`)
+
+Pure helpers used by every `proposeAnnotations` implementation:
+
+- `missingPlaceholder(kind, selector)` — synthesizes a placeholder element node when the prescription proposes inserting new content (e.g., the quick-answer block, the inline FAQ).
+- `annotationCaption(rule, prescription)` — formats the deterministic caption shown in the PM preview, voiced from the prescription text.
+- `outlineMod({ selector, mode })` — outline-only annotation mod for "look here" anchors without DOM mutation.
+- `snapshotHeadingSelector(snapshot, level, index)` — resolves a stable selector for the nth heading at a given level.
+- `nthOfTypeIndex(snapshot, ref)` — computes the `:nth-of-type` index needed to disambiguate repeated tags.
 
 ### Rule registration
 
-Rules are imported and collected in `src/lib/phase2/rules/index.ts`:
+Rules are imported and collected in `src/lib/phase2/rules/index.ts` — **19 rules total**, in four shapes (5 design + 7 pain + 1 flow + 6 structural):
 
 ```ts
 export const ALL_AUDIT_RULES: readonly AuditRule[] = [
+  // Design (5)
   heroHierarchyInversion,
   aboveFoldCoverage,
   rageClickTarget,
   mobileEngagementAsymmetry,
   navDispersion,
+  // Pain (7)
   errorExposure,
   formAbandonment,
   bounceOnKeyPage,
@@ -38,10 +52,23 @@ export const ALL_AUDIT_RULES: readonly AuditRule[] = [
   hesitationPattern,
   returnVisitThrash,
   cohortPainAsymmetry,
+  // Flow (1)
+  flowInterStepDropoff,
+  // Structural — Layer E (6, snapshot-only)
+  headingHierarchyJump,
+  formLabelMissing,
+  imageAltTextMissing,
+  linkTextGeneric,
+  missingMetaDescription,
+  missingCanonicalUrl,
 ];
 ```
 
 `runAuditRules` iterates this array, catches per-rule exceptions, and records diagnostics. No global mutable state is touched.
+
+### Layer E — structural rules (snapshot-only)
+
+The six structural rules (`headingHierarchyJump`, `formLabelMissing`, `imageAltTextMissing`, `linkTextGeneric`, `missingMetaDescription`, `missingCanonicalUrl`) are **snapshot-only**: they consume `ctx.pageSnapshotsByPath` and ignore `ctx.events`. They fire on any site that has page snapshots, even with zero behavioral data — which makes them the activation surface for the public URL-audit lead magnet and for new sites still in connector setup. Behavioral (event-based) rules are frozen at 12; new rules must follow the structural-rules pattern (deterministic, snapshot-grounded, no LLM calls, no invented numbers).
 
 ### Adding a new rule (steps)
 
@@ -97,8 +124,10 @@ This makes rules trivially testable: pass a mock `AuditRuleContext`, assert on t
 | `nav-dispersion` | Single pass over nav CTA clicks | O(n) |
 | `rage-click-target` | Single pass, group by target key | O(n) |
 | `return-visit-thrash` | `groupSessions` + path-count iteration | O(n) |
+| `flow-inter-step-dropoff` | Single pass over flow-graph edges | O(n) |
+| Layer E structural (×6) | Per-snapshot DOM walk; ignores `ctx.events` | O(snapshot size) |
 
-All rules are **O(n)** in event count. The total pipeline cost is `O(n × rules)` = `O(12n)` = `O(n)`.
+All behavioral rules are **O(n)** in event count. Structural rules are bounded by snapshot size, not event count. Total pipeline cost remains linear: `O(n × rules)` = `O(19n)` = `O(n)`.
 
 ### Memory
 
@@ -123,7 +152,7 @@ The `pageSnapshotsByPath` Map is O(1) per lookup — not a scaling concern.
 - `hesitationPattern`
 - `returnVisitThrash`
 
-Each call is O(n). With 12 rules and 4 calling `groupSessions`, the session grouping work is done 4× instead of 1×. At 100k events this is ~4× unnecessary work.
+Each call is O(n). With 19 rules and 4 calling `groupSessions`, the session grouping work is done 4× instead of 1×. At 100k events this is ~4× unnecessary work. (Layer E structural rules do not touch events, so the redundancy ratio is unchanged by their addition.)
 
 **`windowDaysFromTimeWindow` called per-rule**: Every rule that needs the window duration calls `windowDaysFromTimeWindow(ctx.window)` independently. This is O(1) but structurally redundant — it's a pure derivation of `ctx.window`.
 
@@ -148,7 +177,7 @@ const results = await Promise.all(
 );
 ```
 
-On a 100ms p50 rule, sequential = ~1200ms; parallel = ~100ms. This is a trivial change for a meaningful latency reduction.
+On a 100ms p50 rule, sequential = ~1900ms across 19 rules; parallel = ~100ms. This is a trivial change for a meaningful latency reduction.
 
 ---
 

@@ -33,7 +33,7 @@ They should be done before the first pilot signup and re-verified once a week.
 |---|------|--------|-------|
 | B1 | **Flow-graph pre-flight check** | ✅ Built (this session) | `computeFlowPreflight` + `GET /api/phase2/sites/:siteId/flow-preflight` + `runFlowPreflightAction`. PRD §5 dependency now answerable per customer. |
 | B2 | **Onboarding redesign** — drop the proxy step, hook pre-flight into the analytics step | ⬛ Scoped, awaiting approval | See `onboarding-redesign.md`. About 1 dev-day. |
-| B3 | **Operator dashboard** (Zybit-156) | ⬛ Scoped, not built | See `operator-dashboard.md`. About 1.5 dev-days. MVP read-only. |
+| B3 | **Operator dashboard** (Zybit-156) | ✅ Shipped 2026-05-23 | `/admin/ops` read-only — per-org/site plan, connector health, last event, snapshot age, open-finding count. Sortable/filterable. Reuses `ADMIN_COOKIE` gate. See `operator-dashboard.md`. |
 | B4 | **PR #66 (AI Variant Advisor backend)** | 🟡 Parked | See `sprint-3-deferred.md`. Not on pilot critical path. |
 | B5 | **Layer 2 calibration accumulates real outcomes** | ⬛ Inert until data | Works mechanically. Becomes meaningful at 3+ concluded experiments per rule per site — pilot's natural cadence. No code action. |
 
@@ -113,8 +113,8 @@ Action items for the founder, not engineering:
 3. Customer enters URL → connects PostHog → **pre-flight verification
    confirms data is flowing**.
 4. Customer skips/completes revenue framing → lands in `/app/flow`.
-5. Founder watches `/app/admin/ops` (B3, when built) to confirm the first
-   sync completed; or queries Neon for now.
+5. Founder watches `/admin/ops` (B3, shipped 2026-05-23) to confirm the first
+   sync completed.
 6. First-insight email goes out automatically when the first finding lands.
 7. Founder follows up at 24h, 72h, 7d — these are the touchpoints that
    determine whether the pilot succeeds, not the code.

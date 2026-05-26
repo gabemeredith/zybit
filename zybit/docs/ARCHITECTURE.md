@@ -96,7 +96,7 @@ Events are normalized to a canonical schema (`CanonicalEvent v2`) with deduplica
 
 **Structural rules (6) — snapshot-only, no behavioral events required:** heading-hierarchy-jump, form-label-missing, image-alt-text-missing, link-text-generic, missing-meta-description, missing-canonical-url
 
-Each finding includes: severity, confidence, priority score, structured evidence array, text prescription (what to change, why, variant description), and conversion impact estimate. Dollar figures are intentionally absent — impact expressed as conversion counts to prevent fabricated revenue projections when site ARPU is not configured.
+Each finding includes: severity, confidence, priority score, structured evidence array, text prescription (what to change, why, variant description), conversion impact estimate, and (for the 9 rules that annotate the preview) a `proposeAnnotations(ctx, finding)` function whose output anchors each preview callout to the element the prescription is talking about — return-visit-thrash anchors a quick-answer placeholder above hero, help-seeking-spike anchors FAQ above the CTA, hesitation-pattern anchors a proof line above the CTA, above-fold-coverage shows the duplicate-CTA placement, bounce-on-key-page captions the first heading, etc. Dollar figures are intentionally absent — impact expressed as conversion counts to prevent fabricated revenue projections when site ARPU is not configured (revenue/ecommerce goal types now emit conversion counts, not currency amounts).
 
 ### Flow-Graph Advisory (`src/lib/phase2/flow/`)
 
@@ -152,6 +152,8 @@ Public Day-0 funnel: any prospect submits URL + work email + role, gets a teaser
 
 **Kill-switch:** `PUBLIC_AUDIT_ENABLED=0` returns 503 from the submit route without a redeploy.
 
+**Funnel hardening:** the `zb_audit_confirmed` cookie now enforces a strict hex-format guard before HMAC verify (mutated values rejected before constant-time compare); the HMAC over `email|auditId` normalizes email (lowercase + trim) on both mint and verify so Outlook safelink rewrites survive; `AUDIT_FROM_EMAIL` env precedence is now unambiguous (missing value falls through cleanly); `signupLink` is only minted when `status === 'done'` so forwarding the `/api/audit/public/status` URL gives a hollow ready state with no PII; the email param is dropped from the post-confirm redirect; auto-provision failures (org/`appUsers` insert) log structured errors instead of being silently swallowed.
+
 **Honest gaps vs spec §4a:** Cloudflare Turnstile not integrated (email gate is the primary abuse control); no OWASP SSRF unit-test suite; 90-day TTL cron + privacy policy + opt-out path not built; IP stored plaintext (spec called for hashed); no idempotent-resubmit / suppression list; Axiom + Cronitor wiring not yet attached. Phase C founder approval queue + Phase D marketing surface deferred.
 
 ### Dashboard (`src/app/dashboard/`)
@@ -185,6 +187,8 @@ Single Postgres database (Neon serverless) via Drizzle ORM.
 | `zybit_experiments` | Experiment metadata and results |
 | `zybit_site_meta` | Site operational metadata (MRR, AOV, session counts) |
 | `zybit_api_keys` | M2M API keys (hashed) |
+| `app_users` | PM account rows. Columns now include `industry`, `role_title`, `last_audit_at` alongside `source` / `source_audit_id` from the audit funnel — migration `0022` |
+| `app_user_rules_fired` | Per-user per-rule firing log (`user_id`, `org_id`, `site_id`, `finding_id`, `rule_id`, `fired_at`); 4 indexes; writers TBD, scaffolds future onboarding/personalization analytics — migration `0022` |
 
 ### Test — Variant Delivery (`src/lib/experiments/`)
 
@@ -384,9 +388,9 @@ Implementation:
 **Why:** Removes the single biggest trust blocker in every demo. A PM who cannot see the change before it goes live will not approve it.
 
 **Implementation:**
-`GET /api/preview/[experimentId]` — fetch origin HTML, apply `VariantModification[]` as `<style>` injections and DOM mutations, return modified HTML for iframe embed. No external dependency.
+`GET /api/preview/[experimentId]` — fetch origin HTML, apply `VariantModification[]` as `<style>` injections and DOM mutations, return modified HTML for iframe embed. No external dependency. CSP `frame-ancestors` defaults to `'self'`; the lighthouse synthetic-site harness overrides this via the optional `LIGHTHOUSE_PREVIEW_ORIGIN` env var (validated as `scheme://host[:port]`) so a dev/lighthouse origin can frame the preview without weakening the production default. `stripScripts` (the inbound HTML sanitiser) fails closed and now defeats the `javascript:` HTML-entity bypass, strips `data:` URIs, frame-creating elements (`<iframe>`/`<frame>`/`<frameset>`/`<object>`/`<embed>`), and `<meta http-equiv="refresh">`. The SSRF guard re-runs on every redirect hop and the `phase1Sites` lookup is tenant-scoped. The screenshot route returns 502 (not 200) on render fail.
 
-Dashboard: side-by-side iframe toggle (control | variant) on experiment detail page.
+Dashboard: side-by-side iframe toggle (control | variant) on experiment detail page. `AnnotatedFindingPreview` overlays a per-rule "why this is highlighted" callout next to each annotation anchor (driven by the 9-rule `proposeAnnotations` output above).
 
 ---
 
@@ -519,7 +523,7 @@ Customer Site ──→ Zybit Snapshot Fetcher ──→ Page DNA          │
                                      │  + Past Outcomes (Learn)    │
                                      │         │                   │
                                      │         ▼                   │
-                                     │  12 Rules → Findings        │
+                                     │  19 Rules → Findings        │
                                      │  + Prescriptions            │
                                      │  + Impact Estimates         │
                                      └──────────┬──────────────────┘
@@ -604,10 +608,7 @@ Sentiment analysis, GitHub PR generation, own event collection SDK / PostHog rep
 
 ## Current Codebase Health
 
-After cleanup (this session):
-
-- **16,240 lines** of domain logic across 79 source files
-- **545 tests**, all passing
+- **72 test files**, all passing (`sanitizeInsertHtml`, `validateBrief`, `describeModification`, `annotationHelpers`, `preview`, `structuralRules`, and friends all added with the structural-rule + element-insert + annotated-preview work)
 - **Single storage backend** (Postgres via Drizzle — blob driver removed)
 - **Zero dead code** (backend shell, duplicate onboarding page, blob repository all deleted)
 - **Clean type system** (TypeScript strict mode, no `any` leaks in domain code)
