@@ -17,6 +17,7 @@ import '../lib/scenarios/acmebank';
 import '../lib/scenarios/wovenbasics';
 import '../lib/scenarios/kilnandclay';
 import '../lib/scenarios/northwind';
+import '../lib/scenarios/verdant';
 
 const PORT = Number.parseInt(process.env.LIGHTHOUSE_PORT ?? '3001', 10);
 
