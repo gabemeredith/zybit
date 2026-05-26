@@ -116,11 +116,17 @@ export function outlineMod(selector: string, color: string): VariantModification
  * one heading per level at the page root it produces a matching selector.
  */
 export function nthOfTypeIndex(headings: HeadingItem[], target: HeadingItem): number {
+  // Compare by `documentIndex` rather than reference equality — Next.js
+  // server components serialize/deserialize the headings array across the
+  // RSC boundary, so `h === target` would fail to short-circuit when the
+  // caller passes back a deserialized copy. Counting all same-level
+  // headings with strictly smaller `documentIndex` produces the same result
+  // and is order-independent.
   let earlier = 0;
   for (const h of headings) {
-    if (h === target) break;
-    if (h.documentIndex >= target.documentIndex) continue;
-    if (h.level === target.level) earlier += 1;
+    if (h.level === target.level && h.documentIndex < target.documentIndex) {
+      earlier += 1;
+    }
   }
   return earlier + 1;
 }

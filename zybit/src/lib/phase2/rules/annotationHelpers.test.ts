@@ -30,6 +30,18 @@ describe('nthOfTypeIndex', () => {
     expect(nthOfTypeIndex(headings, headings[2])).toBe(2); // second h2
     expect(nthOfTypeIndex(headings, headings[3])).toBe(3); // third h2
   });
+
+  it('works when target is not the same object reference as the heading in the array', () => {
+    // Regression: Next.js server components serialize/deserialize the
+    // snapshot across the RSC boundary, so callers commonly pass back a
+    // cloned heading. Reference-equality short-circuiting would fail and
+    // double-count the target itself.
+    const headings = [h(2, 0), h(1, 1), h(1, 2)];
+    const cloned = { ...headings[1] }; // different object, same documentIndex
+    expect(nthOfTypeIndex(headings, cloned)).toBe(1);
+    const clonedSecond = { ...headings[2] };
+    expect(nthOfTypeIndex(headings, clonedSecond)).toBe(2);
+  });
 });
 
 describe('firstHeadingSelector', () => {

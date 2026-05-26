@@ -15,7 +15,9 @@ export type VariantModification =
   | { type: 'element-insert'; selector: string; position: InsertPosition; html: string };
 
 function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0;
+  // Whitespace-only strings would pass a literal length check but throw
+  // a `DOMException` at proxy time when handed to `document.querySelector`.
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 /**

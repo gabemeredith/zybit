@@ -67,6 +67,17 @@ describe('validateModifications — element-insert', () => {
     expect(err).toMatch(/html/);
     expect(err).toMatch(/non-empty/);
   });
+
+  it('rejects whitespace-only selectors (would throw DOMException at proxy time)', () => {
+    // `querySelector("   ")` throws SyntaxError; the validator must catch it
+    // here so the experiment doesn't crash mid-run.
+    expect(
+      validateModifications([{ type: 'css-inject', selector: '   ', css: 'color:red' }]),
+    ).toMatch(/selector/);
+    expect(
+      validateModifications([{ type: 'element-insert', selector: '\t\n', position: 'before', html: '<p>x</p>' }]),
+    ).toMatch(/selector/);
+  });
 });
 
 describe('validateModifications — per-type field checks', () => {
