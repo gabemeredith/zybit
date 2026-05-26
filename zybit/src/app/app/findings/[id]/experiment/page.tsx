@@ -12,7 +12,7 @@ import type {
   AuditFindingEvidence,
   AuditFindingPrescription,
 } from "@/lib/phase2/rules/types";
-import type { CtaCandidate, HeadingItem } from "@/lib/phase2/snapshots/types";
+import type { CtaCandidate, FormCandidate, HeadingItem } from "@/lib/phase2/snapshots/types";
 import { pickSelectorForFinding } from "@/lib/phase2/snapshots/pickSelector";
 import { selectorStability, type SelectorStability } from "@/lib/phase2/snapshots/selectorUtils";
 
@@ -49,41 +49,17 @@ function defaultPrimaryMetric(category: string, pathRef: string | null): string 
 }
 
 function defaultSelector(
-  category: string,
-  evidence: AuditFindingEvidence[],
   refs: Record<string, string | undefined> | null,
   ctas: CtaCandidate[],
+  forms: FormCandidate[],
 ): string {
-  // Use stored ref if available
-  if (refs?.elementRef) return `[data-ref="${refs.elementRef}"]`;
-  if (refs?.ctaRef) return `[data-ref="${refs.ctaRef}"]`;
-
-  // Derive from evidence labels
-  if (category === "rage") {
-    const target = evidence.find((e) => e.label.toLowerCase().includes("rage target"));
-    if (target) {
-      const ctx = target.context ?? "";
-      // context may contain a class string like "button.btn-primary btn-lg"
-      const classMatch = ctx.match(/button\.[\w-]+/);
-      if (classMatch) return classMatch[0].replace(".", " .").replace(/^(button)/, "$1");
-      return `button:has-text("${target.value}")`;
-    }
-  }
-  if (category === "hierarchy") {
-    const clicked = evidence.find((e) => e.label.toLowerCase().includes("most-clicked"));
-    if (clicked) return `a:has-text("${clicked.value}"), button:has-text("${clicked.value}")`;
-  }
-  if (category === "abandonment") {
-    return "form button[type=submit], form button:last-of-type";
-  }
-
-  // Snapshot-driven fallback for every other category (thrash, bounce,
-  // copy-fatigue, hesitation, help-seeking, mobile, nav-dispersion, …).
-  // Picks the highest-visual-weight CTA on the page whose parser-emitted
-  // selector reads as stable. Same path Lighthouse's synthetic generator
-  // uses, so the form opens pre-loaded with a selector that actually
-  // matches the live page instead of an empty string the PM might miss.
-  return pickSelectorForFinding(ctas, refs?.ctaRef) ?? "";
+  // Snapshot-grounded: prefer the parser-computed `cssSelector` from the
+  // referenced element (CTA via `ctaRef`, form via `formRef` — see
+  // `pickSelectorForFinding` for the ladder). Returns "" only when no
+  // element on the page has a selector that will survive into production —
+  // better empty than a synthetic `data-zybit-ref` or evidence-derived
+  // `:has-text()` selector that the proxy can't match.
+  return pickSelectorForFinding(ctas, forms, refs) ?? "";
 }
 
 function defaultNewValue(
@@ -113,6 +89,7 @@ function defaultNewValue(
 
 function buildSuggestions(
   ctas: CtaCandidate[],
+  forms: FormCandidate[],
   headings: HeadingItem[],
 ): SelectorSuggestion[] {
   const suggestions: SelectorSuggestion[] = [];
@@ -120,12 +97,28 @@ function buildSuggestions(
   for (const cta of ctas) {
     const text = cta.text.trim().slice(0, 60);
     if (!text) continue;
-    // Use stable ref attr when available; fall back to text-content selector
-    const selector = `${cta.tag}[data-zybit-ref="${cta.ref}"]`;
+    // Only suggest CTAs the parser found a real, browser-runnable selector
+    // for. `cta.cssSelector` walks testid → human id → name → role+aria-label
+    // (see `cssSelector.ts`) and is null when nothing stable exists — in
+    // which case suggesting `[data-zybit-ref="…"]` would match Zybit's
+    // internal snapshot HTML but no-op silently against the live page.
+    if (!cta.cssSelector) continue;
     suggestions.push({
       label: `${cta.tag} "${text}" (${cta.landmark})`,
-      selector,
-      stability: selectorStability(selector),
+      selector: cta.cssSelector,
+      stability: selectorStability(cta.cssSelector),
+    });
+  }
+
+  // Forms with a stable selector — surfaces the abandoned form itself as a
+  // pickable target so form-abandonment experiments aren't limited to
+  // whatever CTAs happen to share the page.
+  for (const form of forms) {
+    if (!form.cssSelector) continue;
+    suggestions.push({
+      label: `form (${form.landmark}, ${form.fieldCount} field${form.fieldCount === 1 ? '' : 's'})`,
+      selector: form.cssSelector,
+      stability: selectorStability(form.cssSelector),
     });
   }
 
@@ -186,6 +179,7 @@ export default async function ExperimentBuilderPage({
   // Load snapshot for selector suggestions and CSS system hint (best-effort)
   let suggestions: SelectorSuggestion[] = [];
   let ctas: CtaCandidate[] = [];
+  let forms: FormCandidate[] = [];
   let cssSystem: import('@/lib/phase2/snapshots/cssSystemDetector').CssSystem | undefined;
   if (finding.pathRef) {
     try {
@@ -197,14 +191,16 @@ export default async function ExperimentBuilderPage({
       });
       if (snapshot?.data) {
         ctas = snapshot.data.ctas ?? [];
+        forms = snapshot.data.forms ?? [];
         suggestions = buildSuggestions(
           ctas,
+          forms,
           snapshot.data.headings ?? [],
         );
         cssSystem = snapshot.data.cssSystem;
       }
     } catch {
-      // no snapshot — suggestions, ctas, and cssSystem stay empty
+      // no snapshot — suggestions, ctas, forms, and cssSystem stay empty
     }
   }
 
@@ -212,7 +208,7 @@ export default async function ExperimentBuilderPage({
 
   const freshDefaults = {
     experimentName: `${finding.title} — Variant B`,
-    selector: defaultSelector(finding.category, evidence, refs, ctas),
+    selector: defaultSelector(refs, ctas, forms),
     changeType,
     newValue: defaultNewValue(changeType, finding.category, evidence),
     variantDescription: prescription.experimentVariantDescription,
