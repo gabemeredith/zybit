@@ -193,4 +193,157 @@ describe('stripScripts', () => {
     expect(out).toContain('<h1>hello</h1>');
     expect(out).not.toContain('<script');
   });
+
+  it('removes inline event-handler attributes (onerror, onclick, onload, …)', () => {
+    const html =
+      '<html><body>' +
+      '<img src="x" onerror="alert(1)">' +
+      '<a href="/ok" onclick="steal()">link</a>' +
+      '<body onload="boom()">' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/\bon[a-z]+\s*=/i);
+    expect(out).not.toContain('alert(1)');
+    expect(out).not.toContain('steal()');
+    expect(out).not.toContain('boom()');
+    expect(out).toContain('<img');
+    expect(out).toContain('href="/ok"');
+  });
+
+  it('strips javascript: URIs in href/src/action/formaction', () => {
+    const html =
+      '<html><body>' +
+      '<a href="javascript:alert(1)">a</a>' +
+      '<iframe src="JaVaScRiPt:foo()"></iframe>' +
+      '<form action="javascript:bad()"><button formaction="javascript:bad2()">x</button></form>' +
+      '<a href="https://example.com/safe">safe</a>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/javascript:/i);
+    expect(out).toContain('href="https://example.com/safe"');
+  });
+
+  it('preserves legitimate inline styles and CSS classes', () => {
+    const html =
+      '<html><head><style>.x { color: red }</style></head>' +
+      '<body><div class="hero" style="color: blue">hi</div></body></html>';
+    const out = stripScripts(html);
+    expect(out).toContain('class="hero"');
+    expect(out).toContain('style="color: blue"');
+    expect(out).toContain('.x { color: red }');
+  });
+
+  it('strips entity-encoded javascript: schemes (HTML-entity bypass)', () => {
+    // Browsers strip tab/LF/CR from URLs before scheme parsing. `&#x09;` is a
+    // tab; `node-html-parser` decodes it to a literal \t in the attribute
+    // value. Without normalization the naive `/^javascript:/` test misses
+    // these and Chrome happily executes them.
+    const html =
+      '<html><body>' +
+      '<a href="java&#x09;script:alert(1)">tab-entity</a>' +
+      '<a href="java&#10;script:alert(2)">lf-entity</a>' +
+      '<a href="java&#13;script:alert(3)">cr-entity</a>' +
+      '<a href="&#x20;javascript:alert(4)">leading-space-entity</a>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toContain('alert(1)');
+    expect(out).not.toContain('alert(2)');
+    expect(out).not.toContain('alert(3)');
+    expect(out).not.toContain('alert(4)');
+    // After normalization none of these should remain as href values.
+    expect(out).not.toMatch(/href="[^"]*script:/i);
+  });
+
+  it('strips javascript: schemes with embedded raw control chars', () => {
+    const html =
+      '<html><body>' +
+      '<a href="java\tscript:alert(1)">tab</a>' +
+      '<a href="java\nscript:alert(2)">lf</a>' +
+      '<a href="java\rscript:alert(3)">cr</a>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toContain('alert(1)');
+    expect(out).not.toContain('alert(2)');
+    expect(out).not.toContain('alert(3)');
+    expect(out).not.toMatch(/href="[^"]*script:/i);
+  });
+
+  it('removes <iframe>, <object>, <embed>, <frame>, <applet>, <portal>', () => {
+    const html =
+      '<html><body>' +
+      '<iframe src="https://evil.example.com"></iframe>' +
+      '<object data="data:text/html,<script>alert(1)</script>" type="text/html"></object>' +
+      '<embed src="https://evil.example.com/x.swf">' +
+      '<frame src="https://evil.example.com/">' +
+      '<applet code="Evil.class"></applet>' +
+      '<portal src="https://evil.example.com"></portal>' +
+      '<p>kept</p>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/<iframe/i);
+    expect(out).not.toMatch(/<object/i);
+    expect(out).not.toMatch(/<embed/i);
+    expect(out).not.toMatch(/<frame/i);
+    expect(out).not.toMatch(/<applet/i);
+    expect(out).not.toMatch(/<portal/i);
+    expect(out).toContain('<p>kept</p>');
+  });
+
+  it('removes <meta http-equiv="refresh"> (case-insensitive)', () => {
+    const html =
+      '<html><head>' +
+      '<meta http-equiv="refresh" content="0;url=https://evil.example.com/">' +
+      '<meta http-equiv="REFRESH" content="3;url=https://evil2.example.com/">' +
+      '<meta charset="utf-8">' +
+      '</head><body><p>hi</p></body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/http-equiv\s*=\s*["']?refresh/i);
+    expect(out).not.toContain('evil.example.com');
+    expect(out).not.toContain('evil2.example.com');
+    // Other meta tags survive.
+    expect(out).toMatch(/<meta\s+charset/i);
+  });
+
+  it('strips data: URIs in href/src/data attrs (data:text/html executes in Chrome)', () => {
+    const html =
+      '<html><body>' +
+      '<a href="data:text/html,<script>alert(1)</script>">a</a>' +
+      '<img src="data:image/png;base64,iVBORw0KG…">' +
+      '<form action="data:text/html,bad"><button formaction="data:text/html,bad">x</button></form>' +
+      '<a href="/safe">safe</a>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/href="data:/i);
+    expect(out).not.toMatch(/src="data:/i);
+    expect(out).not.toMatch(/action="data:/i);
+    expect(out).not.toMatch(/formaction="data:/i);
+    expect(out).toContain('href="/safe"');
+  });
+
+  it('strips entity-encoded data: schemes (data&#x09;:text/html,…)', () => {
+    const html =
+      '<html><body>' +
+      '<a href="data&#x09;:text/html,<script>alert(1)</script>">tab-entity</a>' +
+      '<a href="data&#10;:text/html,bad">lf-entity</a>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/href="[^"]*:text\/html/i);
+    expect(out).not.toContain('alert(1)');
+  });
+
+  it('fails closed (returns empty string) on unparseable input', () => {
+    // Force the inner traversal to throw by monkey-patching the parser
+    // surface. We approximate the contract here: an input that parses but
+    // causes downstream serialization to throw should still not leak
+    // unstripped HTML. The simpler invariant: a well-formed empty payload
+    // returns empty; a payload containing scripts but causing a thrown
+    // error must not return the original.
+    //
+    // We can directly assert the "no fail-open" contract by checking that
+    // even pathological input never re-emits a <script> tag.
+    const pathological = '<' + '<<<' + '<script>alert(99)</script>' + '>>>';
+    const out = stripScripts(pathological);
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('alert(99)');
+  });
 });

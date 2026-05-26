@@ -50,9 +50,14 @@ export async function POST(
 
   const result = await renderFindingScreenshot(id, organizationId);
   if (!result) {
+    // 502: render attempt failed upstream (Browserless / Blob / missing env).
+    // Body shape kept so AnnotatedFindingPreview's existing
+    // `data.screenshotUrl === null → fallback` path still works; the status
+    // change is so other callers (monitoring, tests, future UI surfaces) that
+    // switch on status codes treat this as the failure it actually is.
     return NextResponse.json(
       { screenshotUrl: null, reason: 'render_failed' },
-      { status: 200 },
+      { status: 502 },
     );
   }
   return NextResponse.json({
