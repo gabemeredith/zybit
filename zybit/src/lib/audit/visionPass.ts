@@ -4,7 +4,7 @@
  * Two independent steps, both non-fatal:
  *   1. captureAuditScreenshot — above-fold desktop screenshot via Browserless,
  *      uploaded to Vercel Blob (public access so email clients can load it).
- *   2. runVisionPass — sends the JPEG buffer to Gemini 2.0 Flash via the
+ *   2. runVisionPass — sends the JPEG buffer to Gemini 2.5 Flash via the
  *      Generative Language REST API and returns a short visual observation
  *      that enriches the top finding in the email.
  *
@@ -12,7 +12,7 @@
  * The pipeline never waits for these to retry — they are best-effort.
  *
  * The Gemini call mirrors `src/lib/experiments/aiAdvisor.ts`: same model
- * (`gemini-2.0-flash`), same key location (`x-goog-api-key` header so the
+ * (`gemini-3.5-flash`), same key location (`x-goog-api-key` header so the
  * key never lands in access logs), same REST endpoint.
  */
 
@@ -25,7 +25,7 @@ export interface ScreenshotResult {
 }
 
 const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
 const VIEWPORT_W = 1440;
 const VIEWPORT_H = 900;
 

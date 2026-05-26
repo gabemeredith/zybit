@@ -33,7 +33,7 @@ function makeVisionSignals(pageType: PageType): VisualSignals {
     pageType,
     heroBlock: null,
     capturedAt: '2026-05-26T12:00:00Z',
-    modelVersion: 'gemini-2.0-flash',
+    modelVersion: 'gemini-3.5-flash',
   };
 }
 

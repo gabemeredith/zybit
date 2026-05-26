@@ -34,7 +34,7 @@ function makeVisualSignals(
       firstParagraph: null,
     },
     capturedAt: '2026-05-26T12:00:00Z',
-    modelVersion: 'gemini-2.0-flash',
+    modelVersion: 'gemini-3.5-flash',
     ...overrides,
   };
 }
@@ -47,7 +47,7 @@ function makeCritique(overrides: Partial<CopyCritique> = {}): CopyCritique {
     proofSignals: ['named customer logo', 'specific metric'],
     ctaAlignment: { matches: true, suggestedVerbs: [] },
     capturedAt: '2026-05-26T12:00:00Z',
-    modelVersion: 'gemini-2.0-flash',
+    modelVersion: 'gemini-3.5-flash',
     ...overrides,
   };
 }

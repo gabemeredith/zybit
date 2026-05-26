@@ -2,7 +2,7 @@
  * Structured copy critique — Ring 3 / Layer F capture module (handover §12.C).
  *
  * Once `captureVisualSignals` extracts the page's hero copy verbatim, this
- * module makes a single Gemini 2.0 Flash call per page to produce a
+ * module makes a single Gemini 2.5 Flash call per page to produce a
  * structured critique of that copy. The output feeds three deterministic
  * Layer F rules:
  *   - `vague-claim-detected` — fires when `specificity < 0.4`
@@ -34,9 +34,9 @@
 
 import type { PageType, VisualHeroBlock } from '@/lib/phase2/snapshots/types';
 
-export const COPY_CRITIQUE_MODEL = 'gemini-2.0-flash';
+export const COPY_CRITIQUE_MODEL = 'gemini-3.5-flash';
 const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
 
 export interface CopyCritique {
   /**

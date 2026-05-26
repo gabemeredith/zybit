@@ -337,7 +337,7 @@ async function verifySite(target) {
       pageType: 'home',
       heroBlock: null,
       capturedAt: new Date().toISOString(),
-      modelVersion: 'gemini-2.0-flash',
+      modelVersion: 'gemini-3.5-flash',
     };
 
     const pathRef = new URL(snap.finalUrl).pathname || '/';
@@ -392,7 +392,7 @@ async function verifySite(target) {
         firstParagraph: null,
       },
       capturedAt: new Date().toISOString(),
-      modelVersion: 'gemini-2.0-flash',
+      modelVersion: 'gemini-3.5-flash',
     };
     data.copyCritique = {
       specificity: 0.15,
@@ -401,7 +401,7 @@ async function verifySite(target) {
       proofSignals: [],
       ctaAlignment: null,
       capturedAt: new Date().toISOString(),
-      modelVersion: 'gemini-2.0-flash',
+      modelVersion: 'gemini-3.5-flash',
     };
     const ctx = makeContext(data, snap.finalUrl, 'public-audit');
     const findings = vagueClaimDetected.evaluate(ctx);
@@ -451,7 +451,7 @@ async function verifySite(target) {
       pageType: 'pricing',
       heroBlock: { headline: 'Plans', subheadline: null, firstParagraph: null },
       capturedAt: new Date().toISOString(),
-      modelVersion: 'gemini-2.0-flash',
+      modelVersion: 'gemini-3.5-flash',
     };
     data.copyCritique = {
       specificity: 0.6,
@@ -460,7 +460,7 @@ async function verifySite(target) {
       proofSignals: ['specific metric'],
       ctaAlignment: { matches: false, suggestedVerbs: ['Start free trial', 'Get started'] },
       capturedAt: new Date().toISOString(),
-      modelVersion: 'gemini-2.0-flash',
+      modelVersion: 'gemini-3.5-flash',
     };
     const ctx = makeContext(data, snap.finalUrl, 'public-audit');
     const findings = ctaVerbMismatch.evaluate(ctx);
@@ -497,7 +497,7 @@ async function verifySite(target) {
       pageType: 'legal',
       heroBlock: null,
       capturedAt: new Date().toISOString(),
-      modelVersion: 'gemini-2.0-flash',
+      modelVersion: 'gemini-3.5-flash',
     };
     const pathRef = '/legal/privacy';
     const ctx = makeContext(data, `https://${new URL(snap.finalUrl).hostname}${pathRef}`, 'public-audit');
