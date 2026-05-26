@@ -17,6 +17,7 @@ import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSna
 import type { DesignTokens } from '@/lib/phase2/snapshots/tokenExtractor';
 
 const FETCH_TIMEOUT_MS = 8_000;
+const MAX_REDIRECT_HOPS = 5;
 
 export interface BuildAnnotatedFindingHtmlOk {
   ok: true;
@@ -91,40 +92,21 @@ export async function buildAnnotatedFindingHtml(
     ? `http://${domain}/fake-sites/${lighthouseSlug}${findingRow.pathRef}`
     : `https://${domain}${findingRow.pathRef}`;
 
-  // SSRF guard. `domain` is customer-configured; without this a malicious
-  // tenant could point it at 127.0.0.1, 169.254.169.254 (cloud metadata),
-  // 10.x, etc. and use the preview endpoint to read internal services.
+  // SSRF guard with redirect-following. `domain` is customer-configured;
+  // without this a malicious tenant could point it at 127.0.0.1,
+  // 169.254.169.254 (cloud metadata), 10.x, etc. and use the preview
+  // endpoint to read internal services. We use manual redirect handling
+  // because `redirect: 'follow'` would skip the SSRF check on every hop —
+  // a public URL that 302s to http://127.0.0.1/admin would bypass the
+  // pre-fetch host check entirely.
+  //
   // The lighthouse-slug path is dev-only (gated by LIGHTHOUSE_PREVIEW_ORIGIN
   // on the route and a `lighthouse_site_*` siteId that only our tooling
-  // creates) and is expected to hit localhost, so skip the check there.
-  if (!lighthouseSlug) {
-    let parsed: URL;
-    try {
-      parsed = new URL(originUrl);
-    } catch {
-      return { ok: false, status: 400, message: 'Invalid site domain' };
-    }
-    const hostCheck = await isSafePreviewHost(parsed.hostname);
-    if (!hostCheck.ok) {
-      return { ok: false, status: 400, message: `Refusing to fetch preview: ${hostCheck.reason}` };
-    }
-  }
-
-  let html: string;
-  try {
-    const res = await fetch(originUrl, {
-      headers: { 'User-Agent': 'Zybit-Preview/1.0' },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      redirect: 'follow',
-    });
-    if (!res.ok) {
-      return { ok: false, status: 502, message: `Origin returned ${res.status}` };
-    }
-    html = await res.text();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Fetch failed';
-    return { ok: false, status: 504, message: `Could not reach origin: ${message}` };
-  }
+  // creates) and is expected to hit localhost, so skip the SSRF check there.
+  // We still follow redirects manually so the hop cap applies.
+  const fetched = await fetchWithSsrfGuard(originUrl, lighthouseSlug === null);
+  if (!fetched.ok) return fetched;
+  const html = fetched.html;
 
   const finding = rowToFinding(findingRow);
   const rule = getRuleById(finding.ruleId);
@@ -140,6 +122,66 @@ export async function buildAnnotatedFindingHtml(
     lighthouseSlug,
     finding,
   };
+}
+
+/**
+ * Fetch `initialUrl`, following redirects manually so we can re-run the SSRF
+ * host check on every hop. `redirect: 'follow'` from the native `fetch` would
+ * happily chase a public URL into 127.0.0.1, defeating the pre-fetch check.
+ *
+ * `enforceSsrfGuard=false` skips the host check (used for the lighthouse-slug
+ * path, which legitimately needs to reach localhost), but still applies the
+ * hop cap.
+ */
+export async function fetchWithSsrfGuard(
+  initialUrl: string,
+  enforceSsrfGuard: boolean,
+): Promise<{ ok: true; html: string } | { ok: false; status: number; message: string }> {
+  let currentUrl = initialUrl;
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+    let parsed: URL;
+    try {
+      parsed = new URL(currentUrl);
+    } catch {
+      return { ok: false, status: 400, message: `Invalid URL after ${hop} hop(s)` };
+    }
+    if (enforceSsrfGuard) {
+      const hostCheck = await isSafePreviewHost(parsed.hostname);
+      if (!hostCheck.ok) {
+        return {
+          ok: false,
+          status: 400,
+          message: `Refusing to fetch preview: ${hostCheck.reason}`,
+        };
+      }
+    }
+    let res: Response;
+    try {
+      res = await fetch(currentUrl, {
+        headers: { 'User-Agent': 'Zybit-Preview/1.0' },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        redirect: 'manual',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Fetch failed';
+      return { ok: false, status: 504, message: `Could not reach origin: ${message}` };
+    }
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      if (!location) {
+        return { ok: false, status: 502, message: `Origin returned ${res.status} with no Location header` };
+      }
+      // Resolve relative redirects against the current URL.
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+    if (!res.ok) {
+      return { ok: false, status: 502, message: `Origin returned ${res.status}` };
+    }
+    const html = await res.text();
+    return { ok: true, html };
+  }
+  return { ok: false, status: 502, message: `Too many redirects (> ${MAX_REDIRECT_HOPS})` };
 }
 
 function injectBaseHref(html: string, originUrl: string): string {

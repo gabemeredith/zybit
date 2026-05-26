@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { isPrivateIp, isSafePreviewHost } from '../preview';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fetchWithSsrfGuard, isPrivateIp, isSafePreviewHost } from '../preview';
 
 describe('isPrivateIp', () => {
   it('flags IPv4 loopback', () => {
@@ -75,5 +75,112 @@ describe('isSafePreviewHost', () => {
     expect((await isSafePreviewHost('127.0.0.1')).ok).toBe(false);
     expect((await isSafePreviewHost('169.254.169.254')).ok).toBe(false);
     expect((await isSafePreviewHost('10.0.0.1')).ok).toBe(false);
+  });
+});
+
+// Mock-fetch helper that returns a queued sequence of responses.
+// Each call to fetch consumes the next queued entry.
+function mockFetchQueue(responses: Array<{ status: number; location?: string; body?: string }>) {
+  const fn = vi.fn().mockImplementation(async () => {
+    const next = responses.shift();
+    if (!next) throw new Error('mockFetchQueue exhausted');
+    return new Response(next.body ?? '', {
+      status: next.status,
+      headers: next.location ? { location: next.location } : {},
+    });
+  });
+  vi.stubGlobal('fetch', fn);
+  return fn;
+}
+
+describe('fetchWithSsrfGuard — redirect handling', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('follows a same-host 200 (no redirect)', async () => {
+    mockFetchQueue([{ status: 200, body: '<html>hi</html>' }]);
+    const r = await fetchWithSsrfGuard('https://example.com/', true);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.html).toBe('<html>hi</html>');
+  });
+
+  it('rejects when a public URL redirects to a loopback host', async () => {
+    // The pre-fetch check passes for example.com (public), but the 302
+    // points to 127.0.0.1 — the per-hop guard must catch it before issuing
+    // the second fetch.
+    mockFetchQueue([
+      { status: 302, location: 'http://127.0.0.1/admin' },
+      // No second response queued — if the SSRF check fails to fire, the
+      // exhausted queue throws and the test fails loudly.
+    ]);
+    const r = await fetchWithSsrfGuard('https://example.com/', true);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(400);
+      expect(r.message).toMatch(/127\.0\.0\.1/);
+    }
+  });
+
+  it('rejects when redirect resolves to a private RFC1918 host', async () => {
+    mockFetchQueue([{ status: 301, location: 'http://10.0.0.5/' }]);
+    const r = await fetchWithSsrfGuard('https://example.com/', true);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/10\.0\.0\.5/);
+  });
+
+  it('rejects when redirect resolves to cloud metadata IP', async () => {
+    mockFetchQueue([{ status: 307, location: 'http://169.254.169.254/' }]);
+    const r = await fetchWithSsrfGuard('https://example.com/', true);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/169\.254\.169\.254/);
+  });
+
+  it('allows a redirect to another public host', async () => {
+    // 1.1.1.1 is a public IP — isPrivateIp returns false, and as an IP
+    // literal it never hits DNS lookup, keeping the test hermetic.
+    mockFetchQueue([
+      { status: 302, location: 'https://1.1.1.1/page' },
+      { status: 200, body: '<html>final</html>' },
+    ]);
+    const r = await fetchWithSsrfGuard('https://8.8.8.8/', true);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.html).toBe('<html>final</html>');
+  });
+
+  it('caps redirect chains at MAX_REDIRECT_HOPS', async () => {
+    // 7 hops all to public IP literals (no DNS, no private-IP rejection).
+    mockFetchQueue(
+      Array.from({ length: 7 }, () => ({ status: 302, location: 'https://1.1.1.1/' })),
+    );
+    const r = await fetchWithSsrfGuard('https://8.8.8.8/', true);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/Too many redirects/);
+  });
+
+  it('errors when 3xx is returned with no Location header', async () => {
+    mockFetchQueue([{ status: 302 }]);
+    const r = await fetchWithSsrfGuard('https://example.com/', true);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/no Location header/);
+  });
+
+  it('skips SSRF check when enforceSsrfGuard=false (lighthouse path)', async () => {
+    // Lighthouse-slug requests legitimately hit localhost.
+    mockFetchQueue([{ status: 200, body: '<html>lh</html>' }]);
+    const r = await fetchWithSsrfGuard('http://localhost:3001/fake-sites/x/y', false);
+    expect(r.ok).toBe(true);
+  });
+
+  it('still caps redirects when enforceSsrfGuard=false', async () => {
+    mockFetchQueue(
+      Array.from({ length: 7 }, () => ({
+        status: 302,
+        location: 'http://localhost:3001/loop',
+      })),
+    );
+    const r = await fetchWithSsrfGuard('http://localhost:3001/', false);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/Too many redirects/);
   });
 });
