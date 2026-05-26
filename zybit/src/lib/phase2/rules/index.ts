@@ -1,7 +1,7 @@
 /**
  * Phase 2 — Audit rules barrel.
  *
- * Three layers live here:
+ * Four layers live here:
  *   - **Design rules** (Layer C): hierarchy/fold/nav/asymmetry findings
  *     grounded in page snapshots + click distribution.
  *   - **Pain rules**   (Layer D): abandonment / help-seeking / hesitation /
@@ -10,6 +10,12 @@
  *   - **Structural rules** (Layer E): accessibility + SEO findings grounded
  *     entirely in snapshot data — no behavioral events required. These fire
  *     on every site from the first snapshot, even before PostHog data exists.
+ *   - **AI copy critique** (Layer F): vague-claim / proof-missing /
+ *     cta-verb-mismatch findings grounded in a structured Gemini critique
+ *     of the page's own hero copy (cached on the snapshot at capture
+ *     time by `captureCopyCritique`). Rules stay pure — the LLM call
+ *     lives at capture time, validated against a strict schema before
+ *     the rule reads it.
  *
  * Each rule is a pure `AuditRule` that consumes a `AuditRuleContext` and
  * returns zero or more `AuditFinding`s. `runAuditRules` is the orchestration
@@ -54,6 +60,11 @@ import { missingMetaDescription } from "./missingMetaDescription";
 import { missingCanonicalUrl } from "./missingCanonicalUrl";
 import { deadClickTarget } from "./deadClickTarget";
 
+// AI copy critique (Layer F) — capture-time Gemini critique, deterministic rule
+import { vagueClaimDetected } from "./vagueClaimDetected";
+import { proofMissing } from "./proofMissing";
+import { ctaVerbMismatch } from "./ctaVerbMismatch";
+
 export { aboveFoldCoverage } from "./aboveFoldCoverage";
 export { heroHierarchyInversion } from "./heroHierarchyInversion";
 export { mobileEngagementAsymmetry } from "./mobileEngagementAsymmetry";
@@ -74,6 +85,9 @@ export { linkTextGeneric } from "./linkTextGeneric";
 export { missingMetaDescription } from "./missingMetaDescription";
 export { missingCanonicalUrl } from "./missingCanonicalUrl";
 export { deadClickTarget } from "./deadClickTarget";
+export { vagueClaimDetected } from "./vagueClaimDetected";
+export { proofMissing } from "./proofMissing";
+export { ctaVerbMismatch } from "./ctaVerbMismatch";
 
 export function getRuleById(ruleId: string): AuditRule | null {
   return ALL_AUDIT_RULES.find((r) => r.id === ruleId) ?? null;
@@ -104,6 +118,10 @@ export const ALL_AUDIT_RULES: readonly AuditRule[] = [
   missingMetaDescription,
   missingCanonicalUrl,
   deadClickTarget,
+  // AI copy critique (Layer F) — capture-time Gemini critique, pure rule
+  vagueClaimDetected,
+  proofMissing,
+  ctaVerbMismatch,
 ];
 
 const SEVERITY_RANK: Record<AuditFindingSeverity, number> = {

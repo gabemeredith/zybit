@@ -871,6 +871,11 @@ warnings); build clean.
 79 test files, 980 tests, 0 failures; TypeScript clean; ESLint clean
 (4 pre-existing warnings); build clean.
 
+**`npm run verify` baseline after Ring 2 (consumer plumbing) + Ring 3
+(2026-05-26 fifth pass):** 83 test files, 1079 tests, 0 failures
+(+99 over the Ring-1+2 baseline); TypeScript clean; ESLint clean
+(4 pre-existing warnings); build clean.
+
 ---
 
 ## 14. Ring 1 + Ring 2 — what landed this session (2026-05-26 fourth pass)
@@ -993,14 +998,11 @@ for the sample-fixture colors.
 
 ### What's still TBD (next session)
 
-In handover-priority order:
+> **Status (2026-05-26, fifth pass):** Items 1 + 2 below shipped in
+> the Ring 2-consumer + Ring 3 pass — see §15. Items 3-6 carry forward.
 
-1. **Per-rule consumers of `pageType`** (§12.D). Vision now produces it
-   per page; nav-dispersion, above-fold-coverage, etc. should modulate
-   their thresholds. ~1 day to plumb + per-rule (15-30 min each).
-2. **Layer F AI copy critique** (§12.C) — `vague-claim-detected`,
-   `proof-missing`, `cta-verb-mismatch`. `heroBlock` is already the
-   input they need. 2-3 days.
+1. ~~**Per-rule consumers of `pageType`**~~ **Shipped** — see §15.
+2. ~~**Layer F AI copy critique**~~ **Shipped** — see §15.
 3. **Computed-styles expansion** (§12.B) — `capture/styles.ts`
    borderColor / fontFamily / fontWeight / page background; image
    rendered-vs-natural; `tokenExtractor.ts` accent + surface +
@@ -1013,6 +1015,177 @@ In handover-priority order:
    long-term shape, depends on §12.B + §12.D.
 
 Total remaining to "audit endpoint as a defensible paid product
-feature" per the handover's own math: ~2 weeks (down from 3 — Rings
-1 + 2 closed the architectural blockers and the structured-vision
-plumbing).
+feature": ~1 week (down from 2 — Ring 2 consumer plumbing + Ring 3
+Layer F shipped this session, closing handover §12.A's consumer side
+and all of §12.C / §12.D).
+
+---
+
+## 15. Ring 2 (consumer) + Ring 3 — what landed this session (2026-05-26 fifth pass)
+
+Ring 1 + Ring 2 (PR #86) shipped the architectural shift and the
+structured-vision *capture* stage. This pass closes the loop on the
+*consumer* side and ships Layer F end-to-end. Two of the six §13 risks
+that remained move to closed.
+
+### Ring 2 (consumer) — `pageType` as first-class rule input (§12.D)
+
+Files added / changed:
+
+- **`src/lib/phase2/rules/pageTypeModulation.ts`** — new pure
+  modulation table. `pageTypeModulation(ruleId, pageType)` returns
+  `{ suppress, floorMultiplier, capMultiplier, severityDowngrade? }`.
+  Fail-open: undefined / `'unknown'` pageType returns neutral so rules
+  degrade gracefully when vision is unavailable. Multipliers clamped to
+  `[0.5, 1.5]` so a table misedit cannot turn a rule into something it
+  isn't.
+- **5 rules now consume `pageType`:**
+  - `aboveFoldCoverage.ts` — suppress on `blog`/`legal`/`docs`/`about`/
+    `support` (the rule's premise — "your primary CTA is below the
+    fold" — does not apply to content-shaped pages). Tighten floor on
+    `pricing`/`signup`/`checkout`.
+  - `navDispersion.ts` — suppress on `docs`/`legal`/`about`/`support`
+    (a docs site's wide nav IS the IA). Loosen Gini cap on `blog`,
+    tighten on `pricing`/`signup`/`checkout`.
+  - `linkTextGeneric.ts` — suppress on `legal` (footer ToS lists are
+    universally generic but not actionable). Raise floor on `docs`.
+  - `headingHierarchyJump.ts` — relax on `docs` (sectioning renderers
+    legitimately skip levels). Downgrade severity to `info` on
+    `legal`/`about`.
+  - `missingMetaDescription.ts` / `missingCanonicalUrl.ts` — downgrade
+    severity + drop priorityScore on `legal`/`about`/`checkout`/`signup`
+    (real findings, low priority).
+- **`aboveFoldCoverage.structuralPublicAuditCopy`** now reads
+  `visualPrimaryCta.text` as a fallback when the rule's parser CTA
+  evidence is `(unnamed CTA)`. Mirrors `heroHierarchyInversion`'s
+  Ring 2 fallback — closes the icon-only-CTA root cause on the
+  fold-coverage finding too. Returns null when both parser and vision
+  still yield no label, dropping the finding rather than rendering
+  fabricated copy.
+
+Tests:
+
+- **`__tests__/pageTypeModulation.test.ts`** — 21 tests: neutral
+  fallbacks, every cardinal table cell, multiplier-bounds invariant
+  (every cell × every pageType stays in `[0.5, 1.5]`).
+- **`__tests__/pageTypeIntegration.test.ts`** — 24 tests: each of the
+  5 rules verified end-to-end with synthetic `visualSignals.pageType`
+  for the suppress-on / fire-on / no-modulation cases.
+- Existing rule tests unchanged (372 tests still pass) — modulation is
+  fail-open so the existing test inputs (no visualSignals attached)
+  exercise the neutral path.
+
+### Ring 3 — Layer F AI copy critique (§12.C)
+
+Files added:
+
+- **`src/lib/audit/captureCopyCritique.ts`** — new capture-time
+  Gemini 2.0 Flash call. Inputs: the vision pass's `heroBlock` +
+  `primaryCtaText` + `pageType`. Output: structured `CopyCritique`
+  superset that feeds all three Layer F rules in one call (~$0.001/page,
+  same envelope as `captureVisualSignals`):
+  - `specificity` (0..1) — how concrete the hero claim is
+  - `vagueTerms` + `suggestedRewrites` — for `vague-claim-detected`
+  - `proofSignals` — for `proof-missing`
+  - `ctaAlignment` — for `cta-verb-mismatch`
+
+  Trust model identical to `captureVisualSignals`: structured-output
+  mode, strict validator (rejects malformed / out-of-range / oversized
+  fields), fail-soft on any error. `apiKey: null` is treated as
+  "explicitly disabled" (distinguishes from `undefined` env fallback)
+  so the no-key tests don't fall through to the live API.
+- **`PageSnapshotData.copyCritique?`** added to
+  `src/lib/phase2/snapshots/types.ts`. Optional — absent when vision
+  didn't extract a hero block or `GEMINI_API_KEY` is unset.
+- **3 new rules under Layer F:**
+  - **`vagueClaimDetected.ts`** — fires when `specificity < 0.4` on
+    `home`/`landing`/`pricing`. Suppressed on `docs`/`legal`/`support`/
+    `unknown`. Severity `warn` at `<= 0.2`, `info` between 0.2 and 0.4.
+  - **`proofMissing.ts`** — fires when `proofSignals.length === 0` on
+    `home`/`landing`/`pricing`. Severity `warn` on pricing
+    (higher-stakes), `info` elsewhere.
+  - **`ctaVerbMismatch.ts`** — fires when `ctaAlignment.matches ===
+    false`. Uses vision-extracted primary CTA when parser CTA is empty
+    (Ring 2 consumer pattern). Suppressed when `pageType === 'unknown'`
+    (the mismatch claim requires a confident classification).
+  - All three: `publicAuditBehavior: 'as-is'` — the input is the
+    customer's own visible copy, no behavioral data, honest in both
+    modes.
+- **Registry updates** — `ALL_AUDIT_RULES` extended; the
+  registry-contract test in `publicAuditMode.test.ts` automatically
+  enforces every new rule's declaration. Rule count: **23** total
+  (was 20; 5 design + 7 pain + 1 flow + 7 structural + **3 AI copy**).
+
+Lighthouse runner wiring:
+
+- **`lighthouse/lib/runner/runUrlAudit.ts`** — captures copy critique
+  immediately after a successful vision pass, in the same per-page
+  `visionPagesLimit` budget. Only fires when `signals.heroBlock` is
+  populated (the model already saw hero copy). Fail-soft: any error
+  leaves `copyCritique` undefined and Layer F rules emit nothing.
+
+Tests:
+
+- **`captureCopyCritique.test.ts`** — 19 tests: validator edge cases
+  (out-of-range specificity, oversized arrays, non-string entries,
+  null vs undefined ctaAlignment), the no-key short-circuit, fail-soft
+  contract on fetch error / 4xx / invalid JSON / null-literal response,
+  and the structured-prompt fingerprint.
+- **`layerFCopyCritique.test.ts`** — 26 tests: each of the three
+  rules verified against synthetic critique objects across the
+  suppress / fire / boundary cases. Vision-extracted CTA fallback in
+  `cta-verb-mismatch` tested explicitly (icon-only CTA + critique
+  rejecting it surfaces the right label, not "(unnamed)").
+
+### Live verification
+
+`scripts/e2e-public-audit-mode.mjs` extended with **4 new
+Ring 3 assertions** (alongside the existing 8 Ring 1 + Ring 2 checks):
+
+1. `vague-claim-detected` fires on synthetic low-specificity critique
+   for a landing page.
+2. `proof-missing` fires when the synthetic critique has 0 proof
+   signals on a landing page.
+3. `cta-verb-mismatch` fires when `ctaAlignment.matches` is false on a
+   pricing page, with the vision-extracted CTA label appearing in
+   evidence.
+4. `above-fold-coverage` is suppressed entirely on `pageType=legal`
+   even when the page has a clearly below-fold heavy CTA + 50
+   low-scroll page views — the pageType modulation is what stops it.
+
+Last run (2026-05-26, github.com reachable; vercel/linear/stripe
+skipped from sandbox): **12 assertions passed, 0 failed.** Report:
+`/tmp/e2e-public-audit-mode-report.json`.
+
+### Closes from §13
+
+- ~~**§13.5 (vision pass best-effort and runs once per audit, no
+  per-rule consumers)**~~ — closed. The structured vision output is
+  consumed by 5 existing rules + 3 new Layer F rules. `pageType` now
+  modulates thresholds across the rule pipeline.
+- **§13.4 (`dead-click-target` only covers `<a>`)** — still open;
+  ships with the computed-styles expansion (§12.B), not this pass.
+- **§13.7 (advisor heading coverage measurement)** — still open;
+  separate workstream.
+
+### What's still TBD (next-next session)
+
+In priority order:
+
+1. **Computed-styles expansion** (§12.B) — `capture/styles.ts`
+   borderColor / fontFamily / fontWeight / page background; image
+   rendered-vs-natural; `tokenExtractor.ts` accent + surface +
+   borderRadius scale. Rate-limiter on the new evidence rules
+   (`colorContrastInsufficient`, `mobileTapTargetSmall`,
+   `largeUncompressedImages`). 3-4 days.
+2. **dead-click-target button extension** (§13.4) — piggybacks on
+   `cursor: pointer` measurement in §12.B.
+3. **AI prescription rewriting** (§12.E) + validation loop (§12.H) —
+   both depend on §12.A and reuse 80% of `aiAdvisor.ts`. The Layer F
+   capture infrastructure (`captureCopyCritique`) is the prototype the
+   prescription rewriter will fork from. 2 days.
+4. **Compound rules + cross-page intelligence** (§12.G / §12.I) — the
+   long-term shape; depends on §12.B + the now-shipped §12.D. The
+   capture layer already produces every input these need (snapshot +
+   capture + vision + critique); the rules just have to read across
+   pages.

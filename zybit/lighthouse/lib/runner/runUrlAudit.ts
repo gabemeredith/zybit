@@ -24,6 +24,7 @@ import type { AuditFinding, AuditMode } from '@/lib/phase2/rules/types';
 import { applyDefenseInDepthScrub } from '@/lib/audit/publicAuditScrub';
 import { captureAboveFoldBuffer } from '@/lib/audit/captureAboveFoldBuffer';
 import { captureVisualSignals } from '@/lib/audit/captureVisualSignals';
+import { captureCopyCritique } from '@/lib/audit/captureCopyCritique';
 import { runSnapshot, SnapshotError } from '@/lib/phase2/snapshots';
 import { capturePageAllBreakpoints } from '@/lib/phase2/capture/record';
 import { buildFullDesignSnapshot } from '@/lib/phase2/snapshots/designCapture';
@@ -195,6 +196,29 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
               'snapshots',
               `vision: ${page.pathRef} (pageType=${signals.pageType}, primaryCta=${signals.visualPrimaryCta?.text ?? 'null'})`,
             );
+
+            // Copy-critique pass — Layer F (handover §12.C). Runs only when
+            // vision already extracted a hero block; otherwise the model has
+            // nothing concrete to critique. Same `visionPagesLimit` budget
+            // (the call is decremented once below for both passes). Fail-soft:
+            // any error leaves `data.copyCritique` undefined and the three
+            // Layer F rules emit nothing.
+            if (signals.heroBlock) {
+              const critique = await captureCopyCritique({
+                url: page.url,
+                heroBlock: signals.heroBlock,
+                primaryCtaText: signals.visualPrimaryCta?.text ?? null,
+                pageType: signals.pageType,
+              });
+              if (critique) {
+                r.data.copyCritique = critique;
+                progress(
+                  onProgress,
+                  'snapshots',
+                  `copy-critique: ${page.pathRef} (specificity=${critique.specificity.toFixed(2)}, proofSignals=${critique.proofSignals.length}, ctaMatches=${critique.ctaAlignment?.matches ?? 'null'})`,
+                );
+              }
+            }
           }
         }
         visionRunsRemaining -= 1;
