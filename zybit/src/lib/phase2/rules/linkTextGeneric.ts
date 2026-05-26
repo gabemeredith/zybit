@@ -14,7 +14,16 @@
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
 import type { CtaCandidate } from '../snapshots/types';
 
-const GENERIC_PATTERNS = [
+// Always-generic anchor text — fires on any occurrence. These phrases are
+// context-free and never describe a destination, so a single instance is
+// already a WCAG 2.4.4 violation.
+//
+// Note: vague-but-acceptable CTAs like "Get started", "Sign up", "Try now"
+// are intentionally NOT in this list — they're fine as a single primary CTA.
+// They get caught by the high-frequency path below when they're repeated 3+
+// times on the same page (which is when screen-reader users actually lose
+// destination context).
+const ALWAYS_GENERIC_PATTERNS = [
   /^click here$/i,
   /^read more$/i,
   /^learn more$/i,
@@ -25,16 +34,13 @@ const GENERIC_PATTERNS = [
   /^see more$/i,
   /^view more$/i,
   /^find out more$/i,
-  /^get started$/i,   // too vague without context — flag when used 3+ times identically
 ];
 
-// "get started" and similarly vague CTAs are fine when used once as a primary CTA;
-// flag only when the exact text appears on 3+ distinct links.
 const HIGH_FREQUENCY_THRESHOLD = 3;
 
-function isGeneric(text: string): boolean {
+function isAlwaysGeneric(text: string): boolean {
   const trimmed = text.trim().toLowerCase();
-  return GENERIC_PATTERNS.some((p) => p.test(trimmed));
+  return ALWAYS_GENERIC_PATTERNS.some((p) => p.test(trimmed));
 }
 
 export const linkTextGeneric: AuditRule = {
@@ -49,9 +55,12 @@ export const linkTextGeneric: AuditRule = {
       const links = snapshot.data.ctas.filter((c) => c.tag === 'a');
       if (links.length === 0) continue;
 
-      const genericLinks = links.filter((c) => isGeneric(c.text));
+      const genericLinks = links.filter((c) => isAlwaysGeneric(c.text));
 
-      // Also flag high-frequency identical non-generic texts (e.g. 5× "Get started")
+      // Frequency-only patterns ("Get started") and any other repeated
+      // identical non-generic text fire once the same wording appears on
+      // 3+ links. A single primary "Get started" CTA is fine; six of them
+      // on the same page is not.
       const textFrequency = new Map<string, CtaCandidate[]>();
       for (const link of links) {
         const key = link.text.trim().toLowerCase();
@@ -60,7 +69,8 @@ export const linkTextGeneric: AuditRule = {
         textFrequency.set(key, bucket);
       }
       const highFrequency = [...textFrequency.values()].filter(
-        (group) => group.length >= HIGH_FREQUENCY_THRESHOLD && !isGeneric(group[0].text),
+        (group) =>
+          group.length >= HIGH_FREQUENCY_THRESHOLD && !isAlwaysGeneric(group[0].text),
       );
 
       if (genericLinks.length === 0 && highFrequency.length === 0) continue;

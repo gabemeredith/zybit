@@ -31,8 +31,8 @@ export const appUsers = pgTable(
     roleTitle: text('role_title'),
     /** ISO timestamp of the last time this user triggered a public audit. */
     lastAuditAt: timestamp('last_audit_at', { withTimezone: true }),
-    /** Acquisition funnel: 'magic_link' | 'audit_funnel' | 'invite'. */
-    signupSource: text('signup_source').notNull().default('magic_link'),
+    // Acquisition tracking lives on `app_users.source` (added by the
+    // audit-funnel migration). Do not add signup_source here — it overlaps.
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

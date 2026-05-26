@@ -1,8 +1,10 @@
--- 0016: user profile fields + per-user rule-fired tracking
+-- 0022: user profile fields + per-user rule-fired tracking
 --
 -- Extends app_users with product-analytics-friendly profile fields
 -- (industry auto-detected from audit, role_title for segmentation,
--- signup_source to track the acquisition funnel, last_audit_at).
+-- last_audit_at). Acquisition tracking lives on `app_users.source`
+-- (added in the audit-funnel migration) — do not add a parallel
+-- signup_source column here, it would overlap.
 --
 -- Adds app_user_rules_fired: a queryable log of which audit rules
 -- have fired for a user so we can personalize the dashboard, track
@@ -12,7 +14,6 @@
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS industry text;
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role_title text;
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_audit_at timestamptz;
-ALTER TABLE app_users ADD COLUMN IF NOT EXISTS signup_source text NOT NULL DEFAULT 'magic_link';
 
 CREATE TABLE IF NOT EXISTS app_user_rules_fired (
   id          text PRIMARY KEY,

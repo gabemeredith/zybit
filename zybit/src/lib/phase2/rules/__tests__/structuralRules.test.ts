@@ -123,6 +123,25 @@ describe('formLabelMissing', () => {
     const findings = formLabelMissing.evaluate(makeContext([], [snap]));
     expect(findings[0].severity).toBe('warn');
   });
+
+  it('checkbox/radio inputs without per-input labels do not fire (grouped via fieldset/legend)', () => {
+    // Preferences forms commonly use <fieldset><legend>...</legend> with
+    // checkbox/radio inputs that have no per-input <label>. Flagging these
+    // would false-positive on every signup/preferences form.
+    const form = makeForm('form-grouped', [
+      { name: 'newsletter', required: false, type: 'checkbox' },
+      { name: 'marketing', required: false, type: 'checkbox' },
+      { name: 'plan', required: true, type: 'radio' },
+      { name: 'plan', required: true, type: 'radio' },
+      { name: 'email', required: true, labelText: 'Email' },
+    ]);
+    form.inputs[0].labelText = null;
+    form.inputs[1].labelText = null;
+    form.inputs[2].labelText = null;
+    form.inputs[3].labelText = null;
+    const snap = makeSnapshot('/', [], [], [form]);
+    expect(formLabelMissing.evaluate(makeContext([], [snap]))).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -225,6 +244,28 @@ describe('linkTextGeneric', () => {
       makeCta('click here', 0.3, 'above'),
     ]);
     expect(linkTextGeneric.evaluate(makeContext([], [snap]))).toEqual([]);
+  });
+
+  it('single "Get started" primary CTA → no finding (frequency-only pattern)', () => {
+    // Common pattern on every landing page: one hero "Get started" CTA plus
+    // descriptive navigation. Must not fire — the 3× threshold gates it.
+    const snap = makeSnapshot('/', [
+      makeLink('Get started', '/signup'),
+      makeLink('Read the pricing guide', '/pricing'),
+      makeLink('View documentation', '/docs'),
+    ]);
+    expect(linkTextGeneric.evaluate(makeContext([], [snap]))).toEqual([]);
+  });
+
+  it('three identical "Get started" links → fires via high-frequency path', () => {
+    const snap = makeSnapshot('/', [
+      makeLink('Get started', '/signup'),
+      makeLink('Get started', '/signup-2'),
+      makeLink('Get started', '/signup-3'),
+    ]);
+    const findings = linkTextGeneric.evaluate(makeContext([], [snap]));
+    expect(findings).toHaveLength(1);
+    expect(findings[0].evidence.some((e) => String(e.label).includes('Get started'))).toBe(true);
   });
 
   it('descriptive links mixed with generic → fires for generic count', () => {

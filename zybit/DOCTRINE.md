@@ -159,7 +159,7 @@ deliberately **one milestone**, not a platform build.
 
 ### Recently completed
 
-6 new structural rules added (Layer E — snapshot-only, no events required): `headingHierarchyJump`, `formLabelMissing`, `imageAltTextMissing`, `linkTextGeneric`, `missingMetaDescription`, `missingCanonicalUrl`. Dollar figures removed from `impactEstimate` — revenue/ecommerce goal types now return conversion counts. User profile extended (`industry`, `role_title`, `last_audit_at`, `signup_source`) + `app_user_rules_fired` table added. Snapshot parser extended with `images[]`.
+6 new structural rules added (Layer E — snapshot-only, no events required): `headingHierarchyJump`, `formLabelMissing`, `imageAltTextMissing`, `linkTextGeneric`, `missingMetaDescription`, `missingCanonicalUrl`. Dollar figures removed from `impactEstimate` — revenue/ecommerce goal types now return conversion counts. User profile extended (`industry`, `role_title`, `last_audit_at`) + `app_user_rules_fired` table added. Acquisition tracking lives on `app_users.source` (from the audit funnel). Snapshot parser extended with `images[]`.
 
 ### What is deliberately not being built
 

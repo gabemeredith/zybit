@@ -41,7 +41,8 @@ Two changes to the DB:
 industry        text          -- e.g. 'SaaS', 'ecommerce', 'fintech'
 role_title      text          -- PM job title from onboarding
 last_audit_at   timestamptz   -- set each time the insights pipeline runs for their org
-signup_source   text          -- 'magic_link' (default), 'invite', etc.
+-- Acquisition source lives on app_users.source (added by the audit-funnel migration).
+-- Do not duplicate as signup_source here.
 ```
 
 **New table `app_user_rules_fired`:**
@@ -51,7 +52,7 @@ Tracks which rules fired for which user/org/site across all audits. Powers the "
 id, user_id, org_id, site_id, finding_id, rule_id, fired_at, created_at
 ```
 
-Four indexes: `(user_id)`, `(org_id, rule_id)`, `(site_id)`, `(finding_id)`.
+Four single-column indexes: `(user_id)`, `(rule_id)`, `(org_id)`, `(site_id)`. No `(finding_id)` index — queries filtering by `finding_id` will table-scan; add an index alongside the first real query path when that's built.
 
 **To apply:** Run `npx drizzle-kit migrate` against Neon. The migration file is `drizzle/0016_user_profile_and_audit_tracking.sql`.
 

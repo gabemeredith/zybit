@@ -17,7 +17,19 @@
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
 import type { FormInputItem } from '../snapshots/types';
 
-const SKIP_TYPES = new Set(['submit', 'button', 'reset', 'hidden', 'image']);
+// Checkbox + radio inputs commonly use <fieldset>/<legend> grouping or
+// label-after-input patterns where per-input labelText may legitimately be
+// absent on the input itself. Flagging them here generates false positives
+// on every preferences/signup form with grouped controls.
+const SKIP_TYPES = new Set([
+  'submit',
+  'button',
+  'reset',
+  'hidden',
+  'image',
+  'checkbox',
+  'radio',
+]);
 
 function isLabelRequired(input: FormInputItem): boolean {
   return !SKIP_TYPES.has(input.type.toLowerCase());

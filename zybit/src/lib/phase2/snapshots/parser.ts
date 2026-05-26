@@ -317,7 +317,9 @@ function findImages(target: HTMLElement, ctaElements: Set<HTMLElement>): ImageIt
     const heightAttr = el.getAttribute('height');
     const width = widthAttr != null && /^\d+$/.test(widthAttr) ? parseInt(widthAttr, 10) : null;
     const height = heightAttr != null && /^\d+$/.test(heightAttr) ? parseInt(heightAttr, 10) : null;
-    const isCtaChild = ctaElements.has(el) || ctaElements.has(parentOf(el) as HTMLElement);
+    // ctaElements holds the img elements themselves (queried via
+    // `a img, button img`), so a direct membership check is sufficient.
+    const isCtaChild = ctaElements.has(el);
     results.push({ src: src.slice(0, TEXT_CAP), alt, hasAlt, width, height, isCtaChild, documentIndex });
     documentIndex++;
   }
