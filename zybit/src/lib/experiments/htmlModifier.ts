@@ -115,11 +115,37 @@ const URL_ATTRS_WITH_JS_SCHEME = new Set([
   'poster',
 ]);
 
+// Elements that can execute JavaScript or navigate the browser even after
+// <script> tags are stripped. The screenshot path runs in real headless
+// Chrome with no CSP, so:
+//
+//   <iframe src="data:text/html,<script>...</script>">      ← executes
+//   <object data="data:text/html,..." type="text/html">     ← executes
+//   <embed src="...">                                       ← can execute
+//   <frame src="...">                                       ← legacy framing
+//   <meta http-equiv="refresh" content="0;url=evil.com">    ← redirects Chrome
+//
+// We're showing a static visual preview, not running the customer's runtime,
+// so just remove these elements wholesale. The iframe-preview path has
+// `default-src 'none'; frame-src 'none'; object-src 'none'` in its CSP as a
+// belt+braces — but the screenshot path has only this defense.
+const FRAME_AND_EMBED_TAGS = new Set([
+  'iframe',
+  'frame',
+  'frameset',
+  'object',
+  'embed',
+  'applet',
+  'portal',
+]);
+
 /**
  * Remove all `<script>` tags (inline + external) plus inline event-handler
- * attributes (`onerror`, `onclick`, `onload`, …) and `javascript:` URIs from
- * an HTML string. Used by preview surfaces that render less-trusted content
- * — we're showing visual changes, not running the customer's runtime.
+ * attributes (`onerror`, `onclick`, `onload`, …), `javascript:` and `data:`
+ * URIs in url-bearing attributes, frame-creating elements
+ * (`<iframe>`/`<object>`/`<embed>`/etc.), and `<meta http-equiv="refresh">`
+ * tags from an HTML string. Used by preview surfaces that render less-trusted
+ * content — we're showing visual changes, not running the customer's runtime.
  *
  * Fails **closed**: any parse or traversal error returns `''` (blank HTML).
  * Why: this is the only line of defense for the Browserless screenshot path,
@@ -141,6 +167,21 @@ export function stripScripts(html: string): string {
   }
   try {
     for (const el of root.querySelectorAll('script')) el.remove();
+    // Frame/object/embed-style elements can execute scripts via data: URIs
+    // or by navigating Chrome to attacker-controlled content.
+    for (const el of root.querySelectorAll('*')) {
+      if (FRAME_AND_EMBED_TAGS.has(el.tagName?.toLowerCase() ?? '')) {
+        el.remove();
+      }
+    }
+    // <meta http-equiv="refresh" content="0;url=..."> would redirect headless
+    // Chrome away from the setContent payload before the screenshot fires.
+    for (const el of root.querySelectorAll('meta')) {
+      const httpEquiv = el.getAttribute('http-equiv');
+      if (httpEquiv && httpEquiv.toLowerCase() === 'refresh') {
+        el.remove();
+      }
+    }
     for (const el of root.querySelectorAll('*')) {
       const attrs = el.attributes;
       for (const name of Object.keys(attrs)) {
@@ -151,7 +192,7 @@ export function stripScripts(html: string): string {
         }
         if (URL_ATTRS_WITH_JS_SCHEME.has(lower)) {
           const value = attrs[name] ?? '';
-          if (isJavaScriptUri(value)) {
+          if (isJavaScriptUri(value) || isDataUri(value)) {
             el.removeAttribute(name);
           }
         }
@@ -184,4 +225,15 @@ export function stripScripts(html: string): string {
 function isJavaScriptUri(value: string): boolean {
   const normalized = value.replace(/[\t\n\r]/g, '');
   return /^\s*javascript:/i.test(normalized);
+}
+
+/**
+ * True when `value` parses as any `data:` URI. We don't try to allow benign
+ * subtypes (data:image/png, etc.) — relative image URLs go through `src=`
+ * which still works, and the screenshot path's threat model treats every
+ * data URI as untrusted because `data:text/html,...` is script-equivalent.
+ */
+function isDataUri(value: string): boolean {
+  const normalized = value.replace(/[\t\n\r]/g, '');
+  return /^\s*data:/i.test(normalized);
 }

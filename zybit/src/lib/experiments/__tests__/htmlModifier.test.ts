@@ -268,6 +268,69 @@ describe('stripScripts', () => {
     expect(out).not.toMatch(/href="[^"]*script:/i);
   });
 
+  it('removes <iframe>, <object>, <embed>, <frame>, <applet>, <portal>', () => {
+    const html =
+      '<html><body>' +
+      '<iframe src="https://evil.example.com"></iframe>' +
+      '<object data="data:text/html,<script>alert(1)</script>" type="text/html"></object>' +
+      '<embed src="https://evil.example.com/x.swf">' +
+      '<frame src="https://evil.example.com/">' +
+      '<applet code="Evil.class"></applet>' +
+      '<portal src="https://evil.example.com"></portal>' +
+      '<p>kept</p>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/<iframe/i);
+    expect(out).not.toMatch(/<object/i);
+    expect(out).not.toMatch(/<embed/i);
+    expect(out).not.toMatch(/<frame/i);
+    expect(out).not.toMatch(/<applet/i);
+    expect(out).not.toMatch(/<portal/i);
+    expect(out).toContain('<p>kept</p>');
+  });
+
+  it('removes <meta http-equiv="refresh"> (case-insensitive)', () => {
+    const html =
+      '<html><head>' +
+      '<meta http-equiv="refresh" content="0;url=https://evil.example.com/">' +
+      '<meta http-equiv="REFRESH" content="3;url=https://evil2.example.com/">' +
+      '<meta charset="utf-8">' +
+      '</head><body><p>hi</p></body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/http-equiv\s*=\s*["']?refresh/i);
+    expect(out).not.toContain('evil.example.com');
+    expect(out).not.toContain('evil2.example.com');
+    // Other meta tags survive.
+    expect(out).toMatch(/<meta\s+charset/i);
+  });
+
+  it('strips data: URIs in href/src/data attrs (data:text/html executes in Chrome)', () => {
+    const html =
+      '<html><body>' +
+      '<a href="data:text/html,<script>alert(1)</script>">a</a>' +
+      '<img src="data:image/png;base64,iVBORw0KG…">' +
+      '<form action="data:text/html,bad"><button formaction="data:text/html,bad">x</button></form>' +
+      '<a href="/safe">safe</a>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/href="data:/i);
+    expect(out).not.toMatch(/src="data:/i);
+    expect(out).not.toMatch(/action="data:/i);
+    expect(out).not.toMatch(/formaction="data:/i);
+    expect(out).toContain('href="/safe"');
+  });
+
+  it('strips entity-encoded data: schemes (data&#x09;:text/html,…)', () => {
+    const html =
+      '<html><body>' +
+      '<a href="data&#x09;:text/html,<script>alert(1)</script>">tab-entity</a>' +
+      '<a href="data&#10;:text/html,bad">lf-entity</a>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toMatch(/href="[^"]*:text\/html/i);
+    expect(out).not.toContain('alert(1)');
+  });
+
   it('fails closed (returns empty string) on unparseable input', () => {
     // Force the inner traversal to throw by monkey-patching the parser
     // surface. We approximate the contract here: an input that parses but
