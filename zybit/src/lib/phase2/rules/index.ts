@@ -115,10 +115,46 @@ const SEVERITY_RANK: Record<AuditFindingSeverity, number> = {
 export function runAuditRules(ctx: AuditRuleContext): AuditFindingsReport {
   const findings: AuditFinding[] = [];
   const diagnostics: AuditRuleDiagnostic[] = [];
+  const isPublicAudit = ctx.mode === 'public-audit';
 
   for (const rule of ALL_AUDIT_RULES) {
     try {
+      // Fail-closed in public-audit mode: a rule with no declaration emits
+      // nothing on the prospect surface. New behavioral rules that forget to
+      // declare cannot leak fabricated counts.
+      const behavior = rule.publicAuditBehavior ?? 'empty';
+      if (isPublicAudit && behavior === 'empty') {
+        diagnostics.push({
+          ruleId: rule.id,
+          emitted: 0,
+          skippedReason: 'PUBLIC_AUDIT_BEHAVIOR_EMPTY',
+        });
+        continue;
+      }
+
       const out = rule.evaluate(ctx);
+
+      // Apply structural-only rewrites in-place so persisted rows and the
+      // email read identically. The rewrite is colocated with the rule it
+      // covers — see each rule's `structuralPublicAuditCopy`.
+      if (isPublicAudit && behavior === 'structural-only' && rule.structuralPublicAuditCopy) {
+        for (const f of out) {
+          const rewrite = rule.structuralPublicAuditCopy(f, ctx);
+          if (!rewrite) continue;
+          f.title = rewrite.title;
+          f.summary = rewrite.summary;
+          f.evidence = rewrite.evidence;
+          f.prescription = {
+            ...(f.prescription ?? {
+              whatToChange: '',
+              whyItWorks: '',
+              experimentVariantDescription: '',
+            }),
+            whyItMatters: rewrite.whyItMatters,
+          };
+        }
+      }
+
       const cal = ctx.calibration?.get(rule.id);
       // Annotate each finding with the calibration that was active when the
       // rule ran so the PM surface can show "Tuned for your site" receipts.

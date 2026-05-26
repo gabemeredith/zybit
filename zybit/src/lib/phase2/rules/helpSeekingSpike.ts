@@ -63,6 +63,8 @@ export const helpSeekingSpike: AuditRule = {
   id: "help-seeking-spike",
   name: "Help-seeking spike",
   category: "help",
+  // Behavioral rule: counts help/contact clicks vs page views.
+  publicAuditBehavior: 'empty',
 
   proposeAnnotations(
     finding: AuditFinding,

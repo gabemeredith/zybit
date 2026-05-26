@@ -46,6 +46,10 @@ export const flowInterStepDropoff: AuditRule = {
   id: RULE_ID,
   name: 'Flow inter-step drop-off',
   category: 'flow',
+  // Flow rule: derived from route-transition events. Synthetic on public audit.
+  // (Handover §13.1 explicitly called this rule out as the next leak vector
+  // without an explicit declaration; declaring 'empty' closes it.)
+  publicAuditBehavior: 'empty',
 
   proposeAnnotations(
     finding: AuditFinding,

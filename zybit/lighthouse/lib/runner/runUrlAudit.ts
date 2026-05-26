@@ -20,7 +20,8 @@ import { phase1Events, phase2PageSnapshots, zybitFindings } from '@/lib/db/schem
 import { createPhase1Repository } from '@/lib/phase1';
 import { upsertFindings } from '@/lib/phase2/jobs/insightsTrigger';
 import { runPhase2InsightsPipeline } from '@/lib/phase2/runInsightsPipeline';
-import type { AuditFinding } from '@/lib/phase2/rules/types';
+import type { AuditFinding, AuditMode } from '@/lib/phase2/rules/types';
+import { applyDefenseInDepthScrub } from '@/lib/audit/publicAuditScrub';
 import { runSnapshot, SnapshotError } from '@/lib/phase2/snapshots';
 import { capturePageAllBreakpoints } from '@/lib/phase2/capture/record';
 import { buildFullDesignSnapshot } from '@/lib/phase2/snapshots/designCapture';
@@ -36,6 +37,15 @@ export interface RunUrlAuditOpts {
   /** Max pages to snapshot (after crawl + dedupe). */
   maxPages: number;
   onProgress?: (event: GenerateProgressEvent) => void;
+  /**
+   * Pipeline mode. `'public-audit'` makes the insights pipeline fail-closed
+   * on undeclared rules and applies each rule's `structuralPublicAuditCopy`
+   * in-place so persisted findings already carry the prospect-safe framing.
+   * The route handler no longer needs a post-hoc DELETE/UPDATE scrub.
+   * Defaults to `'in-app'` so the lighthouse scenario driver and any
+   * operator-triggered runs see full rule output.
+   */
+  mode?: AuditMode;
 }
 
 function now(): string {
@@ -59,7 +69,7 @@ function sanitize(value: string): string {
 export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult> {
   const startedAt = now();
   const runId = `lh_run_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
-  const { url, maxPages, onProgress } = opts;
+  const { url, maxPages, onProgress, mode } = opts;
 
   // 1) Crawl — discover the site's pages.
   progress(onProgress, 'crawl', `discovering pages on ${url}`);
@@ -209,8 +219,18 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
       end: new Date(baseTime + padMs).toISOString(),
     },
     maxFindings: 50,
+    ...(mode ? { mode } : {}),
   });
-  const auditFindings = (insights.auditReport?.findings ?? []) as AuditFinding[];
+  let auditFindings = (insights.auditReport?.findings ?? []) as AuditFinding[];
+
+  // Defense-in-depth scrub for public-audit mode. The rule-level rewrites
+  // and the fail-closed orchestrator are the primary fix; this catches any
+  // future regression that emits `(unnamed CTA)` artifacts after a guard
+  // is loosened. Lives in a shared module so the public-audit HTTP route
+  // and this runner can't drift (handover §13.3).
+  if (mode === 'public-audit') {
+    auditFindings = applyDefenseInDepthScrub(auditFindings);
+  }
   if (insights.warnings.length > 0 || !insights.trustworthy) {
     progress(
       onProgress,

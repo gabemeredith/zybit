@@ -49,6 +49,8 @@ export const errorExposure: AuditRule = {
   id: "error-exposure",
   name: "Error exposure cluster",
   category: "error",
+  // Behavioral rule: consumes JS error events from the analytics connector.
+  publicAuditBehavior: 'empty',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessionsByPath = new Map<string, Set<string>>();

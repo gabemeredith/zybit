@@ -209,8 +209,20 @@ function hasBrandDna(brandDna: AuditBrandDna | null | undefined): brandDna is Au
   );
 }
 
-/** Inline color swatch + hex label. Both inline so Outlook renders it. */
+/**
+ * Inline color swatch + hex label. Both inline so Outlook renders it.
+ *
+ * `hex` comes from a third-party page via `extractDesignTokens` and lands
+ * in a CSS `background` declaration. `escapeHtml` neutralizes HTML entities
+ * but leaves `;` and `}` intact, so a non-hex value with CSS-special chars
+ * could inject additional declarations into the email body (PR #85 review
+ * issue #2). Validate against a strict hex pattern before rendering and
+ * drop the swatch entirely on a mismatch — a missing swatch is preferable
+ * to a CSS injection vector.
+ */
+const SAFE_HEX_RE = /^#[0-9a-fA-F]{3,8}$/;
 function colorSwatch(hex: string, label: string): string {
+  if (!SAFE_HEX_RE.test(hex)) return '';
   const safe = escapeHtml(hex);
   return `
     <td style="vertical-align: top; padding-right: 18px;">
@@ -234,8 +246,14 @@ function brandDnaSection(report: AuditReport): string {
   // mode of heading colors. Calling the first "Brand primary" overstates a
   // detector that just sees that Stripe ships black CTAs on its hero.
   const swatchCells: string[] = [];
-  if (b.primaryColor) swatchCells.push(colorSwatch(b.primaryColor, 'CTA fill'));
-  if (b.secondaryColor) swatchCells.push(colorSwatch(b.secondaryColor, 'Heading'));
+  if (b.primaryColor) {
+    const cell = colorSwatch(b.primaryColor, 'CTA fill');
+    if (cell) swatchCells.push(cell);
+  }
+  if (b.secondaryColor) {
+    const cell = colorSwatch(b.secondaryColor, 'Heading');
+    if (cell) swatchCells.push(cell);
+  }
   const swatchRow = swatchCells.length
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 14px;"><tr>${swatchCells.join('')}</tr></table>`
     : '';

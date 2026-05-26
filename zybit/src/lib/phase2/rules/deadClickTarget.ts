@@ -52,6 +52,7 @@ export const deadClickTarget: AuditRule = {
   id: 'dead-click-target',
   category: 'rage',
   name: 'Dead click target',
+  publicAuditBehavior: 'as-is',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];

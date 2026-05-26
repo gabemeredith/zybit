@@ -17,6 +17,7 @@ import type { CanonicalEvent } from "@/lib/phase2/types";
 
 import {
   clamp,
+  evidenceFromFinding,
   formatCount,
   matchCtaToEvent,
   normalizeText,
@@ -92,6 +93,46 @@ export const heroHierarchyInversion: AuditRule = {
   id: "hero-hierarchy-inversion",
   name: "Hero hierarchy inversion",
   category: "hierarchy",
+  publicAuditBehavior: 'structural-only',
+
+  // Public-audit rewrite: the rule fires on real `cta_click` events in the
+  // in-app pipeline, but on synthetic events in the public-audit pipeline.
+  // The structural half (topmost vs visually heaviest CTA) is honest in both
+  // modes — strip the behavioral framing for the prospect and lean on
+  // structure-only language. Keeps title/evidence/whyItMatters in sync
+  // between the persisted finding row and the email render.
+  structuralPublicAuditCopy(finding) {
+    const topmost = evidenceFromFinding(finding, 'What visitors click most') ?? '(unnamed button)';
+    const heavy = evidenceFromFinding(finding, 'What your design emphasizes') ?? '(unnamed button)';
+    const page = evidenceFromFinding(finding, 'Page') ?? finding.pathRef ?? 'your homepage';
+    if (topmost.includes('(unnamed') || heavy.includes('(unnamed')) {
+      // Defense-in-depth: the rule's evaluate() now bails on unnamed sides,
+      // but a future regression that emitted them would slip through unless
+      // we also refuse to render here. Returning null leaves the finding's
+      // own copy intact so the registry test still sees a present rewrite.
+      return null;
+    }
+    return {
+      title: `On ${page}, the topmost CTA isn't the one your design emphasizes`,
+      summary:
+        `${page} leads with "${topmost}" at the top of the DOM, but your design's visual weight ` +
+        `is on "${heavy}". The button the eye lands on and the button the page leads with aren't the ` +
+        `same — visitors have to scan past the loud one to find the topmost one. That's friction.`,
+      whyItMatters:
+        `${page} leads with "${topmost}" at the top of the DOM, but your design's visual weight ` +
+        `is on "${heavy}". The button the eye lands on and the button the page leads with aren't the ` +
+        `same — visitors have to scan past the loud one to find the topmost one. That's friction.`,
+      evidence: [
+        { label: 'Topmost CTA', value: topmost },
+        { label: 'Most visually emphasized CTA', value: heavy },
+        { label: 'Page', value: page },
+        {
+          label: 'Based on',
+          value: 'page structure (we cannot see your real visitors yet — connect PostHog to confirm with click data)',
+        },
+      ],
+    };
+  },
 
   proposeModifications(
     finding: AuditFinding,

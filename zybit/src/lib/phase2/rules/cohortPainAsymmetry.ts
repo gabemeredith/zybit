@@ -52,6 +52,8 @@ export const cohortPainAsymmetry: AuditRule = {
   id: "cohort-pain-asymmetry",
   name: "Cohort pain asymmetry",
   category: "asymmetry",
+  // Behavioral rule: contrasts pain rates across user cohorts.
+  publicAuditBehavior: 'empty',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessions = groupSessions(ctx.events);

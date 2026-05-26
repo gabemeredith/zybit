@@ -56,6 +56,8 @@ export const returnVisitThrash: AuditRule = {
   id: "return-visit-thrash",
   name: "Return-visit thrash",
   category: "thrash",
+  // Behavioral rule: needs multi-session traces from the events stream.
+  publicAuditBehavior: 'empty',
 
   proposeAnnotations(
     finding: AuditFinding,

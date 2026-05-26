@@ -18,6 +18,7 @@ export const missingCanonicalUrl: AuditRule = {
   id: 'missing-canonical-url',
   category: 'seo',
   name: 'Missing canonical URL',
+  publicAuditBehavior: 'as-is',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];

@@ -39,6 +39,7 @@ export const formLabelMissing: AuditRule = {
   id: 'form-label-missing',
   category: 'accessibility',
   name: 'Form inputs missing labels',
+  publicAuditBehavior: 'as-is',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];

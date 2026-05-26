@@ -17,6 +17,7 @@ export const missingMetaDescription: AuditRule = {
   id: 'missing-meta-description',
   category: 'seo',
   name: 'Missing meta description',
+  publicAuditBehavior: 'as-is',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];

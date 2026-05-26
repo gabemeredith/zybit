@@ -31,6 +31,7 @@ export const headingHierarchyJump: AuditRule = {
   id: 'heading-hierarchy-jump',
   category: 'seo',
   name: 'Heading hierarchy jump',
+  publicAuditBehavior: 'as-is',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];

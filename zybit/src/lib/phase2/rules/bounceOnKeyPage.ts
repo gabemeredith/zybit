@@ -67,6 +67,8 @@ export const bounceOnKeyPage: AuditRule = {
   id: "bounce-on-key-page",
   name: "Bounce on key page",
   category: "bounce",
+  // Behavioral rule: needs single-page-session counts from the events stream.
+  publicAuditBehavior: 'empty',
 
   proposeAnnotations(
     finding: AuditFinding,

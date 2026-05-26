@@ -56,6 +56,8 @@ export const hesitationPattern: AuditRule = {
   id: "hesitation-pattern",
   name: "Hesitation pattern",
   category: "hesitation",
+  // Behavioral rule: needs active-dwell durations alongside click events.
+  publicAuditBehavior: 'empty',
 
   proposeAnnotations(
     finding: AuditFinding,

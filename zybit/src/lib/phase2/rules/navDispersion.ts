@@ -8,7 +8,17 @@
  * means the navigation isn't telling visitors where to start.
  */
 
-import { clamp, formatCount, gini, pct, quote, readStringProp, round, share } from "./helpers";
+import {
+  clamp,
+  evidenceFromFinding,
+  formatCount,
+  gini,
+  pct,
+  quote,
+  readStringProp,
+  round,
+  share,
+} from "./helpers";
 import { calibratedCap } from "./ruleCalibration";
 import type {
   AuditFinding,
@@ -25,6 +35,34 @@ export const navDispersion: AuditRule = {
   id: "nav-dispersion",
   name: "Navigation dispersion",
   category: "nav",
+  publicAuditBehavior: 'structural-only',
+
+  // Public-audit rewrite: nav-dispersion derives its core signal from real
+  // nav-link click distribution (Gini over click counts). In public mode
+  // those clicks are synthetic. The structural framing — "your nav exposes
+  // a lot of destinations" — still applies because nav-item count is parsed
+  // from real HTML; the click-distribution claim is dropped.
+  structuralPublicAuditCopy(finding) {
+    const page = evidenceFromFinding(finding, 'Page') ?? finding.pathRef ?? 'your homepage';
+    return {
+      title: `Your top nav on ${page} exposes a lot of destinations`,
+      summary:
+        `A wide nav forces every visitor to choose. The more options at the top, the more cognitive ` +
+        `load before the visitor can do the thing they came for. The best-converting marketing sites ` +
+        `keep top-level nav to 4-5 items.`,
+      whyItMatters:
+        `A wide nav forces every visitor to choose. The more options at the top, the more cognitive ` +
+        `load before the visitor can do the thing they came for. The best-converting marketing sites ` +
+        `keep top-level nav to 4-5 items.`,
+      evidence: [
+        { label: 'Page', value: page },
+        {
+          label: 'Based on',
+          value: 'page structure (nav-item count parsed from your HTML — connect PostHog to see which destinations actually win clicks)',
+        },
+      ],
+    };
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const counts = new Map<string, number>();
