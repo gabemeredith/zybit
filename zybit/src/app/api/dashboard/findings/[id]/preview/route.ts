@@ -55,9 +55,15 @@ export async function GET(
     return new NextResponse(result.message, { status: result.status });
   }
 
-  const frameAncestors = result.lighthouseSlug
-    ? "'self' http://localhost:3001"
-    : "'self'";
+  // Lighthouse (synthetic-site) previews are embedded by the Lighthouse dev
+  // server during local development. In production this env var is unset and
+  // only same-origin embedding is allowed. We additionally validate the value
+  // matches a strict `scheme://host[:port]` shape so a stray env value can't
+  // inject extra CSP directives.
+  const lighthouseOrigin = result.lighthouseSlug
+    ? sanitizePreviewOrigin(process.env.LIGHTHOUSE_PREVIEW_ORIGIN)
+    : null;
+  const frameAncestors = lighthouseOrigin ? `'self' ${lighthouseOrigin}` : "'self'";
   return new NextResponse(result.html, {
     status: 200,
     headers: new Headers({
@@ -67,4 +73,13 @@ export async function GET(
       'content-security-policy': `${PREVIEW_CSP_LOCKDOWN}frame-ancestors ${frameAncestors}`,
     }),
   });
+}
+
+const ORIGIN_PATTERN = /^https?:\/\/[a-z0-9.-]+(?::\d{1,5})?$/i;
+
+function sanitizePreviewOrigin(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!ORIGIN_PATTERN.test(trimmed)) return null;
+  return trimmed;
 }
