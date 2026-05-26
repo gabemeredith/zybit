@@ -126,9 +126,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const confirmed = verifyAuditCookie(cookieValue, id);
   const findings = confirmed && status === 'done' ? pickPublicFindings(row.findings) : null;
   // Mint the same signup CTA URL the report email uses — only for the
-  // cookie-verified requester. Keeps the secret server-side and avoids
-  // client-side URL construction.
-  const signupLink = confirmed ? mintSignupLink(row.email, row.id) : null;
+  // cookie-verified requester, and only once the audit has finished. Gating
+  // on status === 'done' aligns the link's effective lifetime with the
+  // fixed 30-day TTL minted into the email; otherwise the page polls every
+  // ~2s while 'running' and would generate a rolling-window HMAC.
+  const signupLink =
+    confirmed && status === 'done' ? mintSignupLink(row.email, row.id) : null;
 
   return NextResponse.json({
     id: row.id,

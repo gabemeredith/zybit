@@ -35,6 +35,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!email || !auditId || !sig) {
     return NextResponse.json({ error: 'missing-params' }, { status: 400 });
   }
+  // Cheap shape check before any DB hit — keeps junk URLs from reaching
+  // public_audits. RFC 5321 caps an email at 254 chars; the rest of the
+  // funnel already rejects personal-email TLDs upstream.
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: 'bad-email' }, { status: 400 });
+  }
   if (!verifyAuditSignupParam(email, auditId, sig)) {
     return NextResponse.json({ error: 'bad-signature' }, { status: 400 });
   }
@@ -70,7 +76,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     await resend.emails.send({
-      from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@getzybit.com>',
+      // Prefer AUDIT_FROM_EMAIL so a single DNS verification on the audit
+      // sender covers all three audit-funnel emails (confirm, report, signin).
+      // AUTH_FROM_EMAIL stays as a fallback so this route doesn't regress
+      // for deploys that only set the general auth sender.
+      from:
+        process.env.AUDIT_FROM_EMAIL ??
+        process.env.AUTH_FROM_EMAIL ??
+        'Zybit <noreply@getzybit.com>',
       to: email,
       subject: 'Your Zybit sign-in link',
       html: `
@@ -97,6 +110,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // Still redirect — don't reveal email-delivery failures.
   }
 
-  const params = new URLSearchParams({ signin: 'sent', email });
-  return redirectToAudit(auditId, params.toString());
+  // Don't echo the email into the redirect URL — it would land in browser
+  // history, Vercel access logs, and any analytics tool capturing full
+  // page URLs. SigninBanner falls back to generic "Check your inbox" copy
+  // when no email param is present.
+  return redirectToAudit(auditId, 'signin=sent');
 }
