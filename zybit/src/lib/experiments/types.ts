@@ -68,7 +68,11 @@ export function validateModifications(modifications: unknown): string | null {
         if (typeof mod.position !== 'string' || !(INSERT_POSITIONS as readonly string[]).includes(mod.position)) {
           return `${where}: \`position\` must be one of ${INSERT_POSITIONS.join(', ')}.`;
         }
-        if (typeof mod.html !== 'string') return `${where}: \`html\` must be a string.`;
+        // Empty html would round-trip through `sanitizeInsertHtml` and produce
+        // a no-op `insertAdjacentHTML('', position)` at proxy time — the
+        // experiment ships with a control-identical variant and pollutes the
+        // outcome the same way a bad `position` would.
+        if (!isNonEmptyString(mod.html)) return `${where}: \`html\` must be a non-empty string.`;
         break;
       default:
         return `${where}: unknown \`type\` ${JSON.stringify(mod.type)}.`;

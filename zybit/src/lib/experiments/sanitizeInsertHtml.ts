@@ -49,12 +49,18 @@ const ATTRS_BY_TAG: Record<string, ReadonlySet<string>> = {
 const SAFE_URL_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:', 'tel:']);
 
 function isSafeUrl(value: string): boolean {
-  // Normalize the same way the URL parser does: strip tab/newline/carriage-return/
-  // null bytes (which WHATWG drops mid-scheme), then trim surrounding whitespace.
-  // Without this, `java&#9;script:alert(1)` decodes to `java\tscript:alert(1)`,
-  // skips the scheme regex (which doesn't tolerate control chars), falls through
-  // to "no scheme → safe", and the browser still executes the JS.
-  const normalized = value.replace(/[\t\n\r\0]/g, '').trim();
+  // Normalize the same way the URL parser does:
+  //   - Strip tab/newline/carriage-return/null bytes (WHATWG drops these
+  //     mid-scheme). Without this, `java&#9;script:alert(1)` decodes to
+  //     `java\tscript:alert(1)`, skips the scheme regex (which doesn't
+  //     tolerate control chars), and falls through to "no scheme → safe".
+  //   - Map `\` → `/`. For HTTP(S)-grounded pages the WHATWG path-start
+  //     parser treats backslash identically to forward slash, so a payload
+  //     like `<img src="\\//attacker.example/pixel">` resolves cross-origin
+  //     in the browser even though it doesn't literally begin with `//`.
+  //     Normalising backslashes before the protocol-relative check rejects
+  //     both forms.
+  const normalized = value.replace(/[\t\n\r\0]/g, '').replace(/\\/g, '/').trim();
   if (normalized.length === 0) return false;
   // Protocol-relative URLs (`//evil.com/x`) point at a third-party origin even
   // though they lack a scheme — reject before the leading-slash shortcut.

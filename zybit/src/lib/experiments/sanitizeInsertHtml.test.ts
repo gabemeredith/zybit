@@ -128,6 +128,19 @@ describe('sanitizeInsertHtml — URL hardening', () => {
     expect(out).not.toMatch(/src=/);
   });
 
+  it('rejects backslash-prefixed protocol-relative URLs (`\\//evil.com` — WHATWG maps \\ → / on http(s) pages)', () => {
+    const out = sanitizeInsertHtml('<img src="\\//attacker.example/pixel" alt="x">');
+    expect(out).toContain('<img');
+    expect(out).not.toContain('attacker.example');
+    expect(out).not.toMatch(/src=/);
+  });
+
+  it('rejects mixed `\\/\\/evil.com` backslash bypass', () => {
+    const out = sanitizeInsertHtml('<a href="\\/\\/attacker.example/x">x</a>');
+    expect(out).not.toContain('attacker.example');
+    expect(out).not.toMatch(/href=/);
+  });
+
   it('keeps a normal http link', () => {
     const out = sanitizeInsertHtml('<a href="https://example.com/x">x</a>');
     expect(out).toContain('href="https://example.com/x"');

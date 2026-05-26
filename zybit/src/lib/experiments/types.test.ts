@@ -59,6 +59,14 @@ describe('validateModifications — element-insert', () => {
     ]);
     expect(err).toMatch(/selector/);
   });
+
+  it('rejects element-insert with empty html (proxy-time no-op → control-identical variant)', () => {
+    const err = validateModifications([
+      { type: 'element-insert', selector: 'h1', position: 'before', html: '' },
+    ]);
+    expect(err).toMatch(/html/);
+    expect(err).toMatch(/non-empty/);
+  });
 });
 
 describe('validateModifications — per-type field checks', () => {
