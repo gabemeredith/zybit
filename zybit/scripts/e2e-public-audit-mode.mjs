@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * E2E verification for Ring 1 (PublicAuditMode) + Ring 2 (structured
- * vision pass) against real public sites.
+ * vision pass) + Ring 3 (pageType modulation + Layer F copy critique)
+ * against real public sites.
  *
  * Drives the real Zybit parser + rule pipeline against vercel.com,
  * linear.app, and stripe.com — no mocks below the HTTP layer. For each
@@ -11,7 +12,9 @@
  *   3. Run `runAuditRules` in `'in-app'` mode → record findings
  *   4. Run `runAuditRules` in `'public-audit'` mode → record findings
  *   5. Apply `applyDefenseInDepthScrub` to the public-audit output
- *   6. Inject synthetic `visualSignals` + run hero-rule vision fallback
+ *   6. Inject synthetic `visualSignals` + run hero-rule vision fallback (Ring 2)
+ *   7. Inject synthetic `copyCritique` + run Layer F rules (Ring 3)
+ *   8. Verify pageType-driven suppression for above-fold-coverage (Ring 3)
  *
  * Assertions per site:
  *   - No findings from any `'empty'`-declared rule in public-audit mode.
@@ -22,6 +25,10 @@
  *   - The defense-in-depth scrub is a no-op against clean output.
  *   - When `visualSignals.visualPrimaryCta.text` is injected, the hero
  *     rule emits with that label instead of bailing on empty CTA text.
+ *   - vague-claim-detected fires on a synthetic low-specificity critique.
+ *   - proof-missing fires when the synthetic critique has 0 proof signals.
+ *   - cta-verb-mismatch fires when ctaAlignment.matches is false.
+ *   - above-fold-coverage is suppressed entirely on pageType=legal.
  *
  * Run:
  *   npx tsx scripts/e2e-public-audit-mode.mjs
@@ -38,6 +45,10 @@ import { runSnapshot } from '../src/lib/phase2/snapshots/index.ts';
 import { runAuditRules, ALL_AUDIT_RULES } from '../src/lib/phase2/rules/index.ts';
 import { applyDefenseInDepthScrub } from '../src/lib/audit/publicAuditScrub.ts';
 import { heroHierarchyInversion } from '../src/lib/phase2/rules/heroHierarchyInversion.ts';
+import { vagueClaimDetected } from '../src/lib/phase2/rules/vagueClaimDetected.ts';
+import { proofMissing } from '../src/lib/phase2/rules/proofMissing.ts';
+import { ctaVerbMismatch } from '../src/lib/phase2/rules/ctaVerbMismatch.ts';
+import { aboveFoldCoverage } from '../src/lib/phase2/rules/aboveFoldCoverage.ts';
 import { writeFile } from 'node:fs/promises';
 
 // Default target list. Many large-CDN sites (vercel.com, linear.app,
@@ -326,7 +337,7 @@ async function verifySite(target) {
       pageType: 'home',
       heroBlock: null,
       capturedAt: new Date().toISOString(),
-      modelVersion: 'gemini-2.0-flash',
+      modelVersion: 'gemini-3.5-flash',
     };
 
     const pathRef = new URL(snap.finalUrl).pathname || '/';
@@ -359,6 +370,158 @@ async function verifySite(target) {
     }
   } else {
     note('site had zero CTAs — skipping vision-fallback assertion');
+  }
+
+  // ── Ring 3 — pageType modulation + Layer F copy critique ────────────
+  // Inject synthetic copyCritique + visualSignals to verify the three
+  // Layer F rules can read them and emit findings as expected. This
+  // mirrors what `captureCopyCritique` writes at capture time. Capture-
+  // time itself is exercised by the unit tests + lighthouse runner;
+  // here we verify the consumer rules.
+
+  // (a) vague-claim-detected fires on a landing page with low specificity.
+  {
+    const data = JSON.parse(JSON.stringify(snap.data));
+    data.visualSignals = {
+      visualPrimaryCta: null,
+      visualSecondaryCta: null,
+      pageType: 'landing',
+      heroBlock: {
+        headline: 'Empower your team',
+        subheadline: 'Real CRO for product teams',
+        firstParagraph: null,
+      },
+      capturedAt: new Date().toISOString(),
+      modelVersion: 'gemini-3.5-flash',
+    };
+    data.copyCritique = {
+      specificity: 0.15,
+      vagueTerms: ['Empower your team'],
+      suggestedRewrites: ['Cut SOC2 audits from 80h to 6h'],
+      proofSignals: [],
+      ctaAlignment: null,
+      capturedAt: new Date().toISOString(),
+      modelVersion: 'gemini-3.5-flash',
+    };
+    const ctx = makeContext(data, snap.finalUrl, 'public-audit');
+    const findings = vagueClaimDetected.evaluate(ctx);
+    if (findings.length === 1) {
+      ok('[vague-claim-detected] fires on low-specificity landing page (Ring 3)');
+    } else {
+      fail(`[vague-claim-detected] expected 1 finding, got ${findings.length}`);
+    }
+
+    // proof-missing also fires from the same synthetic critique (proofSignals: []).
+    const proofFindings = proofMissing.evaluate(ctx);
+    if (proofFindings.length === 1) {
+      ok('[proof-missing] fires when copyCritique has no proof signals on landing page');
+    } else {
+      // 'landing' is in RELEVANT_PAGE_TYPES so we expect it to fire here.
+      fail(`[proof-missing] expected 1 finding on landing page, got ${proofFindings.length}`);
+    }
+  }
+
+  // (b) cta-verb-mismatch fires on pricing page with a "Read more" CTA.
+  {
+    const data = JSON.parse(JSON.stringify(snap.data));
+    // Force a CTA the rule can quote.
+    if (data.ctas.length > 0) {
+      data.ctas[0].text = 'Read more';
+      data.ctas[0].visualWeight = 0.9;
+    } else {
+      data.ctas.push({
+        ref: 'cta-synth',
+        cssSelector: null,
+        tag: 'a',
+        text: 'Read more',
+        href: '/x',
+        ariaLabel: null,
+        landmark: 'main',
+        visualWeight: 0.9,
+        visualWeightSignals: [],
+        foldGuess: 'above',
+        domDepth: 3,
+        documentIndex: 0,
+        disabled: false,
+      });
+    }
+    data.visualSignals = {
+      visualPrimaryCta: { text: 'Read more', bbox: { x: 0, y: 0, width: 0.3, height: 0.1 }, confidence: 0.9 },
+      visualSecondaryCta: null,
+      pageType: 'pricing',
+      heroBlock: { headline: 'Plans', subheadline: null, firstParagraph: null },
+      capturedAt: new Date().toISOString(),
+      modelVersion: 'gemini-3.5-flash',
+    };
+    data.copyCritique = {
+      specificity: 0.6,
+      vagueTerms: [],
+      suggestedRewrites: [],
+      proofSignals: ['specific metric'],
+      ctaAlignment: { matches: false, suggestedVerbs: ['Start free trial', 'Get started'] },
+      capturedAt: new Date().toISOString(),
+      modelVersion: 'gemini-3.5-flash',
+    };
+    const ctx = makeContext(data, snap.finalUrl, 'public-audit');
+    const findings = ctaVerbMismatch.evaluate(ctx);
+    if (findings.length === 1) {
+      ok('[cta-verb-mismatch] fires on pricing page with mismatched CTA verb (Ring 3)');
+    } else {
+      fail(`[cta-verb-mismatch] expected 1 finding, got ${findings.length}`);
+    }
+  }
+
+  // (c) pageType modulation — above-fold-coverage must suppress entirely
+  // on a legal page even when the page has a clearly below-fold heavy CTA.
+  {
+    const data = JSON.parse(JSON.stringify(snap.data));
+    // Force a below-fold heavy CTA so the rule's structural condition is met.
+    data.ctas.push({
+      ref: 'cta-bf-synth',
+      cssSelector: null,
+      tag: 'button',
+      text: 'Subscribe',
+      href: null,
+      ariaLabel: null,
+      landmark: 'main',
+      visualWeight: 0.92,
+      visualWeightSignals: ['btn-primary', 'bg-blue-600'],
+      foldGuess: 'below',
+      domDepth: 5,
+      documentIndex: 99,
+      disabled: false,
+    });
+    data.visualSignals = {
+      visualPrimaryCta: null,
+      visualSecondaryCta: null,
+      pageType: 'legal',
+      heroBlock: null,
+      capturedAt: new Date().toISOString(),
+      modelVersion: 'gemini-3.5-flash',
+    };
+    const pathRef = '/legal/privacy';
+    const ctx = makeContext(data, `https://${new URL(snap.finalUrl).hostname}${pathRef}`, 'public-audit');
+    // Inject 50 low-scroll page_views so the rule's pageview threshold is met
+    // and only the pageType modulation would prevent firing.
+    ctx.events = Array.from({ length: 50 }, (_, i) => ({
+      id: `pv-${i}`,
+      organizationId: 'org-e2e',
+      siteId: 'site-e2e',
+      sessionId: `sess-${i}`,
+      type: 'page_view',
+      path: pathRef,
+      occurredAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      source: 'api',
+      schemaVersion: 2,
+      metrics: { scrollPctNormalized: 0.2 },
+    }));
+    const findings = aboveFoldCoverage.evaluate(ctx);
+    if (findings.length === 0) {
+      ok('[above-fold-coverage × pageType=legal] suppressed entirely (Ring 3 modulation)');
+    } else {
+      fail(`[above-fold-coverage × pageType=legal] expected 0 findings, got ${findings.length}`);
+    }
   }
 
   // Structural rewrite spot-check.

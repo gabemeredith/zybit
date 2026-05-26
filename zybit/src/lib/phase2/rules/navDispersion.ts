@@ -20,6 +20,7 @@ import {
   share,
 } from "./helpers";
 import { calibratedCap } from "./ruleCalibration";
+import { pageTypeFromSnapshot, pageTypeModulation } from "./pageTypeModulation";
 import type {
   AuditFinding,
   AuditFindingEvidence,
@@ -81,9 +82,27 @@ export const navDispersion: AuditRule = {
     const distinctDests = counts.size;
     if (distinctDests < MIN_DISTINCT_DESTS) return [];
 
+    // PageType modulation — nav-dispersion is site-wide so we read pageType
+    // from the homepage (or the first available snapshot). On docs / legal /
+    // about / support the rule's premise — "a focused IA tells visitors
+    // where to start" — does not apply, so we suppress. On pricing / signup /
+    // checkout we tighten the cap (capMultiplier > 1) because every extra
+    // nav item on a conversion surface is a real exit ramp.
+    const homepageSnapshot =
+      ctx.pageSnapshotsByPath.get('/') ?? ctx.pageSnapshots[0] ?? null;
+    const pageType = pageTypeFromSnapshot(homepageSnapshot?.data?.visualSignals);
+    const modulation = pageTypeModulation('nav-dispersion', pageType);
+    if (modulation.suppress) return [];
+
     const countVector = [...counts.values()];
     const giniValue = gini(countVector);
-    if (giniValue >= calibratedCap(ctx, "nav-dispersion", MAX_GINI_FOR_FINDING)) return [];
+    // Gini is bounded by [0, 1] — clamp the modulated cap below the
+    // theoretical maximum (0.95) so a capMultiplier > 1 on a conversion
+    // surface cannot push the cap to or beyond Gini's ceiling (which
+    // would silently fire the rule on a perfectly focused nav).
+    const baseCap = calibratedCap(ctx, "nav-dispersion", MAX_GINI_FOR_FINDING);
+    const modulatedCap = Math.min(0.95, baseCap * modulation.capMultiplier);
+    if (giniValue >= modulatedCap) return [];
 
     const ordered = [...counts.entries()].sort((a, b) => {
       if (b[1] !== a[1]) return b[1] - a[1];

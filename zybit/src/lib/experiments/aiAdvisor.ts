@@ -59,9 +59,9 @@ export interface AdvisorResult {
   note?: string;
 }
 
-export const MODEL_NAME = 'gemini-2.0-flash';
+export const MODEL_NAME = 'gemini-3.5-flash';
 const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
 
 // `attribute-set` lets the AI mutate a DOM attribute on an allowlisted
 // selector. The selector check constrains *which element* is touched; this
