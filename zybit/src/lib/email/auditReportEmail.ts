@@ -40,10 +40,18 @@ export interface AuditFindingForEmail {
 
 /**
  * Brand-DNA payload extracted from `phase2_site_design_snapshot` for the
- * audited URL. Absent or fully-empty → the "Your brand DNA" section in the
- * email is skipped (fail-soft per the audit-funnel spec). The renderer also
- * skips individual fields that are null so a partial capture still produces
- * a sensible card.
+ * audited URL. Absent or fully-empty → the "What we observed" section in
+ * the email is skipped (fail-soft per the audit-funnel spec). The renderer
+ * also skips individual fields that are null so a partial capture still
+ * produces a sensible card.
+ *
+ * Field names are kept as `primaryColor` / `secondaryColor` / `typeScale`
+ * to stay drop-in with `phase2_site_design_snapshot.designTokens` and the
+ * existing `extractDesignTokens` writer. The email surface relabels these
+ * to what they actually measure (dominant CTA fill, dominant heading color,
+ * observed font sizes) — see PR #84 rename notes. A future schema refactor
+ * can rename the storage fields once we have a migration story; that's not
+ * blocking the audit-funnel ship.
  */
 export interface AuditBrandDna {
   /** Hex color (e.g. "#1A73E8") — mode of CTA background-color. */
@@ -52,9 +60,13 @@ export interface AuditBrandDna {
   secondaryColor: string | null;
   /** Sorted heading font sizes in px. */
   typeScale: number[] | null;
-  /** Detected CSS authoring framework ("tailwind", "bootstrap", etc). */
+  /** Detected CSS authoring framework ("tailwind", "bootstrap", etc).
+   * Null doesn't mean "no system" — it means the signature matcher didn't
+   * recognize a fingerprint (common on sites that compile / hash / tree-shake
+   * utility classes). The renderer surfaces this distinction. */
   cssSystem: string | null;
-  /** Up to 5 unique CTA copy samples from the structural snapshot. */
+  /** Up to 5 unique CTA copy samples from the structural snapshot (nav and
+   * header items excluded — this is conversion copy, not IA labels). */
   ctaVocabulary: string[];
 }
 
@@ -217,33 +229,41 @@ function brandDnaSection(report: AuditReport): string {
   if (!hasBrandDna(report.brandDna)) return '';
   const b = report.brandDna;
 
+  // Labels reflect what's actually measured: `primaryColor` is the mode of
+  // CTA backgrounds (not a brand-system primary), `secondaryColor` is the
+  // mode of heading colors. Calling the first "Brand primary" overstates a
+  // detector that just sees that Stripe ships black CTAs on its hero.
   const swatchCells: string[] = [];
-  if (b.primaryColor) swatchCells.push(colorSwatch(b.primaryColor, 'Primary'));
-  if (b.secondaryColor) swatchCells.push(colorSwatch(b.secondaryColor, 'Secondary'));
+  if (b.primaryColor) swatchCells.push(colorSwatch(b.primaryColor, 'CTA fill'));
+  if (b.secondaryColor) swatchCells.push(colorSwatch(b.secondaryColor, 'Heading'));
   const swatchRow = swatchCells.length
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 14px;"><tr>${swatchCells.join('')}</tr></table>`
     : '';
 
+  const factRow = (label: string, value: string): string =>
+    `<tr><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; width: 38%;">${escapeHtml(label)}</td><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK};">${value}</td></tr>`;
+
   const factRows: string[] = [];
+  // `cssSystem === null` doesn't mean "no system" — it means the matcher
+  // didn't recognize a fingerprint. Render the row anyway with explanatory
+  // copy so a Stripe/Linear-class site doesn't look broken in the report.
   if (b.cssSystem) {
+    factRows.push(factRow('Framework', escapeHtml(b.cssSystem)));
+  } else {
     factRows.push(
-      `<tr><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; width: 32%;">Framework</td><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK};">${escapeHtml(b.cssSystem)}</td></tr>`,
+      factRow('Framework', `<span style="color: ${MUTED};">unknown (compiled or hashed utility classes)</span>`),
     );
   }
   if (b.typeScale && b.typeScale.length > 0) {
     const scale = b.typeScale.map((n) => `${n}px`).join(' · ');
-    factRows.push(
-      `<tr><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; width: 32%;">Type scale</td><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK};">${escapeHtml(scale)}</td></tr>`,
-    );
+    factRows.push(factRow('Observed type sizes', escapeHtml(scale)));
   }
   if (b.ctaVocabulary.length > 0) {
     const samples = b.ctaVocabulary
       .slice(0, 5)
       .map((t) => `&ldquo;${escapeHtml(t)}&rdquo;`)
       .join(' · ');
-    factRows.push(
-      `<tr><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; width: 32%;">CTA voice</td><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK};">${samples}</td></tr>`,
-    );
+    factRows.push(factRow('Conversion copy', samples));
   }
   const factsTable = factRows.length
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${factRows.join('')}</table>`
@@ -252,11 +272,11 @@ function brandDnaSection(report: AuditReport): string {
   return `
           <tr>
             <td style="padding: 0 28px 24px;">
-              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 12px;">Your brand DNA</div>
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 12px;">What we observed</div>
               <div style="border: 1px solid ${HAIRLINE}; padding: 16px 18px;">
                 ${swatchRow}
                 ${factsTable}
-                <p style="margin: 12px 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px; line-height: 1.55; color: ${MUTED};">Every finding below is calibrated to these tokens — our suggestions match your existing palette, type scale, and voice.</p>
+                <p style="margin: 12px 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px; line-height: 1.55; color: ${MUTED};">These are the visible signals we extracted from your homepage — the colors your CTAs and headings actually render with, the type sizes the page uses, and the conversion copy we found. The findings below reference them by name.</p>
               </div>
             </td>
           </tr>
