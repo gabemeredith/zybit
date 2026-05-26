@@ -94,7 +94,12 @@ export async function POST(request: Request) {
         'NO_SELECTORS',
       );
     }
+    // Exclude nav/header items so the AI's "copy register" reflects what the
+    // page actually sells with (Start now / Get started / Book a demo) rather
+    // than the IA labels (Products / Pricing / Solutions). Same shape as the
+    // audit-funnel filter in `/api/audit/public/run` so the two surfaces agree.
     const ctaVocabulary = (snapshotData.ctas ?? [])
+      .filter((c) => c.landmark !== 'nav' && c.landmark !== 'header')
       .map((c) => c.text?.trim())
       .filter((t): t is string => !!t && t.length > 0)
       .slice(0, 20);
@@ -212,9 +217,13 @@ export async function POST(request: Request) {
 }
 
 /**
- * Selectors the AI may target: CTA + form `cssSelector` values that are
- * present and non-empty. Headings don't carry a selector on the snapshot —
- * heading-targeted variants are outside this route's surface for now.
+ * Selectors the AI may target: CTA + form + heading `cssSelector` values
+ * that are present and non-empty. Headings carry selectors as of the
+ * structural-snapshot upgrade that paired with PR #84's advisor expansion —
+ * needed for insert-shaped findings (return-visit-thrash, help-seeking-spike,
+ * hesitation-pattern) whose prescription anchors a new block above a heading.
+ * Without heading selectors the advisor would have to paraphrase those into
+ * text-replace on the nearest CTA, which doesn't implement the prescription.
  */
 function collectAllowedSelectors(data: PageSnapshotData): string[] {
   const out = new Set<string>();
@@ -223,6 +232,9 @@ function collectAllowedSelectors(data: PageSnapshotData): string[] {
   }
   for (const form of data.forms ?? []) {
     if (form.cssSelector && form.cssSelector.length > 0) out.add(form.cssSelector);
+  }
+  for (const heading of data.headings ?? []) {
+    if (heading.cssSelector && heading.cssSelector.length > 0) out.add(heading.cssSelector);
   }
   return [...out];
 }

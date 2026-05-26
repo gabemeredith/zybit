@@ -13,7 +13,9 @@
  *     to inject a stub in tests. Functionally equivalent.
  */
 
-import type { VariantModification } from './types';
+import type { InsertPosition, VariantModification } from './types';
+import { INSERT_POSITIONS } from './types';
+import { sanitizeInsertHtml } from './sanitizeInsertHtml';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,6 +100,24 @@ export function isSafeReplacementText(text: string): boolean {
   return true;
 }
 
+// `element-insert` ships new HTML next to an allowlisted anchor. The
+// sanitizer in `sanitizeInsertHtml.ts` already enforces the tag + attribute
+// + URL-scheme policy at proxy time; this guard rejects the AI's draft
+// earlier so options that would round-trip to an empty string never reach
+// the PM-review surface. We also cap raw input length — a hallucinating
+// model can otherwise produce multi-KB blocks that survive sanitization
+// but still aren't reviewable. 4 KB covers "add a quick-answer section"
+// with a heading + 2 paragraphs + 2 list items.
+const INSERT_HTML_MAX_LENGTH = 4_096;
+export function isSafeInsertHtml(html: string): boolean {
+  if (typeof html !== 'string') return false;
+  if (html.length === 0 || html.length > INSERT_HTML_MAX_LENGTH) return false;
+  // Sanitize and require something survived. An all-`<script>`/`<iframe>`
+  // payload sanitizes to '' and would otherwise pass.
+  const sanitized = sanitizeInsertHtml(html);
+  return sanitized.trim().length > 0;
+}
+
 // `css-inject` accepts declarations applied to an allowlisted selector
 // (e.g. `font-size: 24px; color: #111;`). Anything that opens a new rule
 // block, references an external resource, or breaks out of the style
@@ -179,7 +199,19 @@ export function buildPrompt(args: {
       { type: 'element-hide', selector: 'string' },
       { type: 'element-show', selector: 'string' },
       { type: 'attribute-set', selector: 'string', attr: 'string', value: 'string' },
+      // `element-insert` is the one type that ships new markup. Its `html`
+      // field MUST use only layout/text tags (div, section, h1-h6, p, span,
+      // strong, em, ul/ol/li, a, button, img). No <script>, <iframe>, <form>,
+      // <input>, inline event handlers, or javascript:/data: URLs — those
+      // get stripped at proxy time and the option fails validation here.
+      { type: 'element-insert', selector: 'string', position: `one of: ${INSERT_POSITIONS.join(' | ')}`, html: 'string' },
     ]),
+    '',
+    'Use `element-insert` when the prescription is to ADD a new block (a quick-',
+    'answer section above the hero, an FAQ above the CTA, a proof line near the',
+    'form). Anchor it on a heading selector when one exists in the allowlist;',
+    "otherwise anchor on the closest CTA. Don't paraphrase an add into a",
+    'text-replace on an existing CTA.',
     '',
     'Generate exactly 3 different modification options that implement this finding.',
     'Each option must use selectors from the AVAILABLE SELECTORS list only.',
@@ -224,6 +256,18 @@ function validateModification(
       if (!allowedSelectors.has(selector)) return null;
       if (!isSafeAttributeName(m.attr)) return null;
       return { type, selector, attr: m.attr, value: m.value };
+    case 'element-insert': {
+      if (!selector || typeof m.position !== 'string' || typeof m.html !== 'string') return null;
+      if (!allowedSelectors.has(selector)) return null;
+      if (!(INSERT_POSITIONS as readonly string[]).includes(m.position)) return null;
+      if (!isSafeInsertHtml(m.html)) return null;
+      // Re-run the sanitizer so what reaches the PM is exactly what the proxy
+      // would apply. A model that emits `<div><script>…` survives the length
+      // gate but ships sanitized output with the script gone — better to make
+      // the option faithful to its final form than show the raw draft.
+      const sanitized = sanitizeInsertHtml(m.html);
+      return { type, selector, position: m.position as InsertPosition, html: sanitized };
+    }
     // `element-reorder` is omitted from the AI surface intentionally — it
     // takes child indexes the model would have to invent, which is exactly
     // the failure mode the selector allowlist is designed to prevent.

@@ -107,6 +107,16 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('untrusted');
   });
 
+  it('lists element-insert in the modification schema (PR #84 advisor scope expansion)', () => {
+    const prompt = buildPrompt({ finding: FINDING, design: DESIGN_FULL, snapshot: SNAPSHOT });
+    // Without this entry the model has no schema for inserts and degrades
+    // insert-shaped findings (return-visit-thrash / hesitation-pattern) to
+    // text-replace on the nearest CTA — the exact failure PR #84 flagged.
+    expect(prompt).toContain('"element-insert"');
+    expect(prompt).toContain('"position"');
+    expect(prompt).toContain('"html"');
+  });
+
   it('strips angle brackets from prescription text so injection cannot close the delimiter', () => {
     const injected: AdvisorFinding = {
       ruleId: 'r',
@@ -263,6 +273,91 @@ describe('parseAndValidateResponse', () => {
       captureMethod: 'structural',
     });
     expect(out.options[0].confidence).toBe('low');
+  });
+
+  it('accepts a valid element-insert against a heading selector and sanitizes its html', () => {
+    // The PR #84 motivating case: return-visit-thrash anchors a quick-answer
+    // block above the H1. Without element-insert support the advisor would
+    // either drop the option or paraphrase it into a text-replace.
+    const headingSelector = '#hero-h1';
+    const raw = JSON.stringify({
+      options: [
+        {
+          label: 'Quick-answer block above the hero',
+          modifications: [
+            {
+              type: 'element-insert',
+              selector: headingSelector,
+              position: 'before',
+              // <script> is allowed-but-sanitized: the validator should run the
+              // sanitizer and keep only the safe wrapper + heading + paragraph.
+              html: '<section class="qa"><h2>What is Acme?</h2><p>Workflow software for ops teams.</p><script>alert(1)</script></section>',
+            },
+          ],
+        },
+      ],
+    });
+    const out = parseAndValidateResponse({
+      raw,
+      availableSelectors: [headingSelector],
+      captureMethod: 'full',
+    });
+    expect(out.options).toHaveLength(1);
+    expect(out.options[0].modifications).toHaveLength(1);
+    const mod = out.options[0].modifications[0];
+    expect(mod.type).toBe('element-insert');
+    if (mod.type === 'element-insert') {
+      expect(mod.selector).toBe(headingSelector);
+      expect(mod.position).toBe('before');
+      expect(mod.html).toContain('<h2>What is Acme?</h2>');
+      expect(mod.html).not.toContain('<script>');
+    }
+  });
+
+  it('rejects element-insert with an invalid position', () => {
+    const raw = JSON.stringify({
+      options: [
+        {
+          label: 'bad-position',
+          modifications: [
+            { type: 'element-insert', selector: 'button.cta-primary', position: 'sideways', html: '<p>x</p>' },
+          ],
+        },
+      ],
+    });
+    const out = parseAndValidateResponse({
+      raw,
+      availableSelectors: ['button.cta-primary'],
+      captureMethod: 'full',
+    });
+    expect(out.options).toHaveLength(0);
+    expect(out.droppedCount).toBeGreaterThan(0);
+  });
+
+  it('rejects element-insert that sanitizes to empty html', () => {
+    // An all-<script>/<iframe> payload — sanitizes to '' and would otherwise
+    // ship a control-identical variant. Reject before it reaches PM review.
+    const raw = JSON.stringify({
+      options: [
+        {
+          label: 'all-stripped',
+          modifications: [
+            {
+              type: 'element-insert',
+              selector: 'button.cta-primary',
+              position: 'after',
+              html: '<script>alert(1)</script><iframe src="x"></iframe>',
+            },
+          ],
+        },
+      ],
+    });
+    const out = parseAndValidateResponse({
+      raw,
+      availableSelectors: ['button.cta-primary'],
+      captureMethod: 'full',
+    });
+    expect(out.options).toHaveLength(0);
   });
 
   it('drops modifications with selectors not on the allowlist', () => {
