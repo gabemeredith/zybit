@@ -4,7 +4,10 @@ import { after } from 'next/server';
 import { getDb } from '@/lib/db/client';
 import { zybitFindings } from '@/lib/db/schema';
 import { sendAuditReportEmail } from '@/lib/email/auditReportEmail';
-import type { AuditReport, AuditFindingForEmail } from '@/lib/email/auditReportEmail';
+import type { AuditReport, AuditFindingForEmail, AuditBrandDna } from '@/lib/email/auditReportEmail';
+import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
+import type { DesignTokens } from '@/lib/phase2/snapshots/tokenExtractor';
+import type { PageSnapshotData } from '@/lib/phase2/snapshots/types';
 import { recordAuditCost, checkDailyBudget } from '@/lib/audit/publicAuditRateLimit';
 import { captureAuditScreenshot, runVisionPass } from '@/lib/audit/visionPass';
 import { validatePublicUrl } from '@/lib/audit/urlValidator';
@@ -110,6 +113,95 @@ function structuralPublicAuditCopy(
     default:
       return null;
   }
+}
+
+/**
+ * Build the brand-DNA payload for the report email by joining the
+ * Browserless-captured design tokens (rows in `phase2_site_design_snapshot`,
+ * written by `runUrlAudit`'s parallel capture step) with the structural
+ * snapshot's CTA vocabulary. Returns `null` when neither side has data —
+ * the email renderer treats null as "skip the section".
+ */
+async function collectBrandDna(args: {
+  organizationId: string;
+  siteId: string;
+  auditUrl: string;
+}): Promise<AuditBrandDna | null> {
+  const pathRef = (() => {
+    try {
+      return new URL(args.auditUrl).pathname || '/';
+    } catch {
+      return '/';
+    }
+  })();
+
+  const db = getDb();
+  let tokens: DesignTokens | null = null;
+  let cssSystemFromDesign: string | null = null;
+  try {
+    const row = await createDesignSnapshotRepository().findBySitePath(
+      args.organizationId,
+      args.siteId,
+      pathRef,
+    );
+    if (row) {
+      tokens = (row.designTokens ?? null) as DesignTokens | null;
+      cssSystemFromDesign = row.cssSystem ?? null;
+    }
+  } catch {
+    // fail-soft — the section is optional. The audit row is already
+    // updated to 'done'; we don't want a brand-DNA read failure to flip
+    // the audit into a failed state.
+  }
+
+  // CTA vocabulary lives on the structural snapshot, not on the design
+  // snapshot row — pull from the existing phase2_page_snapshots row the
+  // structural fetch wrote earlier in the same run.
+  const ctaVocabulary: string[] = [];
+  let cssSystemFromSnapshot: string | null = null;
+  try {
+    const snap = await db.execute<{ data: PageSnapshotData }>(sql`
+      SELECT data FROM phase2_page_snapshots
+      WHERE site_id = ${args.siteId} AND path_ref = ${pathRef}
+      LIMIT 1
+    `);
+    const data = snap.rows[0]?.data;
+    if (data) {
+      cssSystemFromSnapshot = (data.cssSystem ?? null) as string | null;
+      const seen = new Set<string>();
+      for (const cta of data.ctas ?? []) {
+        const t = (cta.text ?? '').trim();
+        if (!t || seen.has(t)) continue;
+        seen.add(t);
+        ctaVocabulary.push(t);
+        if (ctaVocabulary.length >= 5) break;
+      }
+    }
+  } catch {
+    // fail-soft
+  }
+
+  const dna: AuditBrandDna = {
+    primaryColor: tokens?.primaryColor ?? null,
+    secondaryColor: tokens?.secondaryColor ?? null,
+    typeScale: tokens?.typeScale ?? null,
+    cssSystem: cssSystemFromDesign ?? cssSystemFromSnapshot,
+    ctaVocabulary,
+  };
+
+  // Return null when every field is empty so the route surfaces "no brand
+  // DNA available" cleanly instead of an all-null payload that the renderer
+  // would have to special-case downstream.
+  if (
+    !dna.primaryColor &&
+    !dna.secondaryColor &&
+    (!dna.typeScale || dna.typeScale.length === 0) &&
+    !dna.cssSystem &&
+    dna.ctaVocabulary.length === 0
+  ) {
+    return null;
+  }
+  return dna;
 }
 
 function formatDate(d: Date): string {
@@ -302,6 +394,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const bookCallUrl =
     process.env.ZYBIT_BOOK_CALL_URL ?? 'https://calendly.com/asad-getzybit/30min';
 
+  // Brand-DNA pull — runUrlAudit fires a parallel desktop Browserless
+  // capture and upserts to phase2_site_design_snapshot. Read the row here
+  // so the email can render the "Your brand DNA" section. Fail-soft: the
+  // section is omitted when nothing landed (Browserless error, budget
+  // exhausted, or just not configured locally).
+  const brandDna = await collectBrandDna({
+    organizationId: generateResult.organizationId,
+    siteId,
+    auditUrl: audit.url,
+  });
+
   const report: AuditReport = {
     auditId: audit.id,
     domain: audit.domain,
@@ -314,6 +417,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     bookCallUrl,
     screenshotUrl: screenshot?.screenshotUrl || null,
     visionObs,
+    brandDna,
   };
 
   // Approximate cost: $0.01 per snapshot page. Recorded against the budget

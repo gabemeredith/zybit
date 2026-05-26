@@ -13,6 +13,7 @@
  * verify the rule machinery + finding formatting against real page structure.
  */
 
+import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import { phase1Events, phase2PageSnapshots, zybitFindings } from '@/lib/db/schema';
@@ -21,6 +22,9 @@ import { upsertFindings } from '@/lib/phase2/jobs/insightsTrigger';
 import { runPhase2InsightsPipeline } from '@/lib/phase2/runInsightsPipeline';
 import type { AuditFinding } from '@/lib/phase2/rules/types';
 import { runSnapshot, SnapshotError } from '@/lib/phase2/snapshots';
+import { capturePageAllBreakpoints } from '@/lib/phase2/capture/record';
+import { buildFullDesignSnapshot } from '@/lib/phase2/snapshots/designCapture';
+import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
 import { mapSite } from '../crawl/firecrawl';
 import { generateGroundedEvents, type GroundedPage } from '../generators/groundedEvents';
 import { provisionLighthouseSite } from '../seeder/orgSite';
@@ -87,6 +91,49 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
       db.delete(zybitFindings).where(eq(zybitFindings.siteId, siteId)),
     ]);
   }
+
+  // 3.5) Brand-DNA capture — fire in parallel with the snapshot loop +
+  //      insights pipeline. Desktop-only (v1) per the audit-funnel spec; the
+  //      array shape leaves the capture layer forward-compatible, but the
+  //      `phase2_site_design_snapshot` row is keyed (siteId, pathRef) without
+  //      a breakpoint column — adding mobile here today would silently
+  //      overwrite the desktop row on upsert. Don't expand without a schema
+  //      change. Fail-soft: errors are logged via the progress channel and
+  //      the audit completes without a brand-DNA section in the report.
+  const primaryPathRef = new URL(url).pathname || '/';
+  const brandDnaPromise = (async () => {
+    try {
+      const summary = await capturePageAllBreakpoints({
+        url,
+        pathRef: primaryPathRef,
+        siteId,
+        organizationId,
+        breakpoints: ['desktop'],
+        runId: randomUUID(),
+      });
+      const capture = summary.captures[0];
+      if (!capture) {
+        progress(onProgress, 'snapshots', 'brand-DNA capture returned no captures');
+        return;
+      }
+      const row = buildFullDesignSnapshot({
+        organizationId,
+        capture,
+        // `cssSystem` lives on the structural snapshot, not on the
+        // PageCapture — leave null at audit time; the AI advisor falls back
+        // to the structural snapshot's own `cssSystem` field.
+        cssSystem: null,
+      });
+      await createDesignSnapshotRepository().upsert(row);
+      progress(onProgress, 'snapshots', `brand-DNA captured for ${primaryPathRef}`);
+    } catch (err) {
+      progress(
+        onProgress,
+        'snapshots',
+        `brand-DNA capture failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  })();
 
   // 4) Snapshot every crawled page with Zybit's real fetch+parse pipeline.
   progress(onProgress, 'snapshots', `snapshotting ${map.pages.length} page(s)`);
@@ -230,6 +277,11 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
     category: f.category,
     summary: f.summary,
   }));
+
+  // Make sure the brand-DNA row is committed before we return — the route
+  // composes the report email immediately after this and reads from
+  // `phase2_site_design_snapshot`. Already non-throwing.
+  await brandDnaPromise;
 
   progress(onProgress, 'done', 'url audit complete');
   return {

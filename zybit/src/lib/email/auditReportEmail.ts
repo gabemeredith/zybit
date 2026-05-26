@@ -38,6 +38,26 @@ export interface AuditFindingForEmail {
   estimatedImpactMonthlyUsd: number | null;
 }
 
+/**
+ * Brand-DNA payload extracted from `phase2_site_design_snapshot` for the
+ * audited URL. Absent or fully-empty → the "Your brand DNA" section in the
+ * email is skipped (fail-soft per the audit-funnel spec). The renderer also
+ * skips individual fields that are null so a partial capture still produces
+ * a sensible card.
+ */
+export interface AuditBrandDna {
+  /** Hex color (e.g. "#1A73E8") — mode of CTA background-color. */
+  primaryColor: string | null;
+  /** Hex color — mode of heading color. */
+  secondaryColor: string | null;
+  /** Sorted heading font sizes in px. */
+  typeScale: number[] | null;
+  /** Detected CSS authoring framework ("tailwind", "bootstrap", etc). */
+  cssSystem: string | null;
+  /** Up to 5 unique CTA copy samples from the structural snapshot. */
+  ctaVocabulary: string[];
+}
+
 export interface AuditReport {
   /** The public_audits.id — used to mint the signed signup-CTA URL. */
   auditId: string;
@@ -56,6 +76,8 @@ export interface AuditReport {
   screenshotUrl?: string | null;
   /** 2-sentence AI visual observation from the screenshot, if run. */
   visionObs?: string | null;
+  /** Brand-DNA tokens for the audited URL, if Browserless capture succeeded. */
+  brandDna?: AuditBrandDna | null;
 }
 
 // The signup CTA URL is HMAC-signed with email|auditId so a leaked report
@@ -157,6 +179,90 @@ function findingCard(f: AuditFindingForEmail): string {
   `;
 }
 
+/**
+ * Returns true when the brand-DNA payload has at least one signal worth
+ * rendering. An all-null payload — which is what a structural-mode capture
+ * (or a failed Browserless run that was upserted by some other path) would
+ * produce — gets the same treatment as a fully-absent payload: skip the
+ * section entirely instead of rendering an empty card.
+ */
+function hasBrandDna(brandDna: AuditBrandDna | null | undefined): brandDna is AuditBrandDna {
+  if (!brandDna) return false;
+  return Boolean(
+    brandDna.primaryColor ||
+      brandDna.secondaryColor ||
+      (brandDna.typeScale && brandDna.typeScale.length > 0) ||
+      brandDna.cssSystem ||
+      brandDna.ctaVocabulary.length > 0,
+  );
+}
+
+/** Inline color swatch + hex label. Both inline so Outlook renders it. */
+function colorSwatch(hex: string, label: string): string {
+  const safe = escapeHtml(hex);
+  return `
+    <td style="vertical-align: top; padding-right: 18px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="display: inline-block; width: 22px; height: 22px; background: ${safe}; border: 1px solid ${HAIRLINE}; vertical-align: middle;"></span>
+        <span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK}; vertical-align: middle;">
+          <span style="display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 2px;">${escapeHtml(label)}</span>
+          ${safe}
+        </span>
+      </div>
+    </td>
+  `;
+}
+
+function brandDnaSection(report: AuditReport): string {
+  if (!hasBrandDna(report.brandDna)) return '';
+  const b = report.brandDna;
+
+  const swatchCells: string[] = [];
+  if (b.primaryColor) swatchCells.push(colorSwatch(b.primaryColor, 'Primary'));
+  if (b.secondaryColor) swatchCells.push(colorSwatch(b.secondaryColor, 'Secondary'));
+  const swatchRow = swatchCells.length
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 14px;"><tr>${swatchCells.join('')}</tr></table>`
+    : '';
+
+  const factRows: string[] = [];
+  if (b.cssSystem) {
+    factRows.push(
+      `<tr><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; width: 32%;">Framework</td><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK};">${escapeHtml(b.cssSystem)}</td></tr>`,
+    );
+  }
+  if (b.typeScale && b.typeScale.length > 0) {
+    const scale = b.typeScale.map((n) => `${n}px`).join(' · ');
+    factRows.push(
+      `<tr><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; width: 32%;">Type scale</td><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK};">${escapeHtml(scale)}</td></tr>`,
+    );
+  }
+  if (b.ctaVocabulary.length > 0) {
+    const samples = b.ctaVocabulary
+      .slice(0, 5)
+      .map((t) => `&ldquo;${escapeHtml(t)}&rdquo;`)
+      .join(' · ');
+    factRows.push(
+      `<tr><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; width: 32%;">CTA voice</td><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK};">${samples}</td></tr>`,
+    );
+  }
+  const factsTable = factRows.length
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${factRows.join('')}</table>`
+    : '';
+
+  return `
+          <tr>
+            <td style="padding: 0 28px 24px;">
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 12px;">Your brand DNA</div>
+              <div style="border: 1px solid ${HAIRLINE}; padding: 16px 18px;">
+                ${swatchRow}
+                ${factsTable}
+                <p style="margin: 12px 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px; line-height: 1.55; color: ${MUTED};">Every finding below is calibrated to these tokens — our suggestions match your existing palette, type scale, and voice.</p>
+              </div>
+            </td>
+          </tr>
+  `;
+}
+
 function screenshotSection(report: AuditReport): string {
   if (!report.screenshotUrl) return '';
 
@@ -229,6 +335,8 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
               </table>
             </td>
           </tr>
+
+          ${brandDnaSection(report)}
 
           ${screenshotSection(report)}
 
@@ -353,6 +461,13 @@ export function sampleAuditReport(): AuditReport {
     pagesScanned: 7,
     totalFindings: 11,
     bookCallUrl: 'https://calendly.com/asad-getzybit/30min',
+    brandDna: {
+      primaryColor: '#1A73E8',
+      secondaryColor: '#0F2540',
+      typeScale: [14, 16, 20, 28, 48],
+      cssSystem: 'tailwind',
+      ctaVocabulary: ['Start free trial', 'Book a demo', 'See pricing', 'Get started'],
+    },
     findings: [
       {
         id: 'f1',
