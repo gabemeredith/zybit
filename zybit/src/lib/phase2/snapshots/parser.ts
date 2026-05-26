@@ -159,9 +159,19 @@ function findHeadings(root: HTMLElement): HeadingItem[] {
     const tag = getTag(el);
     const level = Number(tag.slice(1));
     if (!Number.isInteger(level) || level < 1 || level > 6) continue;
-    const text = el.text.trim().slice(0, TEXT_CAP);
+    // `el.text` can be undefined when the parser hands back a node from a
+    // truncated/malformed DOM (posthog.com hits this on >2 MB pages — the
+    // capture is trimmed at the last `>` and a child element can land with
+    // no text accessor). `?? ''` keeps the crash from poisoning the entire
+    // audit run; the heading is simply skipped by the empty-text guard.
+    const text = (el.text ?? '').trim().slice(0, TEXT_CAP);
     if (!text) continue;
-    results.push({ level: level as HeadingItem['level'], text, documentIndex });
+    results.push({
+      level: level as HeadingItem['level'],
+      text,
+      documentIndex,
+      cssSelector: computeCssSelector(el, tag),
+    });
     documentIndex++;
   }
   return results;
@@ -205,7 +215,7 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     if (candidates.length >= MAX_CTAS) break;
     const tag = getTag(el);
     if (tag !== 'a' && tag !== 'button') continue;
-    const text = el.text.trim();
+    const text = (el.text ?? '').trim();
     const ariaLabel = (el.getAttribute('aria-label') ?? '').trim();
     // Graphical buttons / logo links often have no text or aria-label and
     // rely on a child <img alt="..."> for their accessible name. Treat that
@@ -220,7 +230,7 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     const el = candidates[i];
     const tag = getTag(el) as 'a' | 'button';
     const className = el.getAttribute('class') ?? null;
-    const directText = el.text.trim();
+    const directText = (el.text ?? '').trim();
     // For graphical CTAs, fall back to the first child img's alt as the
     // visible label so downstream rules can reason about them.
     const text = (directText || firstImgAlt(el)).slice(0, TEXT_CAP);
