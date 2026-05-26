@@ -15,6 +15,7 @@ import type {
 import type { CtaCandidate, FormCandidate, HeadingItem } from "@/lib/phase2/snapshots/types";
 import { pickSelectorForFinding } from "@/lib/phase2/snapshots/pickSelector";
 import { selectorStability, type SelectorStability } from "@/lib/phase2/snapshots/selectorUtils";
+import { nthOfTypeIndex } from "@/lib/phase2/rules/annotationHelpers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -95,7 +96,7 @@ function defaultSelector(
     const firstH1 = headings.find((h) => h.level === 1);
     const firstHeading = headings[0];
     const target = firstH1 ?? firstHeading;
-    if (target) return `h${target.level}:nth-of-type(${target.documentIndex + 1})`;
+    if (target) return `h${target.level}:nth-of-type(${nthOfTypeIndex(headings, target)})`;
     return "";
   }
 
@@ -203,8 +204,11 @@ function buildSuggestions(
     const text = h.text.trim().slice(0, 60);
     if (!text) continue;
     const tag = `h${h.level}`;
-    // Headings have no stable ref — use nth-of-type keyed by documentIndex
-    const selector = `${tag}:nth-of-type(${h.documentIndex + 1})`;
+    // Headings have no stable ref — use nth-of-type. Note `:nth-of-type` is
+    // per-tag and parent-scoped, so we count earlier same-level headings, not
+    // the global document index (which would skip past headings of other
+    // levels and produce a non-matching selector).
+    const selector = `${tag}:nth-of-type(${nthOfTypeIndex(headings, h)})`;
     suggestions.push({
       label: `${tag} "${text}"`,
       selector,

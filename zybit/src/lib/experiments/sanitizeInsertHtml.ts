@@ -49,13 +49,21 @@ const ATTRS_BY_TAG: Record<string, ReadonlySet<string>> = {
 const SAFE_URL_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:', 'tel:']);
 
 function isSafeUrl(value: string): boolean {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return false;
-  // Site-relative, root-relative, fragment, and protocol-relative-but-rooted
-  // URLs all pass — they can't switch the page to a javascript: context.
-  if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('?')) return true;
+  // Normalize the same way the URL parser does: strip tab/newline/carriage-return/
+  // null bytes (which WHATWG drops mid-scheme), then trim surrounding whitespace.
+  // Without this, `java&#9;script:alert(1)` decodes to `java\tscript:alert(1)`,
+  // skips the scheme regex (which doesn't tolerate control chars), falls through
+  // to "no scheme → safe", and the browser still executes the JS.
+  const normalized = value.replace(/[\t\n\r\0]/g, '').trim();
+  if (normalized.length === 0) return false;
+  // Protocol-relative URLs (`//evil.com/x`) point at a third-party origin even
+  // though they lack a scheme — reject before the leading-slash shortcut.
+  if (normalized.startsWith('//')) return false;
+  // Site-relative, root-relative, fragment, and query URLs all pass — they
+  // can't switch the page to a javascript: context.
+  if (normalized.startsWith('/') || normalized.startsWith('#') || normalized.startsWith('?')) return true;
   // Anything with a scheme must be on the allowlist.
-  const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):/i);
+  const schemeMatch = normalized.match(/^([a-z][a-z0-9+.-]*):/i);
   if (schemeMatch) {
     return SAFE_URL_SCHEMES.has(schemeMatch[1].toLowerCase() + ':');
   }
@@ -71,7 +79,6 @@ interface NodeLike {
   removeAttribute(name: string): void;
   setAttribute(name: string, value: string): void;
   remove(): void;
-  replaceWith(...content: string[]): void;
   text: string;
 }
 
@@ -90,11 +97,16 @@ function sanitizeNode(node: NodeLike): void {
   }
 
   if (!ALLOWED_TAGS.has(tag)) {
-    // Preserve the inner text so copy isn't silently lost when a PM wraps
-    // their section in a tag we don't allow.
-    const text = node.text;
-    if (text.trim().length > 0) node.replaceWith(text);
-    else node.remove();
+    // Drop the whole subtree. The text-preservation path used to call
+    // `node.replaceWith(node.text)` here, but `node-html-parser`'s
+    // `replaceWith` re-parses string arguments as HTML — so a payload like
+    // `<marquee>&lt;script&gt;alert(1)&lt;/script&gt;</marquee>` decoded its
+    // entities back into a live `<script>` tag in the parent, after this
+    // subtree had already been sanitized. Allowed wrappers (`<article>`,
+    // `<section>`, `<nav>`, `<aside>`, `<header>`, etc.) already cover every
+    // legitimate text-preservation case; the only inputs that lose text now
+    // are tags that don't belong in PM-authored copy in the first place.
+    node.remove();
     return;
   }
 

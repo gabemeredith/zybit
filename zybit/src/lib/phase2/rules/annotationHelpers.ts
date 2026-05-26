@@ -102,6 +102,30 @@ export function outlineMod(selector: string, color: string): VariantModification
 }
 
 /**
+ * Build a `:nth-of-type` index for a heading. `:nth-of-type` counts
+ * same-tag siblings within the parent, NOT a global document position —
+ * so using `documentIndex + 1` is wrong whenever there are headings of
+ * other levels earlier in the document. Example: on a page with
+ * `[h2 idx=0, h1 idx=1]`, `documentIndex+1` would produce
+ * `h1:nth-of-type(2)`, which matches nothing.
+ *
+ * This helper counts only headings of the same level appearing earlier
+ * in the snapshot. On the example above the `h1` correctly resolves to
+ * `:nth-of-type(1)`. This isn't a fully parent-scoped selector (we don't
+ * know the parent path from a heading list), but for the common case of
+ * one heading per level at the page root it produces a matching selector.
+ */
+export function nthOfTypeIndex(headings: HeadingItem[], target: HeadingItem): number {
+  let earlier = 0;
+  for (const h of headings) {
+    if (h === target) break;
+    if (h.documentIndex >= target.documentIndex) continue;
+    if (h.level === target.level) earlier += 1;
+  }
+  return earlier + 1;
+}
+
+/**
  * First-heading selector for a snapshot. Prefer `<h1>`; fall back to the
  * earliest-encountered heading of any level. Returns `null` if the page
  * has no headings (in which case the rule should fall back to whatever
@@ -111,7 +135,7 @@ export function firstHeadingSelector(headings: HeadingItem[]): string | null {
   if (headings.length === 0) return null;
   const h1 = headings.find((h) => h.level === 1);
   const target = h1 ?? headings[0];
-  return `h${target.level}:nth-of-type(${target.documentIndex + 1})`;
+  return `h${target.level}:nth-of-type(${nthOfTypeIndex(headings, target)})`;
 }
 
 /** Convenience: get the first heading selector from a snapshot. */

@@ -76,10 +76,22 @@ describe('sanitizeInsertHtml — dangerous markup is stripped', () => {
 });
 
 describe('sanitizeInsertHtml — tag handling', () => {
-  it('replaces disallowed wrapper tags with their text content', () => {
+  it('drops disallowed wrapper tags entirely (fail-closed; no text reinjection)', () => {
+    // Previously this path called `node.replaceWith(node.text)`, but
+    // node-html-parser's `replaceWith` re-parses string args as HTML, so
+    // entity-encoded payloads inside a disallowed wrapper could revive a
+    // live <script> tag. The wrapper and its contents are dropped now.
     const out = sanitizeInsertHtml('<marquee>Important copy</marquee>');
     expect(out).not.toContain('<marquee');
-    expect(out).toContain('Important copy');
+    expect(out).not.toContain('Important copy');
+  });
+
+  it('does not revive a <script> hidden in a disallowed wrapper via entity-encoded HTML', () => {
+    const out = sanitizeInsertHtml(
+      '<marquee>&lt;script&gt;alert(1)&lt;/script&gt;</marquee>',
+    );
+    expect(out).not.toMatch(/<script/i);
+    expect(out).not.toContain('alert(1)');
   });
 
   it('drops form-related tags entirely (no surreptitious phishing form)', () => {
@@ -90,6 +102,41 @@ describe('sanitizeInsertHtml — tag handling', () => {
     expect(out).not.toContain('<input');
     // The button inside the form is dropped along with the form.
     expect(out).not.toContain('Send');
+  });
+});
+
+describe('sanitizeInsertHtml — URL hardening', () => {
+  it('rejects javascript: hidden by an embedded tab character', () => {
+    const out = sanitizeInsertHtml('<a href="java&#9;script:alert(1)">Click</a>');
+    expect(out.toLowerCase()).not.toContain('javascript');
+    // Browsers normalize tabs out of the href; the sanitizer must too.
+    expect(out).not.toMatch(/href=/);
+  });
+
+  it('rejects javascript: hidden by an embedded newline character', () => {
+    const out = sanitizeInsertHtml('<a href="java&#10;script:alert(1)">Click</a>');
+    expect(out.toLowerCase()).not.toContain('javascript');
+    expect(out).not.toMatch(/href=/);
+  });
+
+  it('rejects protocol-relative URLs (cross-origin tracker pixel via //evil.com)', () => {
+    const out = sanitizeInsertHtml('<img src="//attacker.example/pixel" alt="x">');
+    // The img stays, the cross-origin src is stripped.
+    expect(out).toContain('<img');
+    expect(out).toContain('alt="x"');
+    expect(out).not.toContain('attacker.example');
+    expect(out).not.toMatch(/src=/);
+  });
+
+  it('keeps a normal http link', () => {
+    const out = sanitizeInsertHtml('<a href="https://example.com/x">x</a>');
+    expect(out).toContain('href="https://example.com/x"');
+  });
+
+  it('keeps a fragment, query, and root-relative URL', () => {
+    expect(sanitizeInsertHtml('<a href="#section">a</a>')).toContain('href="#section"');
+    expect(sanitizeInsertHtml('<a href="?q=1">a</a>')).toContain('href="?q=1"');
+    expect(sanitizeInsertHtml('<a href="/apply">a</a>')).toContain('href="/apply"');
   });
 });
 

@@ -3,6 +3,8 @@
  * predict the outcome from web-platform intuition. */
 export type InsertPosition = 'before' | 'after' | 'prepend' | 'append';
 
+export const INSERT_POSITIONS: readonly InsertPosition[] = ['before', 'after', 'prepend', 'append'] as const;
+
 export type VariantModification =
   | { type: 'css-inject'; selector: string; css: string }
   | { type: 'text-replace'; selector: string; text: string }
@@ -12,14 +14,64 @@ export type VariantModification =
   | { type: 'element-reorder'; parentSelector: string; childOrder: number[] }
   | { type: 'element-insert'; selector: string; position: InsertPosition; html: string };
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+/**
+ * Returns a PM-readable error string if the input isn't a valid
+ * `VariantModification[]`, or `null` if it is. Type-discriminated:
+ * each modification kind must carry the fields its proxy-time handler
+ * actually reads. Without this, a request like
+ * `{type:'element-insert', selector:'h1', position:'sideways'}` used to
+ * pass and silently no-op at proxy time (`INSERT_POSITION_MAP['sideways']`
+ * is undefined), so the experiment would run with a control-identical
+ * variant. Same risk for `element-reorder` without `childOrder`, etc.
+ */
 export function validateModifications(modifications: unknown): string | null {
   if (!Array.isArray(modifications)) {
     return 'Modifications must be an array.';
   }
-  const VALID_MOD_TYPES = ['css-inject', 'text-replace', 'element-hide', 'element-show', 'attribute-set', 'element-reorder', 'element-insert'] as const;
-  for (const mod of modifications) {
-    if (!mod || typeof mod !== 'object' || !(VALID_MOD_TYPES as readonly string[]).includes(String((mod as Record<string, unknown>).type))) {
-      return 'Each modification must have a valid `type`.';
+  for (let i = 0; i < modifications.length; i++) {
+    const raw = modifications[i];
+    if (!raw || typeof raw !== 'object') {
+      return `Modification at index ${i} must be an object.`;
+    }
+    const mod = raw as Record<string, unknown>;
+    const where = `Modification at index ${i}`;
+    switch (mod.type) {
+      case 'css-inject':
+        if (!isNonEmptyString(mod.selector)) return `${where}: \`selector\` must be a non-empty string.`;
+        if (typeof mod.css !== 'string') return `${where}: \`css\` must be a string.`;
+        break;
+      case 'text-replace':
+        if (!isNonEmptyString(mod.selector)) return `${where}: \`selector\` must be a non-empty string.`;
+        if (typeof mod.text !== 'string') return `${where}: \`text\` must be a string.`;
+        break;
+      case 'element-hide':
+      case 'element-show':
+        if (!isNonEmptyString(mod.selector)) return `${where}: \`selector\` must be a non-empty string.`;
+        break;
+      case 'attribute-set':
+        if (!isNonEmptyString(mod.selector)) return `${where}: \`selector\` must be a non-empty string.`;
+        if (!isNonEmptyString(mod.attr)) return `${where}: \`attr\` must be a non-empty string.`;
+        if (typeof mod.value !== 'string') return `${where}: \`value\` must be a string.`;
+        break;
+      case 'element-reorder':
+        if (!isNonEmptyString(mod.parentSelector)) return `${where}: \`parentSelector\` must be a non-empty string.`;
+        if (!Array.isArray(mod.childOrder) || !mod.childOrder.every((n) => Number.isInteger(n) && (n as number) >= 0)) {
+          return `${where}: \`childOrder\` must be an array of non-negative integers.`;
+        }
+        break;
+      case 'element-insert':
+        if (!isNonEmptyString(mod.selector)) return `${where}: \`selector\` must be a non-empty string.`;
+        if (typeof mod.position !== 'string' || !(INSERT_POSITIONS as readonly string[]).includes(mod.position)) {
+          return `${where}: \`position\` must be one of ${INSERT_POSITIONS.join(', ')}.`;
+        }
+        if (typeof mod.html !== 'string') return `${where}: \`html\` must be a string.`;
+        break;
+      default:
+        return `${where}: unknown \`type\` ${JSON.stringify(mod.type)}.`;
     }
   }
   return null;
