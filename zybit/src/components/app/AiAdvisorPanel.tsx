@@ -60,7 +60,13 @@ function normalizeAdvisorResponse(
   | { kind: "err"; message: string; code?: string } {
   const obj = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
 
-  if (status >= 200 && status < 300 && obj.success === true && obj.data) {
+  if (
+    status >= 200 &&
+    status < 300 &&
+    obj.success === true &&
+    obj.data &&
+    typeof obj.data === "object"
+  ) {
     return { kind: "ok", data: obj.data as AdvisorSuccessPayload };
   }
   if (obj.ok === false) {

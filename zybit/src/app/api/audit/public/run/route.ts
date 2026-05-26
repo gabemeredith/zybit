@@ -527,6 +527,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: emailError }, { status: 500 });
   }
 
+  // Capture the completion timestamp at the moment we flip status=done so
+  // the post-audit write-through can stamp `last_audit_at` with a value
+  // that lines up with the audit record's own `completed_at`. `new Date()`
+  // inside `after()` would drift by however long the callback waits before
+  // running.
+  const completedAt = new Date();
+
   await db.execute(sql`
     UPDATE public_audits
     SET
@@ -535,36 +542,63 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       pages_scanned = ${counts.snapshots},
       total_findings = ${counts.findings},
       cost_usd = ${estimatedCostUsd.toFixed(4)},
-      completed_at = now()
+      completed_at = ${completedAt.toISOString()}
     WHERE id = ${auditId} AND status = 'running'
   `);
 
   // Post-audit profile + rules-fired write-through. Fire-and-forget so a
   // slow Neon write can't push the route past Vercel's response budget;
-  // the writer itself is fail-soft.
+  // the writer itself is fail-soft. The snapshot-read is also wrapped in
+  // try/catch — without that guard a Neon timeout or empty-string siteId
+  // would propagate out of the callback and silently skip the entire
+  // write-through, undoing the declared fail-soft contract.
   after(async () => {
-    // One extra query for richer industry signal — the latest snapshot's
-    // meta usually has the strongest classification hint after the URL.
-    const snapResult = await db.execute<{ data: { meta?: { title?: string | null; description?: string | null }; headings?: Array<{ text: string }> } }>(sql`
-      SELECT data FROM phase2_page_snapshots
-      WHERE site_id = ${siteId}
-      ORDER BY fetched_at DESC
-      LIMIT 1
-    `);
-    const snapData = snapResult.rows[0]?.data;
-    const industry = deriveIndustry(audit.url, {
-      title: snapData?.meta?.title ?? null,
-      description: snapData?.meta?.description ?? null,
-      headings: snapData?.headings?.slice(0, 3).map(h => h.text) ?? [],
-    });
+    try {
+      // One extra query for richer industry signal — the latest snapshot's
+      // meta usually has the strongest classification hint after the URL.
+      let snapData:
+        | { meta?: { title?: string | null; description?: string | null }; headings?: Array<{ text: string }> }
+        | undefined;
+      try {
+        const snapResult = await db.execute<{ data: { meta?: { title?: string | null; description?: string | null }; headings?: Array<{ text: string }> } }>(sql`
+          SELECT data FROM phase2_page_snapshots
+          WHERE site_id = ${siteId}
+          ORDER BY fetched_at DESC
+          LIMIT 1
+        `);
+        snapData = snapResult.rows[0]?.data;
+      } catch (err) {
+        // Snapshot read failed — degrade to URL-only industry derivation
+        // rather than skipping the entire write-through.
+        console.error('[audit/run] snapshot read for industry failed', {
+          auditId: audit.id,
+          siteId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
 
-    await recordAuditUserActivity({
-      auditId: audit.id,
-      siteId,
-      firedRules: dbFindings.map(f => ({ findingId: f.id, ruleId: f.ruleId })),
-      generatedAt: new Date(),
-      industry,
-    });
+      const industry = deriveIndustry(audit.url, {
+        title: snapData?.meta?.title ?? null,
+        description: snapData?.meta?.description ?? null,
+        headings: snapData?.headings?.slice(0, 3).map(h => h.text) ?? [],
+      });
+
+      await recordAuditUserActivity({
+        auditId: audit.id,
+        siteId,
+        firedRules: dbFindings.map(f => ({ findingId: f.id, ruleId: f.ruleId })),
+        generatedAt: completedAt,
+        industry,
+      });
+    } catch (err) {
+      // recordAuditUserActivity is already fail-soft, but defensively catch
+      // anything unexpected so an after() exception never reaches the
+      // runtime (where it would be invisible since the response is sent).
+      console.error('[audit/run] post-audit write-through failed', {
+        auditId: audit.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   });
 
   return NextResponse.json({

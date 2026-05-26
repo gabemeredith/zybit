@@ -29,7 +29,7 @@ import type { CtaCandidate } from '../snapshots/types';
 const DEAD_HREF_PATTERNS: RegExp[] = [
   /^\s*$/,           // empty string
   /^#!?\s*$/,         // "#" or "#!"
-  /^javascript:\s*(void\s*\(\s*0?\s*\)\s*)?;?\s*$/i, // "javascript:void(0)" + variants
+  /^javascript:\s*(?:void\s*(?:\(\s*0?\s*\)|0)\s*)?;?\s*$/i, // "javascript:void(0)", "javascript:void 0" + variants
 ];
 
 function deadHref(href: string | null): boolean {

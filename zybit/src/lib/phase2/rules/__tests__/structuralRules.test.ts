@@ -376,6 +376,16 @@ describe('deadClickTarget', () => {
     expect(findings).toHaveLength(1);
   });
 
+  // The parens-less variant `javascript:void 0` is a common placeholder in
+  // production HTML — Gemini code review flagged that the original regex
+  // missed it.
+  it('javascript:void 0 (no parens) → fires', () => {
+    const snap = makeSnapshot('/', [makeLink('Demo', 'javascript:void 0')]);
+    const findings = deadClickTarget.evaluate(makeContext([], [snap]));
+    expect(findings).toHaveLength(1);
+    expect(findings[0].ruleId).toBe('dead-click-target');
+  });
+
   it('5+ dead links on a page → severity warn', () => {
     const snap = makeSnapshot('/', [
       makeLink('A', '#'),
