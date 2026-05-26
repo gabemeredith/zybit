@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from 'drizzle-orm';
+import { after } from 'next/server';
 import { getDb } from '@/lib/db/client';
 import { zybitFindings } from '@/lib/db/schema';
 import { sendAuditReportEmail } from '@/lib/email/auditReportEmail';
@@ -7,6 +8,8 @@ import type { AuditReport, AuditFindingForEmail } from '@/lib/email/auditReportE
 import { recordAuditCost, checkDailyBudget } from '@/lib/audit/publicAuditRateLimit';
 import { captureAuditScreenshot, runVisionPass } from '@/lib/audit/visionPass';
 import { validatePublicUrl } from '@/lib/audit/urlValidator';
+import { deriveIndustry } from '@/lib/audit/deriveIndustry';
+import { recordAuditUserActivity } from '@/lib/audit/recordAuditUserActivity';
 import { runUrlAudit } from '../../../../../../lighthouse/lib/runner/runUrlAudit';
 import { eq, desc } from 'drizzle-orm';
 
@@ -361,6 +364,34 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       completed_at = now()
     WHERE id = ${auditId} AND status = 'running'
   `);
+
+  // Post-audit profile + rules-fired write-through. Fire-and-forget so a
+  // slow Neon write can't push the route past Vercel's response budget;
+  // the writer itself is fail-soft.
+  after(async () => {
+    // One extra query for richer industry signal — the latest snapshot's
+    // meta usually has the strongest classification hint after the URL.
+    const snapResult = await db.execute<{ data: { meta?: { title?: string | null; description?: string | null }; headings?: Array<{ text: string }> } }>(sql`
+      SELECT data FROM phase2_page_snapshots
+      WHERE site_id = ${siteId}
+      ORDER BY fetched_at DESC
+      LIMIT 1
+    `);
+    const snapData = snapResult.rows[0]?.data;
+    const industry = deriveIndustry(audit.url, {
+      title: snapData?.meta?.title ?? null,
+      description: snapData?.meta?.description ?? null,
+      headings: snapData?.headings?.slice(0, 3).map(h => h.text) ?? [],
+    });
+
+    await recordAuditUserActivity({
+      auditId: audit.id,
+      siteId,
+      firedRules: dbFindings.map(f => ({ findingId: f.id, ruleId: f.ruleId })),
+      generatedAt: new Date(),
+      industry,
+    });
+  });
 
   return NextResponse.json({
     status: 'done',
