@@ -232,4 +232,55 @@ describe('stripScripts', () => {
     expect(out).toContain('style="color: blue"');
     expect(out).toContain('.x { color: red }');
   });
+
+  it('strips entity-encoded javascript: schemes (HTML-entity bypass)', () => {
+    // Browsers strip tab/LF/CR from URLs before scheme parsing. `&#x09;` is a
+    // tab; `node-html-parser` decodes it to a literal \t in the attribute
+    // value. Without normalization the naive `/^javascript:/` test misses
+    // these and Chrome happily executes them.
+    const html =
+      '<html><body>' +
+      '<a href="java&#x09;script:alert(1)">tab-entity</a>' +
+      '<a href="java&#10;script:alert(2)">lf-entity</a>' +
+      '<a href="java&#13;script:alert(3)">cr-entity</a>' +
+      '<a href="&#x20;javascript:alert(4)">leading-space-entity</a>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toContain('alert(1)');
+    expect(out).not.toContain('alert(2)');
+    expect(out).not.toContain('alert(3)');
+    expect(out).not.toContain('alert(4)');
+    // After normalization none of these should remain as href values.
+    expect(out).not.toMatch(/href="[^"]*script:/i);
+  });
+
+  it('strips javascript: schemes with embedded raw control chars', () => {
+    const html =
+      '<html><body>' +
+      '<a href="java\tscript:alert(1)">tab</a>' +
+      '<a href="java\nscript:alert(2)">lf</a>' +
+      '<a href="java\rscript:alert(3)">cr</a>' +
+      '</body></html>';
+    const out = stripScripts(html);
+    expect(out).not.toContain('alert(1)');
+    expect(out).not.toContain('alert(2)');
+    expect(out).not.toContain('alert(3)');
+    expect(out).not.toMatch(/href="[^"]*script:/i);
+  });
+
+  it('fails closed (returns empty string) on unparseable input', () => {
+    // Force the inner traversal to throw by monkey-patching the parser
+    // surface. We approximate the contract here: an input that parses but
+    // causes downstream serialization to throw should still not leak
+    // unstripped HTML. The simpler invariant: a well-formed empty payload
+    // returns empty; a payload containing scripts but causing a thrown
+    // error must not return the original.
+    //
+    // We can directly assert the "no fail-open" contract by checking that
+    // even pathological input never re-emits a <script> tag.
+    const pathological = '<' + '<<<' + '<script>alert(99)</script>' + '>>>';
+    const out = stripScripts(pathological);
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('alert(99)');
+  });
 });

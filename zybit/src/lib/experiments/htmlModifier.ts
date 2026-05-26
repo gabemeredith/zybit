@@ -119,20 +119,25 @@ const URL_ATTRS_WITH_JS_SCHEME = new Set([
  * Remove all `<script>` tags (inline + external) plus inline event-handler
  * attributes (`onerror`, `onclick`, `onload`, …) and `javascript:` URIs from
  * an HTML string. Used by preview surfaces that render less-trusted content
- * — we're showing visual changes, not running the customer's runtime. Fails
- * open: parser failure returns the original markup unchanged.
+ * — we're showing visual changes, not running the customer's runtime.
+ *
+ * Fails **closed**: any parse or traversal error returns `''` (blank HTML).
+ * Why: this is the only line of defense for the Browserless screenshot path,
+ * which renders in real headless Chrome with no CSP. Returning the original
+ * markup on error would hand customer-controlled `<script>` tags to Chrome
+ * and allow exfiltration to remote URLs. A blank preview is the safe
+ * degradation — the caller's UI already falls back to "preview unavailable".
  *
  * CSP on the preview route additionally blocks script execution in the
- * direct-nav case; this function is the only line of defense for the
- * screenshot path (Browserless renders the HTML in headless Chrome, where
- * inline handlers would otherwise fire and could exfiltrate to remote URLs).
+ * direct-nav case, but the screenshot path has only this defense.
  */
 export function stripScripts(html: string): string {
   let root: ReturnType<typeof parse>;
   try {
     root = parse(html);
-  } catch {
-    return html;
+  } catch (err) {
+    console.warn('[stripScripts] parse failed; failing closed', { error: String(err) });
+    return '';
   }
   try {
     for (const el of root.querySelectorAll('script')) el.remove();
@@ -146,14 +151,37 @@ export function stripScripts(html: string): string {
         }
         if (URL_ATTRS_WITH_JS_SCHEME.has(lower)) {
           const value = attrs[name] ?? '';
-          if (/^\s*javascript:/i.test(value)) {
+          if (isJavaScriptUri(value)) {
             el.removeAttribute(name);
           }
         }
       }
     }
-  } catch {
-    return html;
+  } catch (err) {
+    console.warn('[stripScripts] traversal failed; failing closed', { error: String(err) });
+    return '';
   }
-  return safeSerialize(root, html);
+  // safeSerialize falls back to the original `html` on serialization error.
+  // For the strip path that fallback would re-introduce scripts, so we want
+  // a fail-closed fallback here too.
+  try {
+    return root.toString();
+  } catch (err) {
+    console.warn('[stripScripts] serialize failed; failing closed', { error: String(err) });
+    return '';
+  }
+}
+
+/**
+ * True when `value` parses as a `javascript:` URI under browser URL rules.
+ *
+ * Browsers strip ASCII tab, LF, and CR from URLs before scheme parsing
+ * (WHATWG URL spec), so `java&#x09;script:alert(1)` — which `node-html-parser`
+ * decodes to `java\tscript:alert(1)` — still executes as `javascript:` in
+ * Chrome. The naive `/^javascript:/i.test(value)` test misses this. We
+ * normalize the same way the URL parser does before checking.
+ */
+function isJavaScriptUri(value: string): boolean {
+  const normalized = value.replace(/[\t\n\r]/g, '');
+  return /^\s*javascript:/i.test(normalized);
 }
