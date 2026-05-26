@@ -32,6 +32,7 @@ import {
   readScrollFraction,
 } from "./helpers";
 import { calibratedFloor } from "./ruleCalibration";
+import { pageTypeFromSnapshot, pageTypeModulation } from "./pageTypeModulation";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -59,17 +60,39 @@ export const aboveFoldCoverage: AuditRule = {
   // structural half ("primary CTA sits below the fold") still holds — the
   // CTA position is measured from real HTML — so this rewrite keeps that
   // framing and strips the behavioral overlay.
-  structuralPublicAuditCopy(finding) {
+  //
+  // Vision-fallback (Ring 2 consumer): when the parser's CTA evidence
+  // resolves to `(unnamed CTA)` (typical for icon-only buttons), borrow
+  // the semantic label from `visualSignals.visualPrimaryCta.text`. Closes
+  // the same root cause as `heroHierarchyInversion`'s vision fallback —
+  // an icon-only "Get started" hero no longer surfaces as an unnamed
+  // placeholder on the prospect surface.
+  structuralPublicAuditCopy(finding, ctx) {
     const page = evidenceFromFinding(finding, 'Page') ?? finding.pathRef ?? 'your homepage';
+    const parsedCtaLabel = evidenceFromFinding(finding, 'Primary CTA') ?? '';
+    let ctaLabel = parsedCtaLabel;
+    if (!ctaLabel || ctaLabel.toLowerCase().includes('unnamed')) {
+      const snapshot = finding.pathRef ? ctx.pageSnapshotsByPath.get(finding.pathRef) : null;
+      const visual = snapshot?.data.visualSignals?.visualPrimaryCta;
+      if (visual?.text) ctaLabel = visual.text;
+    }
+    // Defense-in-depth: if both parser and vision still yield no label, we
+    // must not render "(unnamed CTA)" or a bare quote — that's the same
+    // gibberish the public-audit scrub exists to catch. Return null and
+    // let the orchestrator drop the finding.
+    if (!ctaLabel || ctaLabel.toLowerCase().includes('unnamed')) return null;
     return {
       title: `Your primary CTA on ${page} sits below the fold`,
       summary:
-        `On ${page}, the heaviest CTA in your design only becomes visible after a scroll. Visitors who ` +
-        `don't scroll never see your main action — and a meaningful share of any audience doesn't scroll.`,
+        `On ${page}, the heaviest CTA in your design ("${ctaLabel}") only becomes visible after a ` +
+        `scroll. Visitors who don't scroll never see your main action — and a meaningful share of any ` +
+        `audience doesn't scroll.`,
       whyItMatters:
-        `On ${page}, the heaviest CTA in your design only becomes visible after a scroll. Visitors who ` +
-        `don't scroll never see your main action — and a meaningful share of any audience doesn't scroll.`,
+        `On ${page}, the heaviest CTA in your design ("${ctaLabel}") only becomes visible after a ` +
+        `scroll. Visitors who don't scroll never see your main action — and a meaningful share of any ` +
+        `audience doesn't scroll.`,
       evidence: [
+        { label: 'Primary CTA', value: ctaLabel },
         { label: 'Page', value: page },
         {
           label: 'Based on',
@@ -151,7 +174,18 @@ export const aboveFoldCoverage: AuditRule = {
       const snapshot = ctx.pageSnapshotsByPath.get(pathRef);
       if (!snapshot) continue;
 
-      const finding = evaluatePage(pathRef, snapshot, pageviews, windowDays, ctx);
+      // PageType modulation: blog / legal / docs / about / support pages
+      // legitimately have content below the fold — emitting "your primary
+      // CTA is below the fold" on a Privacy Policy is noise. When the
+      // vision pass classifies the page into one of those types, drop the
+      // candidate before we spend time on it. Other page types may
+      // continue to fire with a tightened floor (see pageTypeModulation
+      // table — pricing/signup/checkout get floorMultiplier 0.7).
+      const pageType = pageTypeFromSnapshot(snapshot.data.visualSignals);
+      const modulation = pageTypeModulation("above-fold-coverage", pageType);
+      if (modulation.suppress) continue;
+
+      const finding = evaluatePage(pathRef, snapshot, pageviews, windowDays, ctx, modulation.floorMultiplier);
       if (finding !== null) findings.push(finding);
     }
 
@@ -165,6 +199,7 @@ function evaluatePage(
   pageviews: CanonicalEvent[],
   windowDays: number,
   ctx: AuditRuleContext,
+  floorMultiplier = 1,
 ): AuditFinding | null {
   const primary = pickPrimaryBelowFoldCta(snapshot.data.ctas);
   if (!primary) return null;
@@ -180,7 +215,11 @@ function evaluatePage(
   }
   const totalPageviews = pageviews.length;
   const belowFoldShare = totalPageviews > 0 ? lowScrollCount / totalPageviews : 0;
-  if (belowFoldShare <= calibratedFloor(ctx, "above-fold-coverage", MIN_BELOW_FOLD_SHARE)) return null;
+  // PageType-modulated floor: pricing/signup/checkout get a lower bar
+  // (floorMultiplier ~0.7) because below-fold CTAs on a conversion page are
+  // higher impact. Other rules pass 1 (neutral). Calibrated floor still
+  // applies first — pageType only further loosens or tightens it.
+  if (belowFoldShare <= calibratedFloor(ctx, "above-fold-coverage", MIN_BELOW_FOLD_SHARE) * floorMultiplier) return null;
 
   const signals = primary.visualWeightSignals.slice(0, 3);
   const signalList = signals.length > 0 ? signals.join(", ") : "no class signals";

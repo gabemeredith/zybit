@@ -11,6 +11,7 @@
 
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
 import type { HeadingItem } from '../snapshots/types';
+import { pageTypeFromSnapshot, pageTypeModulation } from './pageTypeModulation';
 
 function detectJumps(headings: HeadingItem[]): Array<{ from: HeadingItem; to: HeadingItem; gap: number }> {
   const jumps: Array<{ from: HeadingItem; to: HeadingItem; gap: number }> = [];
@@ -37,11 +38,22 @@ export const headingHierarchyJump: AuditRule = {
     const findings: AuditFinding[] = [];
 
     for (const snapshot of ctx.pageSnapshots) {
+      const pageType = pageTypeFromSnapshot(snapshot.data.visualSignals);
+      const modulation = pageTypeModulation('heading-hierarchy-jump', pageType);
+      if (modulation.suppress) continue;
+
       const headings = snapshot.data.headings;
       const h1s = headings.filter((h) => h.level === 1);
       const missingH1 = h1s.length === 0;
       const multipleH1 = h1s.length > 1;
-      const jumps = detectJumps(headings);
+      const allJumps = detectJumps(headings);
+      // Docs pages legitimately ship H1→H3 jumps when their renderer groups
+      // sections under a parent. floorMultiplier > 1 raises the count
+      // required to fire — e.g. 1.4 means a single jump no longer fires
+      // (we need ≥ 2). Keep the rule firing on missing-H1 / multiple-H1 in
+      // all cases — those are unambiguous semantic errors.
+      const minJumpsToFire = Math.max(1, Math.round(1 * modulation.floorMultiplier));
+      const jumps = allJumps.length >= minJumpsToFire ? allJumps : [];
 
       if (!missingH1 && !multipleH1 && jumps.length === 0) continue;
 
@@ -70,8 +82,11 @@ export const headingHierarchyJump: AuditRule = {
       if (multipleH1) issues.push(`${h1s.length} H1s`);
       if (jumps.length > 0) issues.push(`${jumps.length} heading level skip${jumps.length > 1 ? 's' : ''}`);
 
-      const severity = missingH1 ? 'warn' : 'info';
-      const priorityScore = missingH1 ? 0.5 : 0.3;
+      const baseSeverity: 'warn' | 'info' = missingH1 ? 'warn' : 'info';
+      const severity: 'warn' | 'info' = modulation.severityDowngrade && baseSeverity === 'warn' ? 'info' : baseSeverity;
+      const priorityScore = missingH1
+        ? modulation.severityDowngrade ? 0.3 : 0.5
+        : 0.3;
 
       findings.push({
         id: `heading-hierarchy-jump:${snapshot.pathRef}`,

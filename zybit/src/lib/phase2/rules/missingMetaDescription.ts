@@ -10,6 +10,7 @@
  */
 
 import type { AuditFinding, AuditRule, AuditRuleContext } from './types';
+import { pageTypeFromSnapshot, pageTypeModulation } from './pageTypeModulation';
 
 const MIN_DESCRIPTION_LENGTH = 50;
 
@@ -23,6 +24,10 @@ export const missingMetaDescription: AuditRule = {
     const findings: AuditFinding[] = [];
 
     for (const snapshot of ctx.pageSnapshots) {
+      const pageType = pageTypeFromSnapshot(snapshot.data.visualSignals);
+      const modulation = pageTypeModulation('missing-meta-description', pageType);
+      if (modulation.suppress) continue;
+
       const desc = snapshot.data.meta.description;
       const isMissing = !desc || desc.trim().length === 0;
       const isTooShort = !isMissing && desc!.trim().length < MIN_DESCRIPTION_LENGTH;
@@ -38,9 +43,12 @@ export const missingMetaDescription: AuditRule = {
         id,
         ruleId: 'missing-meta-description',
         category: 'seo',
-        severity: 'warn',
+        // Severity downgrade on low-priority page types (legal/about/checkout/signup):
+        // the rule still emits for completeness but doesn't pull rank in the
+        // top-4. SEO findings on these pages are real but the impact is small.
+        severity: modulation.severityDowngrade ? 'info' : 'warn',
         confidence: 0.95,
-        priorityScore: 0.45,
+        priorityScore: modulation.severityDowngrade ? 0.25 : 0.45,
         pathRef: snapshot.pathRef,
         title: isMissing
           ? `No meta description on ${snapshot.pathRef}`
