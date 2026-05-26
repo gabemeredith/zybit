@@ -1,8 +1,17 @@
 # Zybit — Audit Engine Handover
 
-**Branch:** `pr-57`  
-**Prepared:** 2026-05-26  
+**Branch:** `feat/audit-rules-fired-industry`
+**Prepared:** 2026-05-26 (original) · **Revised:** 2026-05-26
 **Purpose:** Engineering handover for the developer picking up the audit engine after this session. Covers what shipped, what needs to come next to make the audit endpoint fully defensible, and the full roadmap for the premium interactive visualization.
+
+> **Revision note (2026-05-26).** The original handover was written
+> assuming PRs #76–79 were still in flight and migration `0016` was the
+> next slot. Both turned out wrong; see inline `Status:` lines on each
+> section. Sections 3c, 3d are shipped on this branch (commits `6ca4084`
+> and `6ec19e7`). Section 4's merge sequence is **obsolete** — all
+> referenced PRs merged 2026-05-26; PRs #80/#81/#82 also merged. The 6
+> Layer E structural rules and migration `0022` (the work the original
+> handover describes as "this session") shipped via PR #80.
 
 ---
 
@@ -54,7 +63,7 @@ id, user_id, org_id, site_id, finding_id, rule_id, fired_at, created_at
 
 Four single-column indexes: `(user_id)`, `(rule_id)`, `(org_id)`, `(site_id)`. No `(finding_id)` index — queries filtering by `finding_id` will table-scan; add an index alongside the first real query path when that's built.
 
-**To apply:** Run `npx drizzle-kit migrate` against Neon. The migration file is `drizzle/0016_user_profile_and_audit_tracking.sql`.
+**To apply:** Run `npx drizzle-kit migrate` against Neon. The migration file landed as `drizzle/0022_user_profile_and_audit_tracking.sql` (renumbered when sibling PRs landed first) — **already applied to Neon** per `docs/sprints/REMEDIATION.md`.
 
 ### D — Six new structural/SEO/accessibility rules (Layer E)
 
@@ -71,7 +80,7 @@ All deterministic, snapshot-only (no behavioral events required). These fire on 
 
 All 6 rules are registered in `rules/index.ts` under `ALL_AUDIT_RULES`. Test coverage in `__tests__/structuralRules.test.ts` (~30 cases).
 
-**Rule budget:** Behavioral rules remain frozen at 12. Structural rules are now at 6 and can grow further if deterministic + snapshot-grounded.
+**Rule budget:** Behavioral rules remain frozen at 12 (7 pain + 5 design). Structural rules are at 6 and can grow further if deterministic + snapshot-grounded. With the 1 flow rule (`flowInterStepDropoff`) the registered total in `ALL_AUDIT_RULES` is **19**, not 18 as initially written.
 
 ### E — Doctrine updated
 
@@ -111,18 +120,27 @@ runInsightsPipeline(siteId, orgId)
         └─ persistFindings(findings, siteId)     ← upsert to DB
 ```
 
-**What works end-to-end:** Static HTML pages, PostHog/Segment/GA4 events, all 18 rules, outcome feedback loop (Layers 1+2), PM dashboard rendering.
+**What works end-to-end:** Static HTML pages, PostHog/Segment/GA4 events, all 19 rules, outcome feedback loop (Layers 1+2), PM dashboard rendering.
 
 **What doesn't work yet:**
-- JS-rendered/SPA pages: `browserFetcher.ts` fallback is a stub. Zybit logs a warning and returns the SSR shell. Modifications won't apply.
-- Rules-fired write-through: `app_user_rules_fired` table exists but nothing writes to it yet.
-- Industry auto-detection: `app_users.industry` column exists but nothing populates it.
+- JS-rendered/SPA pages: ~~`browserFetcher.ts` fallback is a stub.~~ **Update 2026-05-26:** Browserless is wired and was live-verified 2026-05-22 against a real SPA (`snapshotMethod: 'browser'` records returned). Production needs `BROWSERLESS_KEY` set in Vercel.
+- ~~Rules-fired write-through~~ **Shipped 2026-05-26** in the public-audit funnel — see commit `6ca4084`. The dashboard `runPhase2InsightsPipeline` path is deliberately not wired because `app_user_rules_fired.user_id` is `NOT NULL` and the in-app pipeline is org-scoped with multi-user ambiguity.
+- ~~Industry auto-detection~~ **Shipped 2026-05-26** as `deriveIndustry()` (host > subdomain > path > page-copy cascade), wired into the public-audit `done` UPDATE.
 
 ---
 
 ## 3. Making the audit endpoint fully defensible — next steps
 
 ### 3a. PageDNA capture
+
+> **Status (2026-05-26):** partially shipped. The design-snapshot table
+> (`phase2_site_design_snapshot`, migration `0016`) and the full-fidelity
+> capture writer (`buildFullDesignSnapshot` via Browserless) landed in
+> PR #58. Design-token extraction (`extractDesignTokens`, `tokenExtractor.ts`)
+> and the AI Variant Advisor API that consumes it landed in PR #66. So
+> the "computed styles / design tokens" half of this section is done.
+> Remaining items below (color contrast, viewport probes, weight signals)
+> are still real gaps.
 
 The snapshot parser currently extracts a subset of page data. The vision is a "PageDNA" — a lossless fingerprint of a page that makes every rule deterministic and every finding reproducible.
 
@@ -150,6 +168,13 @@ The snapshot parser currently extracts a subset of page data. The vision is a "P
 
 ### 3b. SPA support (Browserless)
 
+> **Status (2026-05-26):** shipped. `browserFetcher.ts` is wired and was
+> live-verified 2026-05-22 — a client-rendered SPA that returned an empty
+> HTTP shell rendered fully via Browserless. The snapshot records
+> `snapshotMethod: 'browser'` so downstream code can branch. Production
+> needs `BROWSERLESS_KEY` set in Vercel. The example sketch below was
+> the stub-era plan; the real implementation matches its shape.
+
 This is the biggest gap. JS-rendered pages (React, Vue, Angular) return an empty shell on HTTP fetch.
 
 **The path:**
@@ -171,6 +196,13 @@ Environment variable needed: `BROWSERLESS_WS_URL` — already in the third-party
 **Detection trigger:** `snapshotMethod === 'spa'` flag on `PageSnapshotData`. Already tracked in the schema, just not acted on in the rules yet.
 
 ### 3c. Industry auto-detection
+
+> **Status (2026-05-26):** shipped on this branch in commit `6ca4084`.
+> `src/lib/audit/deriveIndustry.ts` runs the host > subdomain > path >
+> page-copy cascade and is called from `/api/audit/public/run` after the
+> audit's `done` UPDATE, via `recordAuditUserActivity()`. Only writes
+> when the column is currently NULL — never overwrites an explicit
+> classification. The dashboard pipeline is *not* wired (see 3d).
 
 `app_users.industry` should be populated automatically when an audit runs, without asking the PM.
 
