@@ -157,6 +157,13 @@ async function collectBrandDna(args: {
   // CTA vocabulary lives on the structural snapshot, not on the design
   // snapshot row — pull from the existing phase2_page_snapshots row the
   // structural fetch wrote earlier in the same run.
+  //
+  // The CTA-text register is "detected conversion copy" — what the page
+  // sells with, not its navigation. Including nav/header entries (Products,
+  // Solutions, Developers, Pricing — the labels we ship today on Stripe and
+  // Linear captures) confuses the email's "CTA voice" claim with the IA
+  // labels. Filter those landmarks out and prefer high-weight entries when
+  // selecting the top 5.
   const ctaVocabulary: string[] = [];
   let cssSystemFromSnapshot: string | null = null;
   try {
@@ -168,8 +175,13 @@ async function collectBrandDna(args: {
     const data = snap.rows[0]?.data;
     if (data) {
       cssSystemFromSnapshot = (data.cssSystem ?? null) as string | null;
+      const candidates = (data.ctas ?? [])
+        .filter((c) => c.landmark !== 'nav' && c.landmark !== 'header')
+        .slice()
+        // Rank by visualWeight so a hero "Start now" beats a footer link.
+        .sort((a, b) => (b.visualWeight ?? 0) - (a.visualWeight ?? 0));
       const seen = new Set<string>();
-      for (const cta of data.ctas ?? []) {
+      for (const cta of candidates) {
         const t = (cta.text ?? '').trim();
         if (!t || seen.has(t)) continue;
         seen.add(t);
