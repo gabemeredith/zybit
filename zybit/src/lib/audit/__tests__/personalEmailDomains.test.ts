@@ -68,16 +68,23 @@ describe('isAllowlistedTestEmail', () => {
     expect(isAllowlistedTestEmail('dave@gmail.com')).toBe(false);
   });
 
-  it('falls back to NEXT_PUBLIC_ when the server-only var is unset', () => {
+  it('reads NEXT_PUBLIC_ when the server-only var is unset', () => {
     process.env.NEXT_PUBLIC_AUDIT_TEST_EMAILS = 'gabe@gmail.com';
     expect(isAllowlistedTestEmail('gabe@gmail.com')).toBe(true);
   });
 
-  it('prefers the server-only var when both are set', () => {
+  it('unions both server-only and client-visible vars when both are set', () => {
     process.env.PUBLIC_AUDIT_TEST_EMAILS = 'server@gmail.com';
     process.env.NEXT_PUBLIC_AUDIT_TEST_EMAILS = 'client@gmail.com';
     expect(isAllowlistedTestEmail('server@gmail.com')).toBe(true);
-    expect(isAllowlistedTestEmail('client@gmail.com')).toBe(false);
+    expect(isAllowlistedTestEmail('client@gmail.com')).toBe(true);
+    expect(isAllowlistedTestEmail('other@gmail.com')).toBe(false);
+  });
+
+  it('treats an empty PUBLIC_ as unset (does not suppress NEXT_PUBLIC_ fallback)', () => {
+    process.env.PUBLIC_AUDIT_TEST_EMAILS = '';
+    process.env.NEXT_PUBLIC_AUDIT_TEST_EMAILS = 'gabe@gmail.com';
+    expect(isAllowlistedTestEmail('gabe@gmail.com')).toBe(true);
   });
 
   it('trims and lowercases the input email before comparison', () => {

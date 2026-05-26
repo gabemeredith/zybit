@@ -63,12 +63,17 @@ export function isPersonalEmail(email: string): boolean {
  * rejection is bypassed. All other gates — SSRF, rate limits, budget,
  * confirmation flow — still apply.
  *
- * Two env-var names are read, both optional:
+ * Two env-var names are read, both optional, and their entries are
+ * **unioned** (not precedence-ordered) so the server and the client form
+ * agree on which addresses pass:
  *   - `PUBLIC_AUDIT_TEST_EMAILS` — server-only, never reaches the browser.
  *     Use when you only need to drive the API directly (curl / Postman).
  *   - `NEXT_PUBLIC_AUDIT_TEST_EMAILS` — also inlined into the client bundle
  *     by Next.js so the `/audit` form can skip its preemptive rejection.
  *     Use this when you want the actual GUI flow to work.
+ *
+ * Empty-string values (e.g. `PUBLIC_AUDIT_TEST_EMAILS=` from `.env.example`)
+ * are treated the same as unset — they do not suppress the other variable.
  *
  * Production-safe: setting either in prod only opens a hole for the named
  * humans whose inboxes you control. The double-opt-in step means a stranger
@@ -78,17 +83,18 @@ export function isPersonalEmail(email: string): boolean {
  * personal Gmail is fine; a colleague's address is a judgment call).
  */
 export function isAllowlistedTestEmail(email: string): boolean {
-  const raw =
-    process.env.PUBLIC_AUDIT_TEST_EMAILS ??
-    process.env.NEXT_PUBLIC_AUDIT_TEST_EMAILS;
-  if (!raw) return false;
   const normalized = email.trim().toLowerCase();
   if (!normalized) return false;
-  return raw
-    .split(',')
-    .map(s => s.trim().toLowerCase())
-    .filter(s => s.length > 0)
-    .includes(normalized);
+  const parseEmails = (val: string | undefined): string[] =>
+    (val ?? '')
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(s => s.length > 0);
+  const allowed = [
+    ...parseEmails(process.env.PUBLIC_AUDIT_TEST_EMAILS),
+    ...parseEmails(process.env.NEXT_PUBLIC_AUDIT_TEST_EMAILS),
+  ];
+  return allowed.includes(normalized);
 }
 
 export function rejectionMessage(): string {
