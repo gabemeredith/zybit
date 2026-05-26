@@ -43,6 +43,18 @@ describe('audit confirmation cookie', () => {
     const expiredCookie = `${Date.now() - 1000}.${sig}`;
     expect(verifyAuditCookie(expiredCookie, 'audit-123')).toBe(false);
   });
+
+  it('rejects non-hex / odd-length sig', () => {
+    // Buffer.from('hex') silently drops invalid chars — without the explicit
+    // hex-format guard, a short or non-hex sig would otherwise reach
+    // timingSafeEqual as a truncated buffer.
+    const expiry = Date.now() + 1000;
+    expect(verifyAuditCookie(`${expiry}.zzzz`, 'audit-123')).toBe(false);
+    expect(verifyAuditCookie(`${expiry}.${'a'.repeat(63)}`, 'audit-123')).toBe(false);
+    expect(
+      verifyAuditCookie(`${expiry}.${'A'.repeat(64)}`, 'audit-123'),
+    ).toBe(false);
+  });
 });
 
 describe('audit signup param HMAC', () => {
@@ -93,5 +105,13 @@ describe('audit signup param HMAC', () => {
     // Shift expiry into the far future — sig was computed over a different expiry.
     const tampered = `${Date.now() + 10 * 365 * 24 * 3600 * 1000}.${hex}`;
     expect(verifyAuditSignupParam('jad@acmebank.com', 'audit-123', tampered)).toBe(false);
+  });
+
+  it('normalizes email case + whitespace on both sides', () => {
+    // MTAs (Outlook safelinks, etc.) sometimes lowercase or trim email
+    // addresses; the HMAC must survive that round-trip.
+    const sig = signAuditSignupParam('Jad@Acmebank.com', 'audit-123');
+    expect(verifyAuditSignupParam('jad@acmebank.com', 'audit-123', sig)).toBe(true);
+    expect(verifyAuditSignupParam('  JAD@ACMEBANK.COM ', 'audit-123', sig)).toBe(true);
   });
 });

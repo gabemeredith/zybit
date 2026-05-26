@@ -184,9 +184,11 @@ async function autoProvisionUser(
       ON CONFLICT (email) DO NOTHING
     `);
   } catch (err) {
+    // Log auditId only — operators can join back to the audit row in psql /
+    // /admin/ops to recover the email. Keeps PII out of platform access logs,
+    // matching the privacy posture in request-link-from-audit/route.ts.
     console.error('[audit/confirm] auto-provision failed', {
       auditId,
-      email,
       error: err instanceof Error ? err.message : String(err),
     });
   }

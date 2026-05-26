@@ -35,6 +35,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!email || !auditId || !sig) {
     return NextResponse.json({ error: 'missing-params' }, { status: 400 });
   }
+  // Cheap shape check before any DB hit — keeps junk URLs from reaching
+  // public_audits. RFC 5321 caps an email at 254 chars; the rest of the
+  // funnel already rejects personal-email TLDs upstream.
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: 'bad-email' }, { status: 400 });
+  }
   if (!verifyAuditSignupParam(email, auditId, sig)) {
     return NextResponse.json({ error: 'bad-signature' }, { status: 400 });
   }
