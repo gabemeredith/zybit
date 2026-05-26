@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Get started — Verdant Health intake</title>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="/fake-sites/verdant/">Verdant</a>
+        <a href="/fake-sites/verdant/how-it-works">How it works</a>
+        <a href="/fake-sites/verdant/therapists">Therapists</a>
+        <a href="/fake-sites/verdant/get-started">Get started</a>
+      </nav>
+    </header>
+
+    <main>
+      <section>
+        <h1>Your Verdant intake</h1>
+        <p>
+          A short form so our clinical coordinator can match you well.
+          About four minutes. Your answers are encrypted end-to-end and
+          only seen by clinical staff.
+        </p>
+      </section>
+
+      <section>
+        <form data-testid="intake-form" action="/fake-sites/verdant/" method="post">
+          <p>
+            <label for="full-name">Full name</label>
+            <input id="full-name" name="full_name" type="text" required />
+          </p>
+          <p>
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" required />
+          </p>
+          <p>
+            <label for="dob">Date of birth</label>
+            <input id="dob" name="dob" type="date" required />
+          </p>
+          <p>
+            <label for="insurance">Insurance carrier</label>
+            <select id="insurance" name="insurance" required>
+              <option value="">Select your carrier</option>
+              <option value="aetna">Aetna</option>
+              <option value="cigna">Cigna</option>
+              <option value="bluecross">BlueCross BlueShield</option>
+              <option value="medicaid">Medicaid</option>
+              <option value="other">Other / self-pay</option>
+            </select>
+          </p>
+          <p>
+            <label for="medications">Current medications (list all, including dosage)</label>
+            <select id="medications" name="medications" required>
+              <option value="">Select…</option>
+              <option value="none">None</option>
+              <option value="prozac-10">Prozac 10mg</option>
+              <option value="prozac-20">Prozac 20mg</option>
+              <option value="zoloft-25">Zoloft 25mg</option>
+              <option value="zoloft-50">Zoloft 50mg</option>
+              <option value="lexapro-10">Lexapro 10mg</option>
+              <option value="lexapro-20">Lexapro 20mg</option>
+              <option value="wellbutrin-150">Wellbutrin XL 150mg</option>
+              <option value="wellbutrin-300">Wellbutrin XL 300mg</option>
+              <option value="adderall-10">Adderall 10mg</option>
+              <option value="adderall-20">Adderall 20mg</option>
+              <option value="other">Other (specify in notes)</option>
+            </select>
+          </p>
+          <p>
+            <label for="symptom">What brings you to therapy? (free text)</label>
+            <textarea id="symptom" name="symptom" rows="4" required></textarea>
+          </p>
+          <p>
+            <label for="therapist-gender">Preferred therapist gender</label>
+            <select id="therapist-gender" name="therapist_gender">
+              <option value="">No preference</option>
+              <option value="woman">Woman</option>
+              <option value="man">Man</option>
+              <option value="nonbinary">Non-binary</option>
+            </select>
+          </p>
+          <p>
+            <label for="availability">Weekly availability window</label>
+            <select id="availability" name="availability" required>
+              <option value="">Select…</option>
+              <option value="weekday-am">Weekday mornings</option>
+              <option value="weekday-pm">Weekday afternoons</option>
+              <option value="weekday-evening">Weekday evenings</option>
+              <option value="weekend">Weekends</option>
+            </select>
+          </p>
+          <p>
+            <button class="text-xl bg-primary font-bold px-6 py-3 rounded-2xl" type="submit" data-testid="intake-submit">Submit intake</button>
+          </p>
+        </form>
+      </section>
+
+      <section>
+        <h2>What happens after you submit</h2>
+        <p>
+          Our clinical coordinator reviews your intake personally — not
+          an algorithm — and emails you two or three matched therapists
+          within 24 hours. You pick one and book directly.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p>© Verdant Health. HIPAA-compliant intake. Your data is encrypted end-to-end.</p>
+    </footer>
+  </body>
+</html>

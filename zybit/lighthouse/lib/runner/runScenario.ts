@@ -31,6 +31,7 @@ import {
   runSnapshot,
   SnapshotError,
 } from '@/lib/phase2/snapshots';
+import type { PageSnapshotData } from '@/lib/phase2/snapshots/types';
 import { generateSyntheticExperiment } from './syntheticExperiment';
 import { runSession } from '../generators/sessionDriver';
 import { seededRng } from '../generators/rng';
@@ -130,52 +131,29 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
             },
           ]
         : [],
+      narratives: scenario.siteManifest.narratives ?? [],
     },
   });
 
-  // 2) Sessions
-  progress(onProgress, 'sessions', `running ${sessions} sessions`);
-  const sink: EventSink =
-    opts.mode === 'posthog'
-      ? new PostHogEventSink()
-      : new DirectEventSink({ organizationId });
-  const personaMix = buildPersonaMix(scenario);
-  const visitedPaths = new Set<string>();
-  const sessionStart = new Date();
-
-  for (let i = 0; i < sessions; i++) {
-    const rng = seededRng(`${scenario.id}|${i}`);
-    const personaId = weightedSample(personaMix, rng);
-    const persona = personaById(personaId);
-    const sessionId = `lh_sess_${scenario.siteManifest.slug}_${i}`;
-    const distinctId = `lh_visitor_${scenario.siteManifest.slug}_${i % 200}`;
-    const result = await runSession({
-      persona,
-      rng,
-      siteId,
-      paths: scenario.siteManifest.primaryFunnelPaths,
-      transitionWeights: scenario.siteManifest.transitionWeights,
-      exitHazard: scenario.siteManifest.exitHazard,
-      primaryCta: scenario.siteManifest.primaryCtaSelector
-        ? { ctaId: 'primary', selector: scenario.siteManifest.primaryCtaSelector }
-        : undefined,
-      sink,
-      sessionId,
-      distinctId,
-      sourceEventPrefix: `${scenario.id}|${i}`,
-    });
-    visitedPaths.add(result.finalPath);
-    for (const p of scenario.siteManifest.primaryFunnelPaths) visitedPaths.add(p);
+  // 2) Snapshots — taken BEFORE sessions so the driver can mint
+  // snapshot-grounded events (per-CTA cta_click weighted by visual
+  // weight, rage_click on the snapshot's rage target, etc.). The path
+  // set is derived from primaryFunnelPaths + every path that appears in
+  // transitionWeights so a session walking the matrix never lands on an
+  // un-snapshotted page.
+  const allPaths = new Set<string>(scenario.siteManifest.primaryFunnelPaths);
+  if (scenario.siteManifest.transitionWeights) {
+    for (const [src, dests] of Object.entries(scenario.siteManifest.transitionWeights)) {
+      allPaths.add(src);
+      for (const d of dests) allPaths.add(d.path);
+    }
   }
-  const { written } = await sink.flush();
-  const sessionEnd = new Date();
-
-  // 3) Snapshots
-  progress(onProgress, 'snapshots', `snapshotting ${visitedPaths.size} unique paths`);
+  progress(onProgress, 'snapshots', `snapshotting ${allPaths.size} unique paths`);
   const repository = createPhase1Repository();
   let snapshotsTaken = 0;
   const snapshotErrors: { path: string; code: string; message: string }[] = [];
-  for (const path of visitedPaths) {
+  const pageSnapshotsByPath = new Map<string, PageSnapshotData>();
+  for (const path of allPaths) {
     const fullUrl = urlForPath(baseUrl, path);
     try {
       const r = await runSnapshot(fullUrl, { respectRobots: false });
@@ -190,6 +168,11 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
         data: r.data,
         fetchedAt: new Date(),
       });
+      pageSnapshotsByPath.set(path, r.data);
+      // Also map the logical path so driver lookups by path (which may
+      // differ in trailing-slash from the originating manifest entry)
+      // resolve to the same snapshot.
+      if (logicalPath !== path) pageSnapshotsByPath.set(logicalPath, r.data);
       snapshotsTaken++;
     } catch (err) {
       if (err instanceof SnapshotError) {
@@ -203,6 +186,67 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
       }
     }
   }
+
+  // 3) Sessions — driver consumes snapshots minted in step 2.
+  progress(onProgress, 'sessions', `running ${sessions} sessions`);
+  const sink: EventSink =
+    opts.mode === 'posthog'
+      ? new PostHogEventSink()
+      : new DirectEventSink({ organizationId });
+  const personaMix = buildPersonaMix(scenario);
+  const hesitationPaths = scenario.siteManifest.hesitationPaths
+    ? new Set(scenario.siteManifest.hesitationPaths)
+    : undefined;
+  const lowScrollPaths = scenario.siteManifest.lowScrollPaths
+    ? new Set(scenario.siteManifest.lowScrollPaths)
+    : undefined;
+  const ctaIntentBoosts = scenario.siteManifest.ctaIntentBoosts
+    ? new Map(
+        scenario.siteManifest.ctaIntentBoosts.map((b) => [
+          `${b.pathRef}|${b.selector}`,
+          b.multiplier,
+        ]),
+      )
+    : undefined;
+  const sessionStart = new Date();
+
+  for (let i = 0; i < sessions; i++) {
+    const rng = seededRng(`${scenario.id}|${i}`);
+    const personaId = weightedSample(personaMix, rng);
+    const persona = personaById(personaId);
+    const sessionId = `lh_sess_${scenario.siteManifest.slug}_${i}`;
+    const distinctId = `lh_visitor_${scenario.siteManifest.slug}_${i % 200}`;
+    await runSession({
+      persona,
+      rng,
+      siteId,
+      // Pass the FULL reachable path set (primaryFunnelPaths ∪ every
+      // transition source/destination), not just primaryFunnelPaths. The
+      // driver's `pickPath` filters transitions to paths in this list, so
+      // any path referenced by transitionWeights but missing here gets
+      // dropped silently — which collapses sessions onto whatever
+      // primaryFunnelPaths contains and creates fake "stuck on one page"
+      // patterns that mis-trigger return-visit-thrash.
+      paths: [...allPaths],
+      transitionWeights: scenario.siteManifest.transitionWeights,
+      exitHazard: scenario.siteManifest.exitHazard,
+      pageSnapshotsByPath,
+      primaryCta: scenario.siteManifest.primaryCtaSelector
+        ? { ctaId: 'primary', selector: scenario.siteManifest.primaryCtaSelector }
+        : undefined,
+      rageCtaSelector: scenario.siteManifest.rageCtaSelector,
+      rageClickRate: scenario.siteManifest.rageClickRate,
+      hesitationPaths,
+      lowScrollPaths,
+      ctaIntentBoosts,
+      sink,
+      sessionId,
+      distinctId,
+      sourceEventPrefix: `${scenario.id}|${i}`,
+    });
+  }
+  const { written } = await sink.flush();
+  const sessionEnd = new Date();
 
   // 4) Insights
   progress(onProgress, 'insights', 'running Phase 2 insights pipeline');

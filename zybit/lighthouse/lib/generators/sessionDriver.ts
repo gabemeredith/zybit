@@ -2,6 +2,18 @@
  * Persona-driven session simulator. Emits CanonicalEvent-shaped events
  * straight into an EventSink — no real browser, no DOM.
  *
+ * Event shape: mints events in the SAME shape Zybit's PostHog connector
+ * produces at ingest — `page_view` events carry `scrollPctNormalized`,
+ * `dwellMs`, and optionally `activeSeconds`; `cta_click` events carry
+ * the actual clicked CTA's `cta_text` + `element_tag` (not a single
+ * scenario-wide primaryCta). Rage clicks emit when the scenario manifest
+ * names a `rageCtaSelector`.
+ *
+ * Snapshot-driven CTA clicks: when callers pass `pageSnapshotsByPath`,
+ * cta_click events sample from the snapshot's CTAs weighted by visual
+ * weight, so the HTML determines which CTA "wins" clicks. Falls back to
+ * the legacy single-primaryCta tag when no snapshot is available.
+ *
  * Why no Playwright here:
  *   The direct-mode sink writes canonical events straight to
  *   phase1_events. There's no autocapture path to exercise, so spinning
@@ -14,6 +26,7 @@
  * gets byte-identical event sequences across re-runs.
  */
 
+import type { CtaCandidate, PageSnapshotData } from '@/lib/phase2/snapshots/types';
 import type { EventSink } from '../sinks/types';
 import type { Persona } from '../personas/types';
 import {
@@ -46,10 +59,46 @@ export interface RunSessionOpts {
    */
   exitHazard?: Record<string, number>;
   /**
-   * Selector or ctaId that "clicking the primary CTA" emits as a property
-   * on cta_click events. Optional — null means clicks don't get a CTA tag.
+   * Per-path snapshot data. When present and the current path has a
+   * snapshot, cta_click events sample from snapshot CTAs weighted by
+   * visualWeight — so visually-heavy CTAs naturally win more clicks
+   * (which is exactly how hero-hierarchy-inversion gets surfaced).
+   */
+  pageSnapshotsByPath?: Map<string, PageSnapshotData>;
+  /**
+   * Fallback CTA tag for cta_click events when no snapshot is available
+   * for the current path. Kept for back-compat with scenarios that
+   * predate snapshot-driven clicks.
    */
   primaryCta?: { ctaId: string; selector?: string };
+  /**
+   * Selector of a CTA that produces rage clicks. Matched against the
+   * current path's snapshot CTAs; if found and rng < rageClickRate,
+   * emits a `rage_click` event tagged with that CTA's text + tag.
+   */
+  rageCtaSelector?: string;
+  /** Per-pageview probability that a rage_click event fires on the rage target. */
+  rageClickRate?: number;
+  /**
+   * Set of paths where active dwell should land ≥45s (feeds
+   * `hesitation-pattern`). The driver attaches `activeSeconds` to
+   * page_view events on these paths.
+   */
+  hesitationPaths?: Set<string>;
+  /**
+   * Set of paths whose layout is so long that users scroll less than a
+   * persona's baseline. The driver halves the sampled scroll percent on
+   * these paths so editorial pages can fire `above-fold-coverage`
+   * without making the persona mix universally bouncy.
+   */
+  lowScrollPaths?: Set<string>;
+  /**
+   * Per-CTA click-weight multipliers, keyed by `${pathRef}|${cssSelector}`.
+   * Driver multiplies the matched CTA's visualWeight by the lookup value
+   * (default 1.0) before weighted sampling. Lets scenarios model
+   * intent-driven clicks that diverge from visual hierarchy.
+   */
+  ctaIntentBoosts?: Map<string, number>;
   sink: EventSink;
   sessionId: string;
   /** Stable visitor handle; becomes anonymousId on every emitted event. */
@@ -74,6 +123,8 @@ export interface RunSessionResult {
 const MAX_DWELL_MS = 60_000;
 const MIN_DWELL_MS = 200;
 const MAX_PAGES_HARD_CAP = 50;
+const HESITATION_ACTIVE_SECONDS_MIN = 45;
+const HESITATION_ACTIVE_SECONDS_MAX = 120;
 
 function pickPath(
   persona: Persona,
@@ -129,6 +180,46 @@ function samplePagesCount(persona: Persona, rng: Rng): number {
   return Math.max(1, Math.min(MAX_PAGES_HARD_CAP, Math.round(v)));
 }
 
+/**
+ * Pick a CTA from the snapshot weighted by visual weight, with optional
+ * per-CTA `intentBoosts` (path|selector → multiplier) layered on top.
+ * Lets scenarios decouple click distribution from visual hierarchy when
+ * the realistic pattern requires it (e.g. hero-hierarchy-inversion).
+ */
+function pickSnapshotCta(
+  ctas: readonly CtaCandidate[],
+  rng: Rng,
+  path: string,
+  intentBoosts?: Map<string, number>,
+): CtaCandidate | null {
+  const eligible = ctas.filter((c) => !c.disabled && c.visualWeight > 0);
+  if (eligible.length === 0) return null;
+  return weightedSample(
+    eligible.map((c) => {
+      const boost = intentBoosts?.get(`${path}|${c.cssSelector ?? ''}`) ?? 1.0;
+      return { item: c, weight: c.visualWeight * boost };
+    }),
+    rng,
+  );
+}
+
+function findRageCta(
+  ctas: readonly CtaCandidate[],
+  selector: string,
+): CtaCandidate | null {
+  // Strict match first (selector equality)
+  const strict = ctas.find((c) => c.cssSelector === selector);
+  if (strict) return strict;
+  // data-testid loose match: "[data-testid=foo]" → find a CTA whose
+  // cssSelector contains data-testid="foo" — handles selector-format drift.
+  const m = selector.match(/data-testid=['"]?([\w-]+)['"]?/);
+  if (m) {
+    const id = m[1];
+    return ctas.find((c) => c.cssSelector?.includes(`data-testid="${id}"`) || c.cssSelector?.includes(`data-testid='${id}'`) || c.cssSelector?.includes(`data-testid=${id}`)) ?? null;
+  }
+  return null;
+}
+
 export async function runSession(
   opts: RunSessionOpts,
 ): Promise<RunSessionResult> {
@@ -139,7 +230,13 @@ export async function runSession(
     paths,
     transitionWeights,
     exitHazard,
+    pageSnapshotsByPath,
     primaryCta,
+    rageCtaSelector,
+    rageClickRate,
+    hesitationPaths,
+    lowScrollPaths,
+    ctaIntentBoosts,
     sink,
     sessionId,
     distinctId,
@@ -155,53 +252,100 @@ export async function runSession(
   };
 
   for (let i = 0; i < pagesCount; i++) {
-    // 1) pageview
+    // Sample dwell + scroll up-front and attach to the page_view event
+    // (matches the PostHog connector shape: scroll + duration ride on
+    // $pageview, not a separate $autocapture-scroll event).
+    const dwell = sampleDwell(persona, rng);
+    const baseScroll = sampleScroll(persona, rng);
+    const scrollPct = lowScrollPaths?.has(path)
+      ? Math.max(0, Math.round(baseScroll * 0.5))
+      : baseScroll;
+    const metrics: Record<string, number> = {
+      scrollPct,
+      scrollPctNormalized: scrollPct / 100,
+      dwellMs: dwell,
+    };
+    if (hesitationPaths?.has(path)) {
+      metrics.activeSeconds = randInt(
+        HESITATION_ACTIVE_SECONDS_MIN,
+        HESITATION_ACTIVE_SECONDS_MAX,
+        rng,
+      );
+    }
+
     await sink.emit({
       siteId,
       sessionId,
       type: 'page_view',
       path,
       anonymousId: distinctId,
+      metrics,
       sourceEventId: `${prefix}_${seq++}`,
       occurredAt: clock.toISOString(),
     });
 
-    // 2) scroll, after some dwell
-    const dwell = sampleDwell(persona, rng);
     advance(Math.round(dwell * 0.7));
-    const scrollPct = sampleScroll(persona, rng);
-    await sink.emit({
-      siteId,
-      sessionId,
-      type: 'scroll',
-      path,
-      anonymousId: distinctId,
-      metrics: { scrollPct, dwellMs: dwell },
-      sourceEventId: `${prefix}_${seq++}`,
-      occurredAt: clock.toISOString(),
-    });
 
-    // 3) maybe click CTA
+    const snapshot = pageSnapshotsByPath?.get(path);
+
+    // Maybe click a CTA. Snapshot-driven: visual-weight-weighted pick from
+    // the current page's CTAs, so HTML determines which CTA wins clicks.
     if (rng.next() < persona.clickIntent) {
       advance(randInt(200, 1500, rng));
+      const snapshotCta = snapshot
+        ? pickSnapshotCta(snapshot.ctas, rng, path, ctaIntentBoosts)
+        : null;
+      const properties = snapshotCta
+        ? {
+            cta_text: snapshotCta.text,
+            element_tag: snapshotCta.tag,
+            ...(snapshotCta.cssSelector ? { selector: snapshotCta.cssSelector } : {}),
+          }
+        : primaryCta
+          ? {
+              ctaId: primaryCta.ctaId,
+              ...(primaryCta.selector ? { selector: primaryCta.selector } : {}),
+            }
+          : undefined;
       await sink.emit({
         siteId,
         sessionId,
         type: 'cta_click',
         path,
         anonymousId: distinctId,
-        properties: primaryCta
-          ? {
-              ctaId: primaryCta.ctaId,
-              ...(primaryCta.selector ? { selector: primaryCta.selector } : {}),
-            }
-          : undefined,
+        properties,
         sourceEventId: `${prefix}_${seq++}`,
         occurredAt: clock.toISOString(),
       });
     }
 
-    // 4) maybe submit form
+    // Maybe rage click — snapshot-resolved rage target + per-page rate.
+    if (
+      snapshot &&
+      rageCtaSelector &&
+      rageClickRate &&
+      rng.next() < rageClickRate
+    ) {
+      const rageCta = findRageCta(snapshot.ctas, rageCtaSelector);
+      if (rageCta) {
+        await sink.emit({
+          siteId,
+          sessionId,
+          type: 'rage_click',
+          path,
+          anonymousId: distinctId,
+          properties: {
+            rage_target_text: rageCta.text,
+            element_tag: rageCta.tag,
+            ...(rageCta.cssSelector ? { rage_target_ref: rageCta.cssSelector } : {}),
+          },
+          sourceEventId: `${prefix}_${seq++}`,
+          occurredAt: clock.toISOString(),
+        });
+      }
+    }
+
+    // Maybe submit form
     if (rng.next() < persona.formSubmitIntent) {
       advance(randInt(400, 3500, rng));
       await sink.emit({
