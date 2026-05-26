@@ -7,7 +7,7 @@ import { sendAuditReportEmail } from '@/lib/email/auditReportEmail';
 import type { AuditReport, AuditFindingForEmail, AuditBrandDna } from '@/lib/email/auditReportEmail';
 import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
 import type { DesignTokens } from '@/lib/phase2/snapshots/tokenExtractor';
-import type { PageSnapshotData } from '@/lib/phase2/snapshots/types';
+import { normalizePathRef, type PageSnapshotData } from '@/lib/phase2/snapshots/types';
 import { recordAuditCost, checkDailyBudget } from '@/lib/audit/publicAuditRateLimit';
 import { captureAuditScreenshot, runVisionPass } from '@/lib/audit/visionPass';
 import { validatePublicUrl } from '@/lib/audit/urlValidator';
@@ -45,75 +45,6 @@ function severityFromScore(priorityScore: number): 'high' | 'medium' | 'low' {
   return 'low';
 }
 
-type DbFinding = {
-  ruleId: string;
-  title: string;
-  evidence: Array<{ label: string; value: string | number; context?: string }>;
-  prescription: { whyItMatters?: string; whatToChange: string } | null;
-};
-
-/**
- * Looks up an evidence row by label and returns its value as a string.
- * Returns null when the label is absent — caller should fall back gracefully.
- */
-function evidenceValue(f: DbFinding, label: string): string | null {
-  const row = f.evidence.find(e => e.label === label);
-  return row ? String(row.value) : null;
-}
-
-/**
- * Public-audit copy override: rewrites title / whyItMatters / evidence to
- * structural framing for rules whose findings, in the no-real-events
- * context of the public audit, are grounded in page structure rather than
- * measured visitor behavior. Returns null when no override applies — caller
- * should use the rule's own copy.
- */
-function structuralPublicAuditCopy(
-  f: DbFinding,
-): { title: string; whyItMatters: string; evidence: string } | null {
-  switch (f.ruleId) {
-    case 'hero-hierarchy-inversion': {
-      const topmost = evidenceValue(f, 'What visitors click most') ?? '(unnamed button)';
-      const heavy = evidenceValue(f, 'What your design emphasizes') ?? '(unnamed button)';
-      const page = evidenceValue(f, 'Page') ?? 'your homepage';
-      return {
-        title: `On ${page}, the topmost CTA isn't the one your design emphasizes`,
-        whyItMatters:
-          `${page} leads with "${topmost}" at the top of the DOM, but your design's visual weight ` +
-          `is on "${heavy}". The button the eye lands on and the button the page leads with aren't the ` +
-          `same — visitors have to scan past the loud one to find the topmost one. That's friction.`,
-        evidence:
-          `Topmost CTA: "${topmost}" · Most visually emphasized CTA: "${heavy}" · Page: ${page} · ` +
-          `Based on: page structure (we can't see your real visitors yet — connect PostHog to confirm with click data)`,
-      };
-    }
-    case 'above-fold-coverage': {
-      const page = evidenceValue(f, 'Page') ?? 'your homepage';
-      return {
-        title: `Your primary CTA on ${page} sits below the fold`,
-        whyItMatters:
-          `On ${page}, the heaviest CTA in your design only becomes visible after a scroll. Visitors who ` +
-          `don't scroll never see your main action — and a meaningful share of any audience doesn't scroll.`,
-        evidence:
-          `Page: ${page} · Based on: page structure (CTA position measured from your HTML — connect PostHog to confirm with real scroll data)`,
-      };
-    }
-    case 'nav-dispersion': {
-      const page = evidenceValue(f, 'Page') ?? 'your homepage';
-      return {
-        title: `Your top nav on ${page} exposes a lot of destinations`,
-        whyItMatters:
-          `A wide nav forces every visitor to choose. The more options at the top, the more cognitive ` +
-          `load before the visitor can do the thing they came for. The best-converting marketing sites ` +
-          `keep top-level nav to 4-5 items.`,
-        evidence:
-          `Page: ${page} · Based on: page structure (nav-item count parsed from your HTML — connect PostHog to see which destinations actually win clicks)`,
-      };
-    }
-    default:
-      return null;
-  }
-}
 
 /**
  * Build the brand-DNA payload for the report email by joining the
@@ -127,9 +58,13 @@ async function collectBrandDna(args: {
   siteId: string;
   auditUrl: string;
 }): Promise<AuditBrandDna | null> {
+  // Use the same `normalizePathRef` the snapshot repository uses on writes
+  // — otherwise a trailing-slash URL (e.g. `/pricing/`) lands as `/pricing/`
+  // here but `/pricing` in the row, silently returning empty `ctaVocabulary`
+  // (PR #85 review issue #1).
   const pathRef = (() => {
     try {
-      return new URL(args.auditUrl).pathname || '/';
+      return normalizePathRef(args.auditUrl);
     } catch {
       return '/';
     }
@@ -300,6 +235,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     generateResult = await runUrlAudit({
       url: revalidation.url.toString(),
       maxPages: 20,
+      // Run the insights pipeline in public-audit mode so behavioral rules
+      // fail closed and structural-only rules pre-rewrite their copy. The
+      // post-hoc DELETE/UPDATE scrub that used to live here is gone — the
+      // pipeline now ships prospect-safe findings end-to-end.
+      mode: 'public-audit',
+      // Capture-time vision signals for the first 3 pages (homepage +
+      // first two deep pages from the crawl). Closes the unnamed-CTA
+      // root cause for the prospect-facing surface — hero rule reads
+      // `visualPrimaryCta.text` when its own CTA text is empty.
+      // ~$0.001/page × 3 = $0.003 added to per-audit cost. No-op when
+      // GEMINI_API_KEY or BROWSERLESS_KEY are unset.
+      visionPagesLimit: 3,
     });
   } catch (err) {
     pipelineError = err instanceof Error ? err.message : String(err);
@@ -349,105 +296,34 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   }
 
-  // Findings that should never reach the public audit surface — either
-  // their input is synthetic (rage-click is fabricated by the lighthouse
-  // generator when behavior data is absent; the generator no longer emits
-  // it but the rule could still trigger if upstream data shifts) or their
-  // copy is unactionable on a structural-only pass (any finding that ends
-  // up rendering "(unnamed CTA)" because the visually heaviest button has
-  // no parseable text — see hero rule guard).
-  //
-  // Defense-in-depth: we *delete* the rows rather than just filter at read
-  // time. The audit auto-provisions an org + dashboard the prospect signs
-  // into; anything left in `zybitFindings` is visible there. We will not
-  // ship fake evidence to a paying surface.
-  const SYNTHETIC_AUDIT_RULE_BLOCKLIST = new Set(['rage-click-target']);
-
-  const purgeIds: string[] = [];
-  const allFindingsForSite = await db
+  // Findings reach us already rewritten by `runAuditRules` in `public-audit`
+  // mode — undeclared rules emitted nothing, structural-only rules had
+  // their copy replaced before persistence. We still read from the DB
+  // (not from `generateResult.sample.findings`) because `upsertFindings`
+  // is the source of truth for what the prospect's auto-provisioned
+  // dashboard will show, and we want the email and the dashboard to
+  // render the exact same rows.
+  const dbFindings = await db
     .select()
     .from(zybitFindings)
     .where(eq(zybitFindings.siteId, siteId))
     .orderBy(desc(zybitFindings.priorityScore))
     .limit(50);
-  for (const f of allFindingsForSite) {
-    if (SYNTHETIC_AUDIT_RULE_BLOCKLIST.has(f.ruleId)) {
-      purgeIds.push(f.id);
-      continue;
-    }
-    // Belt-and-braces against any rule that still produces the legacy
-    // "(unnamed button)" string — the hero rule guard above is the real
-    // fix but this catches future regressions before they reach the email
-    // or the prospect's dashboard.
-    const evidenceText = JSON.stringify(f.evidence ?? []);
-    if (evidenceText.includes('(unnamed button)') || evidenceText.includes('(unnamed CTA)')) {
-      purgeIds.push(f.id);
-    }
-  }
-  if (purgeIds.length > 0) {
-    // chunked deletion via SQL ANY — small set in practice
-    await db.execute(sql`DELETE FROM zybit_findings WHERE id = ANY(${purgeIds})`);
-  }
 
-  const dbFindings = allFindingsForSite.filter((f) => !purgeIds.includes(f.id));
-
-  // Scrub synthetic numbers from the persisted evidence so the prospect's
-  // auto-provisioned dashboard shows the SAME structural framing the email
-  // shows. Without this, the dashboard surface (which the report-CTA signs
-  // them into) leaks `Nav clicks: 111` / `87 button clicks over the last
-  // 1 days` — fabricated counts from the synthetic event generator.
-  //
-  // Source of truth is `structuralPublicAuditCopy`; the email and the
-  // dashboard now agree on what the prospect sees.
-  for (const f of dbFindings) {
-    const structural = structuralPublicAuditCopy(f);
-    if (!structural) continue;
-    await db.execute(sql`
-      UPDATE zybit_findings
-      SET title = ${structural.title},
-          summary = ${structural.whyItMatters},
-          evidence = ${JSON.stringify([
-            { label: 'Based on', value: 'page structure (we cannot see your real visitors yet — connect PostHog to confirm with click data)' },
-          ])}::jsonb,
-          prescription = ${JSON.stringify({
-            ...(f.prescription ?? {}),
-            whyItMatters: structural.whyItMatters,
-          })}::jsonb
-      WHERE id = ${f.id}
-    `);
-    // Mutate the in-memory copy so the email renderer also reflects the scrub.
-    f.title = structural.title;
-    f.summary = structural.whyItMatters;
-    (f as { evidence: unknown }).evidence = [
-      { label: 'Based on', value: 'page structure (we cannot see your real visitors yet — connect PostHog to confirm with click data)' },
-    ];
-    f.prescription = { ...(f.prescription ?? { whatToChange: '', whyItWorks: '', experimentVariantDescription: '' }), whyItMatters: structural.whyItMatters };
-  }
-
-  const topFindings: AuditFindingForEmail[] = dbFindings.slice(0, 4).map((f, i) => {
-    // The synthetic-event generator means click counts / session shares / rage
-    // rates are generator output, not measurements. Per-ruleId rewrite to
-    // structural framing keeps the (real) structural insight while dropping
-    // the fabricated behavioral numbers. Falls through to the rule's own copy
-    // for findings we haven't classified as synthetic-grounded yet.
-    const structural = structuralPublicAuditCopy(f);
-    return {
-      id: f.id,
-      rank: i + 1,
-      severity: severityFromScore(f.priorityScore),
-      confidence: f.confidence,
-      ruleId: f.ruleId,
-      title: structural?.title ?? f.title,
-      whyItMatters: structural?.whyItMatters ?? f.prescription?.whyItMatters ?? null,
-      evidence:
-        structural?.evidence ??
-        f.evidence
-          .map((e: { label: string; value: string | number }) => `${e.label}: ${e.value}`)
-          .join(' · '),
-      whatToChange: f.prescription?.whatToChange ?? f.recommendation?.[0] ?? '',
-      estimatedImpactMonthlyUsd: f.impactEstimate?.unit === 'usd' ? Number(f.impactEstimate.value) : null,
-    };
-  });
+  const topFindings: AuditFindingForEmail[] = dbFindings.slice(0, 4).map((f, i) => ({
+    id: f.id,
+    rank: i + 1,
+    severity: severityFromScore(f.priorityScore),
+    confidence: f.confidence,
+    ruleId: f.ruleId,
+    title: f.title,
+    whyItMatters: f.prescription?.whyItMatters ?? null,
+    evidence: (Array.isArray(f.evidence) ? f.evidence : [])
+      .map((e: { label: string; value: string | number }) => `${e.label}: ${e.value}`)
+      .join(' · '),
+    whatToChange: f.prescription?.whatToChange ?? f.recommendation?.[0] ?? '',
+    estimatedImpactMonthlyUsd: f.impactEstimate?.unit === 'usd' ? Number(f.impactEstimate.value) : null,
+  }));
 
   // Vision pass — non-fatal, best-effort
   const screenshot = await captureAuditScreenshot(audit.url);

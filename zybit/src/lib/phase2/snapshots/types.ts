@@ -127,6 +127,61 @@ export interface FormCandidate {
   hasSubmitButton: boolean;
 }
 
+/**
+ * Vision-pass-derived observations of what a human actually sees above the
+ * fold. Populated by `captureVisualSignals` during snapshot when a
+ * Browserless screenshot is available. Strict typing — every field is
+ * normalized through a structured-output validator before it lands here.
+ *
+ * Rules read this through `snapshot.data.visualSignals?.…` and fall back
+ * to the parser's structural output when absent. Vision is best-effort:
+ * snapshots without a screenshot, without Gemini, or with a validation
+ * failure all leave `visualSignals` undefined and rules degrade
+ * gracefully to structural-only logic.
+ */
+export type PageType =
+  | 'home'
+  | 'landing'
+  | 'pricing'
+  | 'signup'
+  | 'checkout'
+  | 'docs'
+  | 'about'
+  | 'blog'
+  | 'support'
+  | 'legal'
+  | 'unknown';
+
+export interface VisualCtaSignal {
+  /**
+   * Semantic label the vision pass extracted. For icon-only CTAs this is
+   * the word the human eye reads — closes the "(unnamed button)" gap
+   * `heroHierarchyInversion` previously hit on real sites.
+   */
+  text: string;
+  /** Normalized 0..1 bbox at the captured viewport. */
+  bbox: { x: number; y: number; width: number; height: number };
+  /** 0..1 confidence the model assigned to the identification. */
+  confidence: number;
+}
+
+export interface VisualHeroBlock {
+  headline: string | null;
+  subheadline: string | null;
+  firstParagraph: string | null;
+}
+
+export interface VisualSignals {
+  visualPrimaryCta: VisualCtaSignal | null;
+  visualSecondaryCta: VisualCtaSignal | null;
+  pageType: PageType;
+  heroBlock: VisualHeroBlock | null;
+  /** ISO timestamp of when the vision pass was captured. */
+  capturedAt: string;
+  /** Model + endpoint version that produced the signal. */
+  modelVersion: string;
+}
+
 export interface PageSnapshotData {
   schemaVersion: SnapshotSchemaVersion;
   meta: PageSnapshotMeta;
@@ -143,6 +198,12 @@ export interface PageSnapshotData {
   parsedAt: string;
   /** Detected CSS authoring system. Optional — absent on old snapshots. */
   cssSystem?: import('./cssSystemDetector').CssSystem;
+  /**
+   * Vision-pass observations from `captureVisualSignals`. Absent when the
+   * snapshot was captured without a screenshot or without
+   * `GEMINI_API_KEY` set. Consumers must null-check before reading.
+   */
+  visualSignals?: VisualSignals;
 }
 
 export interface PageSnapshot {

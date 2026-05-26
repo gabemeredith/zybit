@@ -241,6 +241,20 @@ export interface AuditFinding {
 }
 
 /**
+ * Audit mode — where the pipeline is running. Determines which rules can emit
+ * and how. `public-audit` is the prospect-facing surface backed by synthetic
+ * (lighthouse-generated) events: rules that depend on real behavioral data
+ * have nothing trustworthy to say, so they declare a `publicAuditBehavior`
+ * that this mode reads. `in-app` is the default; everything emits as-is.
+ *
+ * The default is `in-app` and rules are unaffected when it is. Public-audit
+ * mode is fail-closed: a rule that does not declare a `publicAuditBehavior`
+ * emits nothing in public mode (see `AuditRule.publicAuditBehavior`). That
+ * removes the "forgot to update the blocklist" class of bug.
+ */
+export type AuditMode = 'in-app' | 'public-audit';
+
+/**
  * Everything a rule needs to run. The route handler builds this once
  * per request and feeds it to every rule.
  */
@@ -251,6 +265,13 @@ export interface AuditRuleContext {
   config: Phase2SiteConfig;
   events: CanonicalEvent[];
   rollup: RollupResult;
+  /**
+   * Where this pipeline is running. Defaults to `in-app`. When set to
+   * `public-audit`, `runAuditRules` consults each rule's
+   * `publicAuditBehavior` and either emits the finding as-is, rewrites it
+   * via `structuralPublicAuditCopy`, or drops it entirely.
+   */
+  mode?: AuditMode;
   /** Indexed by `pathRef` for O(1) lookup inside rules. */
   pageSnapshotsByPath: Map<string, PageSnapshot>;
   /** All snapshots, in case a rule wants to iterate site-wide. */
@@ -285,12 +306,65 @@ export interface ProposeModificationsContext {
   designTokens: DesignTokens | null;
 }
 
+/**
+ * How a rule behaves when the pipeline runs in `public-audit` mode.
+ *
+ *   `'as-is'`            — Rule's findings ship to the prospect verbatim.
+ *                          For purely structural rules (snapshot-only) that
+ *                          do not depend on real visitor data.
+ *   `'structural-only'`  — Rule fires, but its findings are rewritten by
+ *                          `structuralPublicAuditCopy` before they reach the
+ *                          prospect. For rules that combine structure with a
+ *                          behavioral overlay where the structural half is
+ *                          honest but the behavioral half would be fabricated.
+ *   `'empty'`            — Rule emits nothing in public-audit mode. For
+ *                          purely behavioral rules whose entire output is
+ *                          synthetic on a public audit.
+ *
+ * Public-audit mode is fail-closed: when a rule has no declaration, the
+ * orchestrator treats it as `'empty'`. New rules must explicitly declare
+ * before they can emit on a prospect-facing surface — `runAuditRules`'s
+ * registry test enforces a declaration on every rule in `ALL_AUDIT_RULES`.
+ */
+export type PublicAuditBehavior = 'as-is' | 'structural-only' | 'empty';
+
+/**
+ * Structural rewrite for a finding when the rule is declared
+ * `'structural-only'`. Receives the original finding and the rule context
+ * (so the rewrite can read snapshot data the same way the rule itself did),
+ * and returns the four PM-facing fields the prospect surface needs.
+ * `evidence` returns a structured row list so the email + persisted row
+ * stay parallel.
+ */
+export interface StructuralPublicAuditRewrite {
+  title: string;
+  summary: string;
+  whyItMatters: string;
+  evidence: AuditFindingEvidence[];
+}
+
 export interface AuditRule {
   id: string;
   category: AuditFindingCategory;
   /** Human-readable rule name for diagnostics/logging. */
   name: string;
   evaluate(ctx: AuditRuleContext): AuditFinding[];
+  /**
+   * Declares how this rule's findings reach the public-audit surface. See
+   * `PublicAuditBehavior`. Required for every rule in `ALL_AUDIT_RULES`;
+   * the registry-level test fails CI if any rule is missing one.
+   */
+  publicAuditBehavior?: PublicAuditBehavior;
+  /**
+   * Required when `publicAuditBehavior === 'structural-only'`. Rewrites
+   * one finding into structural-only copy for the prospect surface. Called
+   * inside `runAuditRules` after `evaluate`; the resulting rewrite is
+   * applied to the finding in-place so persisted rows and the email agree.
+   */
+  structuralPublicAuditCopy?(
+    finding: AuditFinding,
+    ctx: AuditRuleContext,
+  ): StructuralPublicAuditRewrite | null;
   /**
    * Per-rule template that turns one finding into 1–3 preview-ready variant
    * options. Each outer array entry is one variant; each inner array is the

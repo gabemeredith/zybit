@@ -17,6 +17,7 @@ import type { CanonicalEvent } from "@/lib/phase2/types";
 
 import {
   clamp,
+  evidenceFromFinding,
   formatCount,
   matchCtaToEvent,
   normalizeText,
@@ -92,6 +93,46 @@ export const heroHierarchyInversion: AuditRule = {
   id: "hero-hierarchy-inversion",
   name: "Hero hierarchy inversion",
   category: "hierarchy",
+  publicAuditBehavior: 'structural-only',
+
+  // Public-audit rewrite: the rule fires on real `cta_click` events in the
+  // in-app pipeline, but on synthetic events in the public-audit pipeline.
+  // The structural half (topmost vs visually heaviest CTA) is honest in both
+  // modes — strip the behavioral framing for the prospect and lean on
+  // structure-only language. Keeps title/evidence/whyItMatters in sync
+  // between the persisted finding row and the email render.
+  structuralPublicAuditCopy(finding) {
+    const topmost = evidenceFromFinding(finding, 'What visitors click most') ?? '(unnamed button)';
+    const heavy = evidenceFromFinding(finding, 'What your design emphasizes') ?? '(unnamed button)';
+    const page = evidenceFromFinding(finding, 'Page') ?? finding.pathRef ?? 'your homepage';
+    if (topmost.includes('(unnamed') || heavy.includes('(unnamed')) {
+      // Defense-in-depth: the rule's evaluate() now bails on unnamed sides,
+      // but a future regression that emitted them would slip through unless
+      // we also refuse to render here. Returning null leaves the finding's
+      // own copy intact so the registry test still sees a present rewrite.
+      return null;
+    }
+    return {
+      title: `On ${page}, the topmost CTA isn't the one your design emphasizes`,
+      summary:
+        `${page} leads with "${topmost}" at the top of the DOM, but your design's visual weight ` +
+        `is on "${heavy}". The button the eye lands on and the button the page leads with aren't the ` +
+        `same — visitors have to scan past the loud one to find the topmost one. That's friction.`,
+      whyItMatters:
+        `${page} leads with "${topmost}" at the top of the DOM, but your design's visual weight ` +
+        `is on "${heavy}". The button the eye lands on and the button the page leads with aren't the ` +
+        `same — visitors have to scan past the loud one to find the topmost one. That's friction.`,
+      evidence: [
+        { label: 'Topmost CTA', value: topmost },
+        { label: 'Most visually emphasized CTA', value: heavy },
+        { label: 'Page', value: page },
+        {
+          label: 'Based on',
+          value: 'page structure (we cannot see your real visitors yet — connect PostHog to confirm with click data)',
+        },
+      ],
+    };
+  },
 
   proposeModifications(
     finding: AuditFinding,
@@ -248,22 +289,39 @@ function evaluatePage(
     return null;
   }
 
-  // Bail when either side resolves to no text — the finding is unactionable
-  // and the rendered output is gibberish ("your visitors want '(unnamed
-  // button)' but your page emphasizes '(unnamed button)'"). Icon-only CTAs
-  // legitimately exist on real sites (search, hamburger, account menu);
-  // until the vision pass fills in their semantic label we keep them out
-  // of the inversion check. This protects every audit, not just public.
-  const clickedHasText = !!clickedText && clickedText.length > 0;
-  const heavyHasText = !!heavy.text && heavy.text.length > 0;
-  if (!clickedHasText || !heavyHasText) return null;
+  // Vision-pass fallback for `heavyLabel` only: when the parser couldn't
+  // read CTA text — typical for icon-only "Get started" buttons that ship
+  // as `<button><svg/></button>` — borrow the semantic label from
+  // `visualSignals.visualPrimaryCta`. Both `pickHeaviest()` and the vision
+  // pass rank by visual prominence, so the correspondence holds well
+  // enough for evidence copy. Closes handover §12.A's "unnamed-CTA root
+  // cause" item.
+  //
+  // No symmetric fallback for `clickedLabel`: `visualSecondaryCta` is "the
+  // second-most-visually-prominent CTA Gemini saw," not "the CTA visitors
+  // clicked most." Borrowing it would mislabel icon-only most-clicked
+  // elements (hamburger menus, search icons) with whatever vision called
+  // secondary — fabricated evidence on the prospect surface. When clicked
+  // text is missing, fall through to the bail below instead.
+  const visual = snapshot.data.visualSignals;
+  const heavyLabel =
+    (heavy.text && heavy.text.length > 0) ? heavy.text :
+    visual?.visualPrimaryCta?.text ?? '';
+  const clickedLabel = clickedText ?? '';
+
+  // Bail when either side STILL resolves to no text — the finding is
+  // unactionable and the rendered output is gibberish ("your visitors want
+  // '(unnamed button)' but your page emphasizes '(unnamed button)'"). After
+  // vision fallback this is a much narrower bail than before; protects
+  // every audit, not just public.
+  if (!heavyLabel || !clickedLabel) return null;
 
   const pageName = humanizePath(pathRef);
   const heavyLocation = describeLandmark(heavy.landmark);
   const heavyTreatment = describeVisualTreatment(heavy.visualWeightSignals);
   const windowDays = windowDaysFromTimeWindow(ctx.window);
-  const clickedQ = quote(clickedText);
-  const heavyQ = quote(heavy.text);
+  const clickedQ = quote(clickedLabel);
+  const heavyQ = quote(heavyLabel);
 
   const summary =
     `Of ${formatCount(totalClicks)} button clicks on ${pageName}, ${pct(clickedShare)}% went to ${clickedQ} ` +
@@ -280,12 +338,12 @@ function evaluatePage(
   const evidence: AuditFindingEvidence[] = [
     {
       label: 'What visitors click most',
-      value: clickedText ?? '(unnamed button)',
+      value: clickedLabel,
       context: `${pct(clickedShare)}% of clicks · ${formatCount(clickedCount)} clicks`,
     },
     {
       label: 'What your design emphasizes',
-      value: heavy.text || '(unnamed button)',
+      value: heavyLabel,
       context: `${heavyLocation}, ${heavyTreatment}`,
     },
     { label: 'Page', value: pageName },

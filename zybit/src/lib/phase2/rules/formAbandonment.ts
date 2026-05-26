@@ -44,6 +44,8 @@ export const formAbandonment: AuditRule = {
   id: "form-abandonment",
   name: "Form abandonment",
   category: "abandonment",
+  // Behavioral rule: contrasts form_view vs form_submit events.
+  publicAuditBehavior: 'empty',
 
   proposeAnnotations(
     finding: AuditFinding,

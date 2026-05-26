@@ -10,6 +10,18 @@ import type {
   Phase2SiteConfig,
 } from "@/lib/phase2/types";
 import type { CtaCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
+import type { AuditFinding } from "./types";
+
+/**
+ * Lookup an evidence row by label and return its value as a string. Returns
+ * `null` when the label is absent. Used by `structuralPublicAuditCopy`
+ * rewrites that need to re-key off the rule's own evidence — keeps every
+ * rule's public-audit rewrite reading from a single shape of data.
+ */
+export function evidenceFromFinding(finding: AuditFinding, label: string): string | null {
+  const row = finding.evidence.find((e) => e.label === label);
+  return row ? String(row.value) : null;
+}
 
 /**
  * Pick the visually-dominant non-disabled CTA. Visual weight desc,

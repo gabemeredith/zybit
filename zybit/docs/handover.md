@@ -558,6 +558,19 @@ one output, every time). But LLMs are first-class citizens for:
 
 ### A. Mandatory vision pass on every audit (today: opt-in single-shot)
 
+> **Status (2026-05-26):** shipped on this branch. `captureVisualSignals`
+> in `src/lib/audit/captureVisualSignals.ts` runs structured-output
+> Gemini 2.0 Flash with a strict validator (`validateVisualSignals`),
+> producing `VisualSignals` (visualPrimaryCta, visualSecondaryCta,
+> pageType, heroBlock). Wired into the snapshot loop in `runUrlAudit`
+> with a `visionPagesLimit` opt — `/api/audit/public/run` passes 3.
+> `heroHierarchyInversion` reads `visualPrimaryCta.text` as a fallback
+> when the parser's CTA text is empty (the icon-only "Get started"
+> case). 11 validator + capture tests + 2 hero-rule fallback tests.
+> Still TODO: per-rule consumers of `pageType` (§D); AI copy-critique
+> rules (§C) — `heroBlock` is the input they need but the rules don't
+> exist yet.
+
 `src/lib/audit/visionPass.ts` runs at most once per audit and writes a
 2-sentence observation. Promote it to a true pipeline stage:
 
@@ -675,6 +688,20 @@ Constraints (mirror the advisor):
 
 ### F. The architectural shift — `PublicAuditMode` as a first-class context
 
+> **Status (2026-05-26):** shipped on this branch. `AuditMode` is now a
+> field on `AuditRuleContext`; every rule in `ALL_AUDIT_RULES` declares a
+> `publicAuditBehavior` of `'as-is'` / `'structural-only'` / `'empty'`;
+> the `'structural-only'` rules colocate their rewrite as
+> `structuralPublicAuditCopy`. `runAuditRules` reads `ctx.mode` and
+> applies the per-rule contract before findings return. The route no
+> longer DELETE/UPDATEs after persistence — the pipeline writes
+> prospect-safe rows the first time. A registry-level test in
+> `publicAuditMode.test.ts` enforces every rule has a declaration so
+> new rules cannot ship without an explicit choice (fail-closed).
+> Defense-in-depth `(unnamed CTA)` / `(unnamed button)` scrub moved to
+> `src/lib/audit/publicAuditScrub.ts` and is shared between the route
+> and `runUrlAudit` — closes §13.3.
+
 The current public audit pipeline is "run the full rule set, then
 DELETE/UPDATE findings after the fact." That works but leaks the moment
 a new rule that consumes synthetic events is added without anyone
@@ -789,30 +816,38 @@ Per `DOCTRINE.md` and `AGENTS.md`:
 
 ## 13. Known open architectural risks (carry forward to next session)
 
-1. **The structural-override map (`structuralPublicAuditCopy`) and the
-   blocklist (`SYNTHETIC_AUDIT_RULE_BLOCKLIST`) are policy-only.** No test
-   enforces that every event-consuming rule has either an override or a
-   blocklist entry. Adding `flow-inter-step-dropoff` to the public audit
-   pipeline today would leak fabricated counts. §12.F is the structural
-   fix.
+1. ~~**The structural-override map (`structuralPublicAuditCopy`) and the
+   blocklist (`SYNTHETIC_AUDIT_RULE_BLOCKLIST`) are policy-only.**~~ **Closed
+   2026-05-26.** Every rule in `ALL_AUDIT_RULES` declares a
+   `publicAuditBehavior` and the registry test fails CI on an
+   undeclared rule. Adding `flow-inter-step-dropoff` to the public
+   audit no longer leaks — it's declared `'empty'` and skipped.
 
-2. **The post-pipeline scrub in `/api/audit/public/run` mutates `zybit_findings`
-   rows that were just written.** Cleaner architecture is don't-write-then-
-   delete: have the pipeline accept a `mode` parameter and refuse to emit
-   blocklisted findings in the first place. §12.F.
+2. ~~**The post-pipeline scrub in `/api/audit/public/run` mutates
+   `zybit_findings` rows that were just written.**~~ **Closed 2026-05-26.**
+   The pipeline accepts `mode: 'public-audit'` and refuses to emit
+   blocklisted findings; structural-only rewrites land in the persisted
+   row the first time. The route's DELETE/UPDATE block is gone.
 
-3. **The lighthouse `runUrlAudit` runner writes findings directly without
-   the scrub.** Internal use only today, but anyone reusing the runner
-   gets the fabricated evidence. Move the scrub to a shared module both
-   surfaces import.
+3. ~~**The lighthouse `runUrlAudit` runner writes findings directly
+   without the scrub.**~~ **Closed 2026-05-26.** Defense-in-depth
+   `(unnamed CTA)` scrub lives in `src/lib/audit/publicAuditScrub.ts`
+   and is imported by both surfaces; runner applies it when
+   `mode === 'public-audit'`.
 
 4. **`dead-click-target` only covers `<a>` — handler-less `<button>`s
    are still invisible.** Capturing this needs either `cursor: pointer`
    measurement in `styles.ts` (cheap, ship with §B) or DOM event listener
    inspection (expensive, defer).
 
-5. **Vision pass is best-effort and runs once per audit** — see §A for
-   the mandatory-pass plan.
+5. ~~**Vision pass is best-effort and runs once per audit**~~ **Partial
+   2026-05-26.** Structured vision (`captureVisualSignals`) runs at
+   capture time for the first 3 pages in public-audit mode and writes
+   `data.visualSignals` to the snapshot row. `heroHierarchyInversion`
+   reads `visualPrimaryCta.text` as a fallback when CTA text is empty.
+   Still TODO: per-page coverage beyond 3 if budget allows;
+   `pageType`-driven threshold modulation across all rules (§12.D); AI
+   copy-critique rules (§12.C) that consume `heroBlock`.
 
 6. **`AUDIT_FROM_EMAIL` is `noreply@mail.getzybit.com`** — send-only.
    Prospects who reply to the report email reach nothing. Either set up
@@ -831,3 +866,153 @@ Per `DOCTRINE.md` and `AGENTS.md`:
 **`npm run verify` baseline after this third pass:** 76 test files,
 945 tests, 0 failures; TypeScript clean; ESLint clean (4 pre-existing
 warnings); build clean.
+
+**`npm run verify` baseline after the Ring 1 + Ring 2 pass (2026-05-26):**
+79 test files, 980 tests, 0 failures; TypeScript clean; ESLint clean
+(4 pre-existing warnings); build clean.
+
+---
+
+## 14. Ring 1 + Ring 2 — what landed this session (2026-05-26 fourth pass)
+
+This session shipped the architectural shift in §12.F and the structured
+vision pass in §12.A. Together they convert the public-audit pipeline
+from "run + scrub" to "run-in-mode + write-once," and they close the
+unnamed-CTA root cause at capture time. Three of the seven risks in §13
+are closed; §13.5 is partially closed.
+
+### Ring 1 — `PublicAuditMode` as first-class context
+
+Files added / changed:
+- `src/lib/phase2/rules/types.ts` — `AuditMode`, `PublicAuditBehavior`,
+  `StructuralPublicAuditRewrite`, `AuditRuleContext.mode`,
+  `AuditRule.publicAuditBehavior`, `AuditRule.structuralPublicAuditCopy`.
+- `src/lib/phase2/rules/index.ts` — `runAuditRules` reads `ctx.mode`,
+  drops findings from `'empty'` rules in public mode, applies
+  `structuralPublicAuditCopy` to `'structural-only'` rules in place.
+- Every rule in `ALL_AUDIT_RULES` declares its behavior:
+  - `'as-is'`: all 7 Layer E structural rules.
+  - `'structural-only'`: hero-hierarchy-inversion, above-fold-coverage,
+    nav-dispersion — rewrites colocated with the rule.
+  - `'empty'`: rage-click, mobile-asymmetry, error-exposure,
+    form-abandonment, bounce-on-key-page, help-seeking-spike,
+    hesitation, return-visit-thrash, cohort-pain-asymmetry,
+    flow-inter-step-dropoff.
+- `src/lib/phase2/runInsightsPipeline.ts` — accepts `mode`, threads
+  through to `runAuditRules`.
+- `lighthouse/lib/runner/runUrlAudit.ts` — accepts `mode`, threads
+  through, applies the defense-in-depth scrub when public-audit.
+- `src/app/api/audit/public/run/route.ts` — passes
+  `mode: 'public-audit'` to `runUrlAudit`. Post-pipeline DELETE/UPDATE
+  scrub block removed (-94 lines).
+- `src/lib/audit/publicAuditScrub.ts` — shared `(unnamed CTA)` /
+  `(unnamed button)` filter, imported by route + runner.
+- `src/lib/phase2/rules/__tests__/publicAuditMode.test.ts` —
+  registry-level enforcement + orchestrator behavior + per-rule
+  rewrite contract (11 tests).
+- `src/lib/audit/__tests__/publicAuditScrub.test.ts` — pure-function
+  correctness (7 tests).
+
+PR #85 review nits closed in the same change:
+- `collectBrandDna` in the route now uses `normalizePathRef` (issue #1).
+- `colorSwatch` in `auditReportEmail.ts` validates against a strict
+  hex regex and drops the swatch on mismatch (issue #2 — CSS
+  injection vector).
+
+### Ring 2 — structured vision pass as a capture stage
+
+Files added / changed:
+- `src/lib/phase2/snapshots/types.ts` — `PageType`, `VisualCtaSignal`,
+  `VisualHeroBlock`, `VisualSignals`; `PageSnapshotData.visualSignals?`.
+- `src/lib/audit/captureVisualSignals.ts` — Gemini 2.0 Flash
+  structured-output call with `validateVisualSignals` validator.
+  Mirrors `aiAdvisor.ts`'s trust model: API key in header, REST not
+  SDK, strict JSON schema, fail-soft on validation error.
+- `src/lib/audit/captureAboveFoldBuffer.ts` — above-fold-only
+  Browserless screenshot returning a Buffer (separate from
+  `visionPass.ts`'s screenshot helper which also uploads to Blob).
+- `lighthouse/lib/runner/runUrlAudit.ts` — `visionPagesLimit` opt;
+  per-page vision capture loop, attaches `data.visualSignals` to the
+  snapshot before upsert.
+- `src/app/api/audit/public/run/route.ts` — passes
+  `visionPagesLimit: 3` so the first three crawled pages get vision.
+- `src/lib/phase2/rules/heroHierarchyInversion.ts` — reads
+  `visualSignals.visualPrimaryCta.text` / `visualSecondaryCta.text`
+  as fallback labels when the parser CTA text is empty. The bail-on-
+  unnamed-side guard remains but is much narrower now.
+- `src/lib/audit/__tests__/captureVisualSignals.test.ts` — validator
+  edge cases + capture function fail-soft contract (11 tests).
+- `src/lib/phase2/rules/__tests__/heroHierarchyInversion.test.ts` —
+  added 2 vision-fallback tests (uses-vision-label, still-bails-when-
+  no-vision).
+
+### Live verification
+
+Two e2e scripts in `scripts/` exercise the new functionality against
+real targets without needing the public-audit HTTP route's external
+service dependencies (Firecrawl / Browserless / Gemini / Resend):
+
+  - **`scripts/e2e-public-audit-mode.mjs`** — drives `runSnapshot` +
+    `runAuditRules` against real product landing pages. Default targets
+    are `github.com`, `vercel.com`, `linear.app`, `stripe.com`; the
+    script gracefully skips any host that returns 403 (sandbox / WAF
+    bot-mitigation) so a partial run on a restricted network still
+    asserts something real.
+    - Verifies all 10 `'empty'`-declared rules skip in public mode (the
+      orchestrator logs `PUBLIC_AUDIT_BEHAVIOR_EMPTY` in diagnostics).
+    - Verifies zero behavioral findings leak in public mode.
+    - Verifies no `(unnamed CTA)` / `(unnamed button)` artifacts.
+    - Verifies `applyDefenseInDepthScrub` is a no-op against clean
+      Ring-1 output (the orchestrator already produced safe rows).
+    - Injects synthetic `visualSignals` and verifies the hero rule's
+      vision-fallback path: `visualPrimaryCta.text = "Get started"`
+      is used as the heavy CTA label instead of bailing on empty text.
+    - Last run (2026-05-26, github.com reachable; vercel/linear/stripe
+      skipped from sandbox): 8 assertions passed, 0 failed.
+      Report: `/tmp/e2e-public-audit-mode-report.json`.
+
+  - **`scripts/e2e-audit-email-strict-hex.mjs`** — Playwright
+    (chromium-core) render of the audit-report email with three
+    `brandDna.primaryColor` scenarios: clean hex, CSS-injection payload,
+    `rgb()` non-hex. Asserts the PR #85 review issue #2 fix:
+    - Clean hex renders the swatch with the color applied.
+    - Injection payload (`#ff0000; }body{display:none;}{`) does not
+      appear anywhere in the rendered HTML.
+    - `rgb(...)` values are dropped (the brand-DNA writer is expected
+      to normalize to hex; if it doesn't, the email surfaces the gap
+      as a missing swatch rather than risk injection).
+    - The drop is per-swatch — the secondary clean swatch + the rest
+      of the brand-DNA section still render.
+    - Last run: 9 assertions passed; HTML + PNG artifacts in
+      `/tmp/audit-email-strict-hex-{clean,injection,non-hex}.{html,png}`.
+
+The existing `scripts/e2e-audit-email-visual.mjs` regression suite
+(brand-DNA terminology rename verification) was re-run and stayed
+green — the strict-hex change did not regress the swatch rendering
+for the sample-fixture colors.
+
+### What's still TBD (next session)
+
+In handover-priority order:
+
+1. **Per-rule consumers of `pageType`** (§12.D). Vision now produces it
+   per page; nav-dispersion, above-fold-coverage, etc. should modulate
+   their thresholds. ~1 day to plumb + per-rule (15-30 min each).
+2. **Layer F AI copy critique** (§12.C) — `vague-claim-detected`,
+   `proof-missing`, `cta-verb-mismatch`. `heroBlock` is already the
+   input they need. 2-3 days.
+3. **Computed-styles expansion** (§12.B) — `capture/styles.ts`
+   borderColor / fontFamily / fontWeight / page background; image
+   rendered-vs-natural; `tokenExtractor.ts` accent + surface +
+   borderRadius scale. Rate-limiter on new evidence rules. 3-4 days.
+4. **dead-click-target button extension** (§13.4). Ships with §12.B —
+   piggybacks on `cursor: pointer` measurement.
+5. **AI prescription rewriting** (§12.E) and the AI validation loop
+   (§12.H). Both depend on §12.A and reuse 80% of `aiAdvisor.ts`. 2 days.
+6. **Compound rules + cross-page intelligence** (§12.G / §12.I) — the
+   long-term shape, depends on §12.B + §12.D.
+
+Total remaining to "audit endpoint as a defensible paid product
+feature" per the handover's own math: ~2 weeks (down from 3 — Rings
+1 + 2 closed the architectural blockers and the structured-vision
+plumbing).

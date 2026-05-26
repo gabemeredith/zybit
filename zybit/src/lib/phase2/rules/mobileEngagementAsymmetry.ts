@@ -41,6 +41,8 @@ export const mobileEngagementAsymmetry: AuditRule = {
   id: "mobile-engagement-asymmetry",
   name: "Mobile engagement asymmetry",
   category: "asymmetry",
+  // Behavioral rule: contrasts mobile vs desktop click-share — synthetic.
+  publicAuditBehavior: 'empty',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const steps = [...ctx.config.onboardingSteps].sort((a, b) => {

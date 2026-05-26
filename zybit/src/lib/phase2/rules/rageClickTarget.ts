@@ -50,6 +50,9 @@ export const rageClickTarget: AuditRule = {
   id: "rage-click-target",
   name: "Rage-click target cluster",
   category: "rage",
+  // Behavioral rule: needs real rage-click sessions; synthetic generator
+  // no longer fabricates them. Skipped on public audits.
+  publicAuditBehavior: 'empty',
 
   proposeAnnotations(
     finding: AuditFinding,

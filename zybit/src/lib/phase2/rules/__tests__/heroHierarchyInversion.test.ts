@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { heroHierarchyInversion } from '@/lib/phase2/rules/heroHierarchyInversion';
 import type { AuditFinding } from '@/lib/phase2/rules/types';
-import type { CtaCandidate, PageSnapshot } from '@/lib/phase2/snapshots/types';
-import { makeContext, makeCtaClick, makeGoalConfig, makeSnapshot, makeCta } from './fixtures';
+import type { CtaCandidate, PageSnapshot, VisualSignals } from '@/lib/phase2/snapshots/types';
+import { makeContext, makeCtaClick, makeEvent, makeGoalConfig, makeSnapshot, makeCta } from './fixtures';
 
 const PATH = '/pricing';
 
@@ -245,6 +245,105 @@ describe('heroHierarchyInversion rule', () => {
       const [f] = heroHierarchyInversion.evaluate(ctx);
       expect(f.refs?.ctaRef).toBe('cta-primary');
       expect(f.refs?.clickedCtaRef).toBe('cta-secondary');
+    });
+  });
+
+  describe('vision-pass label fallback', () => {
+    // Closes handover §12.A's "unnamed-CTA root cause":
+    // an icon-only "Get started" hero ships as `<button><svg/></button>`.
+    // The parser sees `text: ""`. Pre-vision, the rule bailed (no text on
+    // both sides). With `visualSignals.visualPrimaryCta` filled in, the
+    // rule should still fire and use the vision-derived label.
+    function makeVisionSignals(overrides: Partial<VisualSignals> = {}): VisualSignals {
+      return {
+        visualPrimaryCta: {
+          text: 'Get started',
+          bbox: { x: 0.1, y: 0.2, width: 0.2, height: 0.1 },
+          confidence: 0.9,
+        },
+        visualSecondaryCta: {
+          text: 'Learn more',
+          bbox: { x: 0.5, y: 0.2, width: 0.2, height: 0.1 },
+          confidence: 0.8,
+        },
+        pageType: 'home',
+        heroBlock: null,
+        capturedAt: '2026-05-26T12:00:00Z',
+        modelVersion: 'gemini-2.0-flash',
+        ...overrides,
+      };
+    }
+
+    it('uses visualPrimaryCta.text as heavy label when parser CTA text is empty', () => {
+      // Vision pass identified the icon-only hero as "Get started".
+      // The heavy CTA in the snapshot has no text — pre-vision bail.
+      const heavyCta = makeCta('', 0.9, 'above', 'cta-primary');
+      const secondaryCta = makeCta('Learn more', 0.3, 'above', 'cta-secondary');
+      const snapshot = makeSnapshot(PATH, [heavyCta, secondaryCta]);
+      snapshot.data.visualSignals = makeVisionSignals();
+
+      const events = [
+        ...Array.from({ length: 28 }, (_, i) =>
+          makeCtaClick(PATH, 'Learn more', `s-${i}`),
+        ),
+        ...Array.from({ length: 12 }, (_, i) =>
+          makeCtaClick(PATH, '', `s2-${i}`),
+        ),
+      ];
+      const ctx = makeContext(events, [snapshot]);
+      const findings = heroHierarchyInversion.evaluate(ctx);
+      expect(findings.length).toBe(1);
+
+      // Evidence should carry the vision-derived label, not '(unnamed button)'.
+      const heavyEvidence = findings[0].evidence.find(
+        (e) => e.label === 'What your design emphasizes',
+      );
+      expect(heavyEvidence?.value).toBe('Get started');
+      const findingText = JSON.stringify(findings[0].evidence);
+      expect(findingText).not.toContain('(unnamed button)');
+      expect(findingText).not.toContain('(unnamed CTA)');
+    });
+
+    it('still bails when no text comes from parser AND no vision signals exist', () => {
+      // No vision pass — icon-only CTA stays unactionable.
+      const heavyCta = makeCta('', 0.9, 'above', 'cta-primary');
+      const secondaryCta = makeCta('Learn more', 0.3, 'above', 'cta-secondary');
+      const snapshot = makeSnapshot(PATH, [heavyCta, secondaryCta]);
+      // No visualSignals attached.
+
+      const events = [
+        ...Array.from({ length: 40 }, (_, i) =>
+          makeCtaClick(PATH, 'Learn more', `s-${i}`),
+        ),
+      ];
+      const ctx = makeContext(events, [snapshot]);
+      expect(heroHierarchyInversion.evaluate(ctx)).toEqual([]);
+    });
+
+    it('does not borrow visualSecondaryCta for the clicked-side label', () => {
+      // The most-clicked CTA is icon-only (no parser text) and vision saw
+      // "Learn more" as the secondary CTA. Pairing these two would label
+      // the clicked side with a button that is *not* what most visitors
+      // actually clicked — fabricated evidence on the prospect surface.
+      // The rule must bail instead of borrowing visualSecondaryCta.
+      const heavyCta = makeCta('Buy now', 0.9, 'above', 'cta-primary');
+      const clickedIconCta = makeCta('', 0.3, 'above', 'cta-icon');
+      const snapshot = makeSnapshot(PATH, [heavyCta, clickedIconCta]);
+      snapshot.data.visualSignals = makeVisionSignals();
+
+      // 40 clicks matched to the icon-only CTA by cta_id (Strategy 3 in
+      // matchCtaToEvent — text-based Strategy 1 would route empty text
+      // to __unmatched__ and bail before the clickedLabel logic ran).
+      const events = Array.from({ length: 40 }, (_, i) =>
+        makeEvent({
+          type: 'cta_click',
+          path: PATH,
+          sessionId: `s-${i}`,
+          properties: { cta_text: '', cta_id: 'cta-icon' },
+        }),
+      );
+      const ctx = makeContext(events, [snapshot]);
+      expect(heroHierarchyInversion.evaluate(ctx)).toEqual([]);
     });
   });
 });

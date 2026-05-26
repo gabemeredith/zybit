@@ -5,6 +5,7 @@ import type { Phase2SiteConfig, RollupContext, RunInsightsResponse, TimeWindow }
 import { runAuditRules } from '@/lib/phase2/rules';
 import { applyLearnRerank } from '@/lib/phase2/rules/learnReranker';
 import { computeRuleCalibrations } from '@/lib/phase2/rules/ruleCalibration';
+import type { AuditMode } from '@/lib/phase2/rules/types';
 import type { PageSnapshot } from '@/lib/phase2/snapshots/types';
 import { buildCaptureIndex, isCaptureV2Enabled } from '@/lib/phase2/capture';
 import { createCaptureRepository } from '@/lib/phase2/capture/repository';
@@ -17,6 +18,13 @@ export interface RunPhase2InsightsArgs {
   siteId: string;
   window: TimeWindow;
   maxFindings: number;
+  /**
+   * Where this pipeline run lives. `'public-audit'` flips `runAuditRules`
+   * into fail-closed mode: only rules with a declared `publicAuditBehavior`
+   * emit, and `'structural-only'` rules' findings are rewritten in-place
+   * before persistence. Defaults to `'in-app'`.
+   */
+  mode?: AuditMode;
 }
 
 function emptyConfig(siteId: string, organizationId: string): Phase2SiteConfig {
@@ -47,7 +55,7 @@ function buildSnapshotIndex(snapshots: PageSnapshot[]): Map<string, PageSnapshot
 export async function runPhase2InsightsPipeline(
   args: RunPhase2InsightsArgs
 ): Promise<RunInsightsResponse> {
-  const { organizationId, siteId, window, maxFindings } = args;
+  const { organizationId, siteId, window, maxFindings, mode } = args;
   const repository = createPhase1Repository();
 
   const captureEnabled = await isCaptureV2Enabled();
@@ -112,6 +120,7 @@ export async function runPhase2InsightsPipeline(
     pageSnapshotsByPath,
     calibration,
     flowGraph,
+    ...(mode ? { mode } : {}),
     ...(pageCapturesByPath ? { pageCapturesByPath } : {}),
   });
 

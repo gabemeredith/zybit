@@ -27,6 +27,7 @@ export const imageAltTextMissing: AuditRule = {
   id: 'image-alt-text-missing',
   category: 'accessibility',
   name: 'Images missing alt text',
+  publicAuditBehavior: 'as-is',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];

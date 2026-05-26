@@ -115,10 +115,56 @@ const SEVERITY_RANK: Record<AuditFindingSeverity, number> = {
 export function runAuditRules(ctx: AuditRuleContext): AuditFindingsReport {
   const findings: AuditFinding[] = [];
   const diagnostics: AuditRuleDiagnostic[] = [];
+  const isPublicAudit = ctx.mode === 'public-audit';
 
   for (const rule of ALL_AUDIT_RULES) {
     try {
-      const out = rule.evaluate(ctx);
+      // Fail-closed in public-audit mode: a rule with no declaration emits
+      // nothing on the prospect surface. New behavioral rules that forget to
+      // declare cannot leak fabricated counts.
+      const behavior = rule.publicAuditBehavior ?? 'empty';
+      if (isPublicAudit && behavior === 'empty') {
+        diagnostics.push({
+          ruleId: rule.id,
+          emitted: 0,
+          skippedReason: 'PUBLIC_AUDIT_BEHAVIOR_EMPTY',
+        });
+        continue;
+      }
+
+      let out = rule.evaluate(ctx);
+
+      // Apply structural-only rewrites in-place so persisted rows and the
+      // email read identically. The rewrite is colocated with the rule it
+      // covers — see each rule's `structuralPublicAuditCopy`. A null rewrite
+      // means the rule decided this finding cannot be safely reframed for a
+      // prospect — drop it here rather than letting the original behavioral
+      // copy fall through to the defense-in-depth scrub.
+      if (isPublicAudit && behavior === 'structural-only' && rule.structuralPublicAuditCopy) {
+        const rewritten: AuditFinding[] = [];
+        for (const f of out) {
+          const rewrite = rule.structuralPublicAuditCopy(f, ctx);
+          if (!rewrite) continue;
+          f.title = rewrite.title;
+          f.summary = rewrite.summary;
+          f.evidence = rewrite.evidence;
+          // When `f.prescription` is undefined the fallback seeds `whatToChange`
+          // from `f.recommendation?.[0]` — the route reads `prescription.whatToChange`
+          // first via `??`, and an empty string is not nullish, so seeding `''`
+          // would shadow a valid recommendation downstream.
+          f.prescription = {
+            ...(f.prescription ?? {
+              whatToChange: f.recommendation?.[0] ?? '',
+              whyItWorks: '',
+              experimentVariantDescription: '',
+            }),
+            whyItMatters: rewrite.whyItMatters,
+          };
+          rewritten.push(f);
+        }
+        out = rewritten;
+      }
+
       const cal = ctx.calibration?.get(rule.id);
       // Annotate each finding with the calibration that was active when the
       // rule ran so the PM surface can show "Tuned for your site" receipts.

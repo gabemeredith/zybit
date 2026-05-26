@@ -47,6 +47,7 @@ export const linkTextGeneric: AuditRule = {
   id: 'link-text-generic',
   category: 'accessibility',
   name: 'Generic link text',
+  publicAuditBehavior: 'as-is',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];

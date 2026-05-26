@@ -23,7 +23,14 @@ import {
   outlineMod,
   snapshotHeadingSelector,
 } from "./annotationHelpers";
-import { clamp, formatCount, pct, quote, readScrollFraction } from "./helpers";
+import {
+  clamp,
+  evidenceFromFinding,
+  formatCount,
+  pct,
+  quote,
+  readScrollFraction,
+} from "./helpers";
 import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
@@ -45,6 +52,32 @@ export const aboveFoldCoverage: AuditRule = {
   id: "above-fold-coverage",
   name: "Above-fold CTA coverage",
   category: "fold",
+  publicAuditBehavior: 'structural-only',
+
+  // Public-audit rewrite: the rule's evaluate() requires ≥30 page_view events
+  // with scroll metrics; in public mode those events are synthetic. The
+  // structural half ("primary CTA sits below the fold") still holds — the
+  // CTA position is measured from real HTML — so this rewrite keeps that
+  // framing and strips the behavioral overlay.
+  structuralPublicAuditCopy(finding) {
+    const page = evidenceFromFinding(finding, 'Page') ?? finding.pathRef ?? 'your homepage';
+    return {
+      title: `Your primary CTA on ${page} sits below the fold`,
+      summary:
+        `On ${page}, the heaviest CTA in your design only becomes visible after a scroll. Visitors who ` +
+        `don't scroll never see your main action — and a meaningful share of any audience doesn't scroll.`,
+      whyItMatters:
+        `On ${page}, the heaviest CTA in your design only becomes visible after a scroll. Visitors who ` +
+        `don't scroll never see your main action — and a meaningful share of any audience doesn't scroll.`,
+      evidence: [
+        { label: 'Page', value: page },
+        {
+          label: 'Based on',
+          value: 'page structure (CTA position measured from your HTML — connect PostHog to confirm with real scroll data)',
+        },
+      ],
+    };
+  },
 
   proposeAnnotations(
     finding: AuditFinding,
