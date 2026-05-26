@@ -66,7 +66,12 @@ export async function buildAnnotatedFindingHtml(
   const siteRows = await db
     .select({ domain: phase1Sites.domain })
     .from(phase1Sites)
-    .where(eq(phase1Sites.id, findingRow.siteId))
+    .where(
+      and(
+        eq(phase1Sites.id, findingRow.siteId),
+        eq(phase1Sites.organizationId, organizationId),
+      ),
+    )
     .limit(1);
   const domain = siteRows[0]?.domain;
   if (!domain) return { ok: false, status: 404, message: 'Site domain not found' };
@@ -85,6 +90,25 @@ export async function buildAnnotatedFindingHtml(
   const originUrl = lighthouseSlug
     ? `http://${domain}/fake-sites/${lighthouseSlug}${findingRow.pathRef}`
     : `https://${domain}${findingRow.pathRef}`;
+
+  // SSRF guard. `domain` is customer-configured; without this a malicious
+  // tenant could point it at 127.0.0.1, 169.254.169.254 (cloud metadata),
+  // 10.x, etc. and use the preview endpoint to read internal services.
+  // The lighthouse-slug path is dev-only (gated by LIGHTHOUSE_PREVIEW_ORIGIN
+  // on the route and a `lighthouse_site_*` siteId that only our tooling
+  // creates) and is expected to hit localhost, so skip the check there.
+  if (!lighthouseSlug) {
+    let parsed: URL;
+    try {
+      parsed = new URL(originUrl);
+    } catch {
+      return { ok: false, status: 400, message: 'Invalid site domain' };
+    }
+    const hostCheck = await isSafePreviewHost(parsed.hostname);
+    if (!hostCheck.ok) {
+      return { ok: false, status: 400, message: `Refusing to fetch preview: ${hostCheck.reason}` };
+    }
+  }
 
   let html: string;
   try {
@@ -130,6 +154,74 @@ function injectBaseHref(html: string, originUrl: string): string {
 
 function escapeAttr(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/**
+ * Block the obvious SSRF targets: localhost, loopback, link-local
+ * (including the AWS/GCP metadata IP 169.254.169.254), private RFC1918
+ * ranges, CGNAT, and IPv6 equivalents.
+ *
+ * Two layers:
+ *   1. Reject if the hostname is itself a private IP literal or `localhost`.
+ *   2. DNS-resolve the hostname and reject if any answer is a private IP.
+ *      Defeats `evil.example.com → 127.0.0.1` rebinding-at-config-time.
+ *
+ * Caveat: a true TOCTOU-safe SSRF guard would also pin the socket-level
+ * resolved IP (since fetch re-resolves). That's a separate, larger change;
+ * this layer blocks the demonstrated risk (customer typing 127.0.0.1 as
+ * their domain) and the obvious A-record-to-internal-IP variant.
+ */
+export async function isSafePreviewHost(
+  hostname: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (isPrivateHostname(hostname)) {
+    return { ok: false, reason: `host '${hostname}' is private/loopback/link-local` };
+  }
+  let addresses: string[] = [];
+  try {
+    const { lookup } = await import('node:dns/promises');
+    const results = await lookup(hostname, { all: true });
+    addresses = results.map((r) => r.address);
+  } catch {
+    return { ok: false, reason: `could not resolve host '${hostname}'` };
+  }
+  for (const addr of addresses) {
+    if (isPrivateIp(addr)) {
+      return { ok: false, reason: `host '${hostname}' resolves to private IP ${addr}` };
+    }
+  }
+  return { ok: true };
+}
+
+function isPrivateHostname(host: string): boolean {
+  const lower = host.toLowerCase().replace(/^\[|\]$/g, '');
+  if (lower === 'localhost' || lower.endsWith('.localhost')) return true;
+  return isPrivateIp(lower);
+}
+
+export function isPrivateIp(ip: string): boolean {
+  const v4 = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    if (a === 0) return true;             // 0.0.0.0/8 — "this network"
+    if (a === 10) return true;            // RFC1918
+    if (a === 127) return true;           // loopback
+    if (a === 169 && b === 254) return true; // link-local + cloud metadata
+    if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
+    if (a === 192 && b === 168) return true; // RFC1918
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64.0.0/10
+    return false;
+  }
+  // IPv6
+  const v6 = ip.toLowerCase().replace(/^\[|\]$/g, '');
+  if (v6 === '::1' || v6 === '::') return true;
+  if (v6.startsWith('fe80:') || v6.startsWith('fe80::')) return true; // link-local
+  if (/^f[cd][0-9a-f]{2}:/.test(v6)) return true; // ULA fc00::/7
+  // IPv4-mapped (::ffff:127.0.0.1) and IPv4-compat (::127.0.0.1).
+  const mapped = v6.match(/^::(?:ffff:)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (mapped) return isPrivateIp(mapped[1]);
+  return false;
 }
 
 function rowToFinding(row: typeof zybitFindings.$inferSelect): AuditFinding {
