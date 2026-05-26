@@ -49,7 +49,11 @@ export function buildMinimalHtml(data: PageSnapshotData): string {
   for (const h of data.headings) {
     const tag = `h${h.level}`;
     const escaped = h.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    parts.push(`<${tag} data-idx="${h.documentIndex}">${escaped}</${tag}>`);
+    // Re-emit attrs the parser walked to compute `h.cssSelector` so the
+    // selector validator agrees with what the AI advisor is allowed to
+    // target on headings (same pattern used for CTAs + forms).
+    const fromSelector = attrsFromCssSelector(h.cssSelector);
+    parts.push(`<${tag} data-idx="${h.documentIndex}"${fromSelector}>${escaped}</${tag}>`);
   }
 
   for (const cta of data.ctas) {

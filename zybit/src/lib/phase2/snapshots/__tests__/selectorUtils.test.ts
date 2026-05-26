@@ -6,7 +6,7 @@ import type { VariantModification } from '@/lib/experiments/types';
 
 function snapshot(): PageSnapshotData {
   return {
-    headings: [{ level: 1, text: 'Welcome', documentIndex: 0 }],
+    headings: [{ level: 1, text: 'Welcome', documentIndex: 0, cssSelector: null }],
     ctas: [
       {
         ref: 'cta-1',

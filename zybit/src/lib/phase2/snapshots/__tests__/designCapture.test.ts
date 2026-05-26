@@ -41,6 +41,7 @@ function makeCapture(overrides: Partial<PageCapture> = {}): PageCapture {
         level: 1,
         text: 'Hero',
         documentIndex: 0,
+        cssSelector: null,
         bbox: { x: 0, y: 0, width: 800, height: 60 },
         fontSizePx: 48,
         colorHex: '#111827',
