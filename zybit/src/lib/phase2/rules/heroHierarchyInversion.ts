@@ -289,22 +289,34 @@ function evaluatePage(
     return null;
   }
 
-  // Bail when either side resolves to no text — the finding is unactionable
-  // and the rendered output is gibberish ("your visitors want '(unnamed
-  // button)' but your page emphasizes '(unnamed button)'"). Icon-only CTAs
-  // legitimately exist on real sites (search, hamburger, account menu);
-  // until the vision pass fills in their semantic label we keep them out
-  // of the inversion check. This protects every audit, not just public.
-  const clickedHasText = !!clickedText && clickedText.length > 0;
-  const heavyHasText = !!heavy.text && heavy.text.length > 0;
-  if (!clickedHasText || !heavyHasText) return null;
+  // Vision-pass fallback: when the parser couldn't read CTA text — typical
+  // for icon-only "Get started" buttons that ship as `<button><svg/></button>`
+  // — borrow the semantic label from `visualSignals.visualPrimaryCta` /
+  // `visualSecondaryCta`. The vision pass is per-page and identifies the
+  // visually-primary CTA from a screenshot, so its `text` field is exactly
+  // what we'd want for `heavy.text` when the parser came up empty. Closes
+  // handover §12.A's "unnamed-CTA root cause" item.
+  const visual = snapshot.data.visualSignals;
+  const heavyLabel =
+    (heavy.text && heavy.text.length > 0) ? heavy.text :
+    visual?.visualPrimaryCta?.text ?? '';
+  const clickedLabel =
+    (clickedText && clickedText.length > 0) ? clickedText :
+    visual?.visualSecondaryCta?.text ?? '';
+
+  // Bail when either side STILL resolves to no text — the finding is
+  // unactionable and the rendered output is gibberish ("your visitors want
+  // '(unnamed button)' but your page emphasizes '(unnamed button)'"). After
+  // vision fallback this is a much narrower bail than before; protects
+  // every audit, not just public.
+  if (!heavyLabel || !clickedLabel) return null;
 
   const pageName = humanizePath(pathRef);
   const heavyLocation = describeLandmark(heavy.landmark);
   const heavyTreatment = describeVisualTreatment(heavy.visualWeightSignals);
   const windowDays = windowDaysFromTimeWindow(ctx.window);
-  const clickedQ = quote(clickedText);
-  const heavyQ = quote(heavy.text);
+  const clickedQ = quote(clickedLabel);
+  const heavyQ = quote(heavyLabel);
 
   const summary =
     `Of ${formatCount(totalClicks)} button clicks on ${pageName}, ${pct(clickedShare)}% went to ${clickedQ} ` +
@@ -321,12 +333,12 @@ function evaluatePage(
   const evidence: AuditFindingEvidence[] = [
     {
       label: 'What visitors click most',
-      value: clickedText ?? '(unnamed button)',
+      value: clickedLabel,
       context: `${pct(clickedShare)}% of clicks · ${formatCount(clickedCount)} clicks`,
     },
     {
       label: 'What your design emphasizes',
-      value: heavy.text || '(unnamed button)',
+      value: heavyLabel,
       context: `${heavyLocation}, ${heavyTreatment}`,
     },
     { label: 'Page', value: pageName },

@@ -22,6 +22,8 @@ import { upsertFindings } from '@/lib/phase2/jobs/insightsTrigger';
 import { runPhase2InsightsPipeline } from '@/lib/phase2/runInsightsPipeline';
 import type { AuditFinding, AuditMode } from '@/lib/phase2/rules/types';
 import { applyDefenseInDepthScrub } from '@/lib/audit/publicAuditScrub';
+import { captureAboveFoldBuffer } from '@/lib/audit/captureAboveFoldBuffer';
+import { captureVisualSignals } from '@/lib/audit/captureVisualSignals';
 import { runSnapshot, SnapshotError } from '@/lib/phase2/snapshots';
 import { capturePageAllBreakpoints } from '@/lib/phase2/capture/record';
 import { buildFullDesignSnapshot } from '@/lib/phase2/snapshots/designCapture';
@@ -46,6 +48,15 @@ export interface RunUrlAuditOpts {
    * operator-triggered runs see full rule output.
    */
   mode?: AuditMode;
+  /**
+   * Vision-pass coverage — `captureVisualSignals` runs against an
+   * above-fold screenshot for the first N snapshotted pages. Default 0
+   * (off). The public-audit route passes a small positive number
+   * (handover §12.A: 3 pages is the budget-friendly default at
+   * ~$0.001/page × 3). Set to 0 in test/lighthouse runs to avoid hitting
+   * Browserless + Gemini.
+   */
+  visionPagesLimit?: number;
 }
 
 function now(): string {
@@ -69,7 +80,14 @@ function sanitize(value: string): string {
 export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult> {
   const startedAt = now();
   const runId = `lh_run_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
-  const { url, maxPages, onProgress, mode } = opts;
+  const { url, maxPages, onProgress, mode, visionPagesLimit = 0 } = opts;
+  const visionHost = (() => {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+      return 'unknown';
+    }
+  })();
 
   // 1) Crawl — discover the site's pages.
   progress(onProgress, 'crawl', `discovering pages on ${url}`);
@@ -151,9 +169,37 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
   const grounded: GroundedPage[] = [];
   const inspector: NonNullable<GenerateResult['inspector']> = [];
   const snapshotErrors: { path: string; code: string; message: string }[] = [];
+  let visionRunsRemaining = Math.max(0, visionPagesLimit);
   for (const page of map.pages) {
     try {
       const r = await runSnapshot(page.url, { respectRobots: false });
+
+      // Vision pass — capture-time enrichment of the snapshot.
+      // Runs for the first N pages (budget-bounded by `visionPagesLimit`).
+      // Fail-soft: any error or missing env leaves `data.visualSignals`
+      // undefined and downstream rules degrade to structural-only logic
+      // (closes handover §12.A's "elevate vision from opt-in to mandatory"
+      // for the prospect-facing audit surface).
+      if (visionRunsRemaining > 0) {
+        const screenshot = await captureAboveFoldBuffer(page.url);
+        if (screenshot) {
+          const signals = await captureVisualSignals({
+            url: page.url,
+            domain: visionHost,
+            screenshot,
+          });
+          if (signals) {
+            r.data.visualSignals = signals;
+            progress(
+              onProgress,
+              'snapshots',
+              `vision: ${page.pathRef} (pageType=${signals.pageType}, primaryCta=${signals.visualPrimaryCta?.text ?? 'null'})`,
+            );
+          }
+        }
+        visionRunsRemaining -= 1;
+      }
+
       await repository.upsertPageSnapshot({
         organizationId,
         siteId,

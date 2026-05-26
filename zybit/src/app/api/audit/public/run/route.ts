@@ -240,6 +240,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // post-hoc DELETE/UPDATE scrub that used to live here is gone — the
       // pipeline now ships prospect-safe findings end-to-end.
       mode: 'public-audit',
+      // Capture-time vision signals for the first 3 pages (homepage +
+      // first two deep pages from the crawl). Closes the unnamed-CTA
+      // root cause for the prospect-facing surface — hero rule reads
+      // `visualPrimaryCta.text` when its own CTA text is empty.
+      // ~$0.001/page × 3 = $0.003 added to per-audit cost. No-op when
+      // GEMINI_API_KEY or BROWSERLESS_KEY are unset.
+      visionPagesLimit: 3,
     });
   } catch (err) {
     pipelineError = err instanceof Error ? err.message : String(err);
