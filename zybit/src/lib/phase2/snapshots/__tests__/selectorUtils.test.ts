@@ -29,6 +29,24 @@ function snapshot(): PageSnapshotData {
   } as unknown as PageSnapshotData;
 }
 
+function snapshotWithFormSelector(cssSelector: string): PageSnapshotData {
+  return {
+    headings: [],
+    ctas: [],
+    forms: [
+      {
+        ref: 'form-1',
+        landmark: 'main',
+        fieldCount: 2,
+        inputs: [],
+        documentIndex: 0,
+        hasSubmitButton: true,
+        cssSelector,
+      },
+    ],
+  } as unknown as PageSnapshotData;
+}
+
 function snapshotWithCtaSelector(cssSelector: string, ariaLabel: string | null = null): PageSnapshotData {
   return {
     headings: [],
@@ -105,6 +123,28 @@ describe('buildMinimalHtml — attrsFromCssSelector re-emission', () => {
       count: 1,
       status: 'ok',
     });
+  });
+
+  // Form-side parity: pickSelectorForFinding now resolves formRef against
+  // form.cssSelector for form-abandonment findings, so the synthesised
+  // <form> element must also re-emit the parser-emitted attribute. Without
+  // this, the validator badge stays red for the one finding shape this PR
+  // added form support for.
+  it('re-emits data-testid="…" on <form> from form.cssSelector', () => {
+    const data = snapshotWithFormSelector('[data-testid="signup-form"]');
+    const html = buildMinimalHtml(data);
+    expect(html).toContain('data-testid="signup-form"');
+    expect(countSelectorMatches(data, '[data-testid="signup-form"]')).toEqual({
+      count: 1,
+      status: 'ok',
+    });
+  });
+
+  it('re-emits id="…" on <form> from a bare `#id` cssSelector', () => {
+    const data = snapshotWithFormSelector('#signup');
+    const html = buildMinimalHtml(data);
+    expect(html).toContain('id="signup"');
+    expect(countSelectorMatches(data, '#signup')).toEqual({ count: 1, status: 'ok' });
   });
 
   it('re-emits role="…" but does not duplicate aria-label (already emitted from cta.ariaLabel)', () => {

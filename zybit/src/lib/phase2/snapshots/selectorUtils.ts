@@ -66,7 +66,8 @@ export function buildMinimalHtml(data: PageSnapshotData): string {
 
   for (const form of data.forms) {
     const submitBtn = form.hasSubmitButton ? '<button type="submit">Submit</button>' : '';
-    parts.push(`<form data-zybit-ref="${form.ref}" data-landmark="${form.landmark}">${submitBtn}</form>`);
+    const fromSelector = attrsFromCssSelector(form.cssSelector);
+    parts.push(`<form data-zybit-ref="${form.ref}" data-landmark="${form.landmark}"${fromSelector}>${submitBtn}</form>`);
   }
 
   parts.push('</body></html>');
