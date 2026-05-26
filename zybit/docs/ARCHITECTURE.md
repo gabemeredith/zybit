@@ -217,11 +217,19 @@ User → Zybit Edge (Vercel Middleware) → Customer Origin
 
 **Variant definition format:**
 ```typescript
-interface VariantModification {
-  type: 'css-inject' | 'text-replace' | 'element-hide' | 'element-reorder' | 'attribute-set';
-  selector: string;        // CSS selector targeting the element
-  value: string;           // New text, CSS rules, or attribute value
-}
+type VariantModification =
+  | { type: 'css-inject'; selector: string; css: string }
+  | { type: 'text-replace'; selector: string; text: string }
+  | { type: 'element-hide'; selector: string }
+  | { type: 'element-show'; selector: string }
+  | { type: 'attribute-set'; selector: string; attr: string; value: string }
+  | { type: 'element-reorder'; parentSelector: string; childOrder: number[] }
+  // `element-insert` splices a new HTML fragment relative to an anchor element
+  // (DOM-standard positions). The fragment is sanitized by
+  // `sanitizeInsertHtml` before it reaches the page: tag+attribute allowlist,
+  // `on*` handlers and `javascript:`/`data:` URLs are dropped, and
+  // `<script>`/`<iframe>`/`<form>` are removed wholesale.
+  | { type: 'element-insert'; selector: string; position: 'before' | 'after' | 'prepend' | 'append'; html: string };
 
 interface ExperimentConfig {
   id: string;
@@ -237,7 +245,7 @@ interface ExperimentConfig {
 
 **Why this approach:**
 - Works without customer code changes (just DNS)
-- Supports the most common CRO modifications (button text, CTA position, form field visibility, color changes)
+- Supports the most common CRO modifications (button text, CTA position, form field visibility, color changes, **and adding new sections via `element-insert`** — e.g. a top-of-page quick-answer block or an anchor nav)
 - Vercel Middleware runs at the edge — low latency
 - Zybit already runs on Vercel, so middleware is native
 
@@ -245,6 +253,7 @@ interface ExperimentConfig {
 - Can't modify server-side logic (pricing, API responses)
 - DOM manipulation via selector is fragile if customer changes their markup
 - Customer must trust Zybit as a proxy
+- `element-insert` markup is restricted to a layout/text tag allowlist — no `<form>`, `<script>`, `<iframe>`, no inline event handlers, no `javascript:`/`data:` URLs. PMs who need server-side rendered controls still ship those through their codebase.
 
 **Implementation scope:**
 - `src/lib/experiments/variantEngine.ts` — Applies modifications to HTML response

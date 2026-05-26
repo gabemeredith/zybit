@@ -159,31 +159,37 @@ describe('flowInterStepDropoff', () => {
       };
     }
 
-    it('returns one red outline mod when the chokepoint primary CTA has a selector', () => {
-      const cta = { ...makeCta('Place order', 0.9, 'above', 'order-cta'), cssSelector: 'button.order' };
+    it('outlines competing CTAs in red and the primary in green with a caption', () => {
+      const primary = { ...makeCta('Place order', 0.9, 'above', 'order-cta'), cssSelector: 'button.order' };
+      const competing1 = { ...makeCta('Save for later', 0.5, 'above', 'save-cta'), cssSelector: 'button.save' };
+      const competing2 = { ...makeCta('Add coupon', 0.4, 'above', 'coupon-cta'), cssSelector: 'a.coupon' };
       const out = flowInterStepDropoff.proposeAnnotations!(
         makeFinding({ ctaRef: 'order-cta' }),
-        { snapshot: makeSnapshot('/checkout', [cta]), designTokens: null },
+        { snapshot: makeSnapshot('/checkout', [primary, competing1, competing2]), designTokens: null },
       );
-      expect(out).toHaveLength(1);
-      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.order' });
+      // 1-2: red outline on each competing CTA; 3: green outline on primary; 4-5: primary caption.
+      expect(out).toHaveLength(5);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.save' });
       if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+      expect(out[1]).toMatchObject({ type: 'css-inject', selector: 'a.coupon' });
+      expect(out[2]).toMatchObject({ type: 'css-inject', selector: 'button.order' });
+      if (out[2].type === 'css-inject') expect(out[2].css).toContain('#22c55e');
     });
 
-    it('returns [] when ctaRef present but the CTA has no cssSelector', () => {
-      const cta = makeCta('Place order', 0.9, 'above', 'order-cta');
+    it('returns just the primary outline + caption when no competing CTAs are on the page', () => {
+      const primary = { ...makeCta('Place order', 0.9, 'above', 'order-cta'), cssSelector: 'button.order' };
       const out = flowInterStepDropoff.proposeAnnotations!(
         makeFinding({ ctaRef: 'order-cta' }),
-        { snapshot: makeSnapshot('/checkout', [cta]), designTokens: null },
+        { snapshot: makeSnapshot('/checkout', [primary]), designTokens: null },
       );
-      expect(out).toEqual([]);
+      expect(out).toHaveLength(3);
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#22c55e');
     });
 
-    it('returns [] when refs.ctaRef is absent (no chokepoint snapshot at finding time)', () => {
-      const cta = { ...makeCta('Place order', 0.9, 'above', 'order-cta'), cssSelector: 'button.order' };
+    it('returns [] when refs.ctaRef is absent and no CTAs have selectors', () => {
       const out = flowInterStepDropoff.proposeAnnotations!(
         makeFinding({}),
-        { snapshot: makeSnapshot('/checkout', [cta]), designTokens: null },
+        { snapshot: makeSnapshot('/checkout', []), designTokens: null },
       );
       expect(out).toEqual([]);
     });

@@ -17,7 +17,8 @@
 
 import type { VariantModification } from '@/lib/experiments/types';
 import type { FlowEdge } from '@/lib/phase2/flow/types';
-import { ANNOTATION_HEAVY_COLOR } from './annotationColors';
+import { ANNOTATION_CLICKED_COLOR, ANNOTATION_HEAVY_COLOR } from './annotationColors';
+import { annotationCaption, outlineMod } from './annotationHelpers';
 import { clamp, formatCount, pct, pickPrimaryCta } from './helpers';
 import { calibratedFloor } from './ruleCalibration';
 import type {
@@ -50,15 +51,35 @@ export const flowInterStepDropoff: AuditRule = {
     finding: AuditFinding,
     ctx: ProposeModificationsContext,
   ): VariantModification[] {
-    const ref = finding.refs?.ctaRef;
-    if (!ref) return [];
-    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
-    if (!cta?.cssSelector) return [];
-    return [{
-      type: 'css-inject',
-      selector: cta.cssSelector,
-      css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
-    }];
+    // The prescription is "give this step one unambiguous next action and
+    // remove anything that competes with it." So outline *every* CTA on the
+    // step's page in red (the competition), and the primary in green (the
+    // survivor) — the visual story is "many vs. one." Old behavior outlined
+    // only the primary in red, which inverted the story.
+    const primaryRef = finding.refs?.ctaRef;
+    const mods: VariantModification[] = [];
+    let primarySelector: string | null = null;
+    for (const cta of ctx.snapshot.data.ctas) {
+      if (!cta.cssSelector) continue;
+      if (cta.ref === primaryRef) {
+        primarySelector = cta.cssSelector;
+        continue;
+      }
+      mods.push(outlineMod(cta.cssSelector, ANNOTATION_HEAVY_COLOR));
+    }
+    if (primarySelector) {
+      mods.push(outlineMod(primarySelector, ANNOTATION_CLICKED_COLOR));
+      mods.push(
+        ...annotationCaption({
+          anchorSelector: primarySelector,
+          position: 'after',
+          ruleClassName: 'zybit-anno-flow-primary',
+          label: 'Keep this one — remove or demote the others to reduce competition',
+          color: ANNOTATION_CLICKED_COLOR,
+        }),
+      );
+    }
+    return mods;
   },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {

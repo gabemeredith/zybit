@@ -200,27 +200,29 @@ describe('heroHierarchyInversion rule', () => {
       return makeSnapshot(PATH, ctas);
     }
 
-    it('returns two mods with contrasting colors when both refs resolve to CTAs with selectors', () => {
+    it('outlines heavy (red) + clicked (green) with a caption next to each', () => {
       const heavy = { ...makeCta('Primary', 0.9, 'above', 'h'), cssSelector: 'button.h' };
       const clicked = { ...makeCta('Secondary', 0.3, 'above', 'c'), cssSelector: 'a.c' };
       const out = heroHierarchyInversion.proposeAnnotations!(
         makeFinding({ ctaRef: 'h', clickedCtaRef: 'c' }),
         { snapshot: snapshotWith([heavy, clicked]), designTokens: null },
       );
-      expect(out).toHaveLength(2);
+      // 1: outline heavy (red); 2-3: heavy caption insert + css;
+      // 4: outline clicked (green); 5-6: clicked caption insert + css.
+      expect(out).toHaveLength(6);
       expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.h' });
-      expect(out[1]).toMatchObject({ type: 'css-inject', selector: 'a.c' });
       if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
-      if (out[1].type === 'css-inject') expect(out[1].css).toContain('#22c55e');
+      expect(out[3]).toMatchObject({ type: 'css-inject', selector: 'a.c' });
+      if (out[3].type === 'css-inject') expect(out[3].css).toContain('#22c55e');
     });
 
-    it('returns only the heavy mod when clickedCtaRef is absent', () => {
+    it('returns only the heavy outline + caption (3 mods) when clickedCtaRef is absent', () => {
       const heavy = { ...makeCta('Primary', 0.9, 'above', 'h'), cssSelector: 'button.h' };
       const out = heroHierarchyInversion.proposeAnnotations!(
         makeFinding({ ctaRef: 'h' }),
         { snapshot: snapshotWith([heavy]), designTokens: null },
       );
-      expect(out).toHaveLength(1);
+      expect(out).toHaveLength(3);
       if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
     });
 

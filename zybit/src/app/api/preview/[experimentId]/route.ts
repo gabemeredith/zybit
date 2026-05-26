@@ -136,10 +136,14 @@ export async function GET(
   // Explicitly set frame-ancestors 'self' so the dashboard iframe can embed this response
   // even if the browser defaults change in the future. For Lighthouse synthetic
   // sites, the experiment detail page is itself embedded inside the Lighthouse
-  // UI on `:3001`, so the browser's frame-ancestors check walks the whole chain
-  // and fails on `'self'` alone. Allow the Lighthouse origin too in that case.
+  // UI (port 3001 by default; override with LIGHTHOUSE_FRAME_ANCESTORS for
+  // multi-port local-dev setups where Lighthouse is on e.g. :3003). The
+  // browser's frame-ancestors check walks the whole chain and fails on
+  // `'self'` alone, so allow the Lighthouse origin too in that case.
+  const lighthouseAncestors =
+    process.env.LIGHTHOUSE_FRAME_ANCESTORS ?? 'http://localhost:3001';
   const frameAncestors = lighthouseSlug
-    ? "'self' http://localhost:3001"
+    ? `'self' ${lighthouseAncestors}`
     : "'self'";
   const headers = new Headers({
     'content-type': 'text/html; charset=utf-8',

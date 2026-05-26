@@ -87,6 +87,7 @@ export default async function ExperimentDetailPage({
     selector?: string;
     changeType?: string;
     newValue?: string;
+    insertPosition?: string | null;
   } : null;
 
   const name = notes?.name ?? exp.hypothesis;
@@ -183,9 +184,15 @@ export default async function ExperimentDetailPage({
             {notes?.newValue && notes.changeType !== "hide" && (
               <div className="col-span-2">
                 <div className={SECTION_LABEL}>
-                  {notes.changeType === "copy" ? "Variant copy" : "CSS value"}
+                  {notes.changeType === "copy"
+                    ? "Variant copy"
+                    : notes.changeType === "insert"
+                      ? `Inserted HTML (${notes.insertPosition ?? "before"} anchor)`
+                      : "CSS value"}
                 </div>
-                <p className="text-sm font-mono text-[#111]">{notes.newValue}</p>
+                <p className={`text-sm font-mono text-[#111] ${notes.changeType === "insert" ? "whitespace-pre-wrap break-words" : ""}`}>
+                  {notes.newValue}
+                </p>
               </div>
             )}
             <div>

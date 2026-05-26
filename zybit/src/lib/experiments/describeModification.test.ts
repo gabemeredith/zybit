@@ -120,6 +120,40 @@ describe("describeModification", () => {
     });
   });
 
+  describe("element-insert", () => {
+    it("reports selector and labels payload with the chosen position", () => {
+      const d = describeModification({
+        type: "element-insert",
+        selector: ".banner",
+        position: "before",
+        html: "<section>x</section>",
+      });
+      expect(d.selector).toBe(".banner");
+      expect(d.payloadLabel).toBe("before=");
+      expect(d.payloadValue).toBe("<section>x</section>");
+      expect(d.noOp).toBe(false);
+    });
+
+    it("flags noOp on empty selector or blank html", () => {
+      expect(
+        describeModification({
+          type: "element-insert",
+          selector: "",
+          position: "before",
+          html: "<p>x</p>",
+        }).noOp,
+      ).toBe(true);
+      expect(
+        describeModification({
+          type: "element-insert",
+          selector: ".x",
+          position: "after",
+          html: "   ",
+        }).noOp,
+      ).toBe(true);
+    });
+  });
+
   it("covers every VariantModification variant in the union (no unreachable branches)", () => {
     const cases: VariantModification[] = [
       { type: "text-replace", selector: ".a", text: "x" },
@@ -128,6 +162,7 @@ describe("describeModification", () => {
       { type: "element-show", selector: ".a" },
       { type: "attribute-set", selector: ".a", attr: "alt", value: "x" },
       { type: "element-reorder", parentSelector: ".a", childOrder: [0] },
+      { type: "element-insert", selector: ".a", position: "before", html: "<p>x</p>" },
     ];
     for (const m of cases) {
       expect(describeModification(m).noOp).toBe(false);

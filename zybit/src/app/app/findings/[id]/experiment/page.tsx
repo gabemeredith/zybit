@@ -15,12 +15,14 @@ import type {
 import type { CtaCandidate, FormCandidate, HeadingItem } from "@/lib/phase2/snapshots/types";
 import { pickSelectorForFinding } from "@/lib/phase2/snapshots/pickSelector";
 import { selectorStability, type SelectorStability } from "@/lib/phase2/snapshots/selectorUtils";
+import { nthOfTypeIndex } from "@/lib/phase2/rules/annotationHelpers";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type ChangeType = "copy" | "style" | "hide";
+export type ChangeType = "copy" | "style" | "hide" | "insert";
+export type InsertPosition = "before" | "after" | "prepend" | "append";
 
 export interface SelectorSuggestion {
   label: string;       // display text shown in dropdown
@@ -34,9 +36,31 @@ const STABILITY_RANK: Record<SelectorStability, number> = { stable: 0, medium: 1
 // Default derivation helpers
 // ---------------------------------------------------------------------------
 
+// Category → default change type. The mapping is deterministic and mirrors
+// the prescription verb each rule emits ("Add a…" → insert, "Rewrite…" →
+// copy, "Promote…" → style). The PM can still override via the change-type
+// buttons; this just opens the brief pointed at the modification the
+// prescription is actually asking for, instead of always defaulting to
+// "copy."
 function defaultChangeType(category: string): ChangeType {
-  if (category === "hierarchy") return "style";
-  return "copy";
+  switch (category) {
+    // "Add a quick-answer section / FAQ / proof" — markup that didn't exist
+    // on the page before. Needs `element-insert`.
+    case "thrash":
+    case "help":
+    case "hesitation":
+      return "insert";
+    // "Promote / restyle / move above the fold" — re-skinning existing
+    // elements via class swaps or CSS injection.
+    case "hierarchy":
+    case "fold":
+      return "style";
+    // Default to copy for everything else (bounce, abandonment, mismatch,
+    // asymmetry, rage, error, nav, flow) — those prescriptions are
+    // dominated by "rewrite the headline / submit label / nav copy."
+    default:
+      return "copy";
+  }
 }
 
 function defaultPrimaryMetric(category: string, pathRef: string | null): string {
@@ -49,10 +73,33 @@ function defaultPrimaryMetric(category: string, pathRef: string | null): string 
 }
 
 function defaultSelector(
+  category: string,
+  changeType: ChangeType,
   refs: Record<string, string | undefined> | null,
   ctas: CtaCandidate[],
   forms: FormCandidate[],
+  headings: HeadingItem[],
 ): string {
+  // For `insert` briefs the anchor depends on what we're inserting:
+  //   - "hesitation" prescribes proof copy *immediately above the CTA*, so
+  //     anchor the primary CTA and use position: before.
+  //   - "thrash"/"help" prescribe a quick-answer block or FAQ at the top of
+  //     the page, so anchor the first <h1> (with the position dropdown
+  //     defaulting to "before" → the new section lands above the hero).
+  // If no anchor is available the field stays empty and the PM picks from
+  // the selector-suggestion dropdown.
+  if (changeType === "insert") {
+    if (category === "hesitation") {
+      const ctaSelector = pickSelectorForFinding(ctas, forms, refs);
+      if (ctaSelector) return ctaSelector;
+    }
+    const firstH1 = headings.find((h) => h.level === 1);
+    const firstHeading = headings[0];
+    const target = firstH1 ?? firstHeading;
+    if (target) return `h${target.level}:nth-of-type(${nthOfTypeIndex(headings, target)})`;
+    return "";
+  }
+
   // Snapshot-grounded: prefer the parser-computed `cssSelector` from the
   // referenced element (CTA via `ctaRef`, form via `formRef` — see
   // `pickSelectorForFinding` for the ladder). Returns "" only when no
@@ -66,6 +113,7 @@ function defaultNewValue(
   changeType: ChangeType,
   category: string,
   evidence: AuditFindingEvidence[],
+  pathRef: string | null,
 ): string {
   if (changeType === "hide") return "";
   if (changeType === "style") {
@@ -77,6 +125,36 @@ function defaultNewValue(
       if (classMatch) return classMatch[0].trim();
     }
     return "";
+  }
+  if (changeType === "insert") {
+    // Per-category scaffolds so the brief opens with copy that matches the
+    // rule's actual prescription — not a generic placeholder the PM has to
+    // throw away. All scaffolds use tags from the sanitizer's allowlist so
+    // they round-trip unchanged.
+    const path = pathRef ?? "/this-page";
+    if (category === "help") {
+      return `<section class="zybit-faq">
+  <h2>Frequently asked</h2>
+  <p><strong>How long does this take?</strong> A few minutes — no commitment.</p>
+  <p><strong>Is there a fee?</strong> No setup fees, no minimums.</p>
+  <p><strong>Can I cancel anytime?</strong> Yes — one click, no questions.</p>
+</section>`;
+    }
+    if (category === "hesitation") {
+      return `<aside class="zybit-proof">
+  <p><strong>Used by 12,000+ teams</strong> — average setup time under 5 minutes.</p>
+</aside>`;
+    }
+    // thrash (and any future insert categories) — quick-answer / anchor nav.
+    return `<section class="zybit-quick-answer">
+  <h2>Quick answer for ${path}</h2>
+  <p>Most visitors here are looking for one of:</p>
+  <ul>
+    <li><a href="#option-1">Option 1</a></li>
+    <li><a href="#option-2">Option 2</a></li>
+    <li><a href="#option-3">Option 3</a></li>
+  </ul>
+</section>`;
   }
   // copy: pull the most-clicked CTA value or form submit label from evidence
   if (category === "abandonment") return "Get started — free";
@@ -126,8 +204,11 @@ function buildSuggestions(
     const text = h.text.trim().slice(0, 60);
     if (!text) continue;
     const tag = `h${h.level}`;
-    // Headings have no stable ref — use nth-of-type keyed by documentIndex
-    const selector = `${tag}:nth-of-type(${h.documentIndex + 1})`;
+    // Headings have no stable ref — use nth-of-type. Note `:nth-of-type` is
+    // per-tag and parent-scoped, so we count earlier same-level headings, not
+    // the global document index (which would skip past headings of other
+    // levels and produce a non-matching selector).
+    const selector = `${tag}:nth-of-type(${nthOfTypeIndex(headings, h)})`;
     suggestions.push({
       label: `${tag} "${text}"`,
       selector,
@@ -180,6 +261,7 @@ export default async function ExperimentBuilderPage({
   let suggestions: SelectorSuggestion[] = [];
   let ctas: CtaCandidate[] = [];
   let forms: FormCandidate[] = [];
+  let headings: HeadingItem[] = [];
   let cssSystem: import('@/lib/phase2/snapshots/cssSystemDetector').CssSystem | undefined;
   if (finding.pathRef) {
     try {
@@ -192,15 +274,12 @@ export default async function ExperimentBuilderPage({
       if (snapshot?.data) {
         ctas = snapshot.data.ctas ?? [];
         forms = snapshot.data.forms ?? [];
-        suggestions = buildSuggestions(
-          ctas,
-          forms,
-          snapshot.data.headings ?? [],
-        );
+        headings = snapshot.data.headings ?? [];
+        suggestions = buildSuggestions(ctas, forms, headings);
         cssSystem = snapshot.data.cssSystem;
       }
     } catch {
-      // no snapshot — suggestions, ctas, forms, and cssSystem stay empty
+      // no snapshot — suggestions, ctas, forms, headings, and cssSystem stay empty
     }
   }
 
@@ -208,12 +287,13 @@ export default async function ExperimentBuilderPage({
 
   const freshDefaults = {
     experimentName: `${finding.title} — Variant B`,
-    selector: defaultSelector(refs, ctas, forms),
+    selector: defaultSelector(finding.category, changeType, refs, ctas, forms, headings),
     changeType,
-    newValue: defaultNewValue(changeType, finding.category, evidence),
+    newValue: defaultNewValue(changeType, finding.category, evidence, finding.pathRef),
     variantDescription: prescription.experimentVariantDescription,
     primaryMetric: defaultPrimaryMetric(finding.category, finding.pathRef),
     hypothesis: "",
+    insertPosition: "before" as InsertPosition,
   };
 
   const savedBrief = finding.experimentBrief;
@@ -228,6 +308,7 @@ export default async function ExperimentBuilderPage({
         variantDescription: savedBrief.variantDescription,
         primaryMetric: savedBrief.primaryMetric,
         hypothesis: savedBrief.hypothesis ?? "",
+        insertPosition: (savedBrief.insertPosition ?? "before") as InsertPosition,
       }
     : freshDefaults;
 

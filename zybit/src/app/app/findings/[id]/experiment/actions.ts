@@ -6,14 +6,15 @@ import { eq, and } from "drizzle-orm";
 import { getServerAuth } from "@/lib/auth/serverAuth";
 import { getDb } from "@/lib/db/client";
 import { phase1Sites, zybitExperiments, zybitFindings } from "@/lib/db/schema";
-import type { VariantModification } from "@/lib/experiments/types";
+import type { VariantModification, InsertPosition } from "@/lib/experiments/types";
 import { targetPageIsSpaShell } from "@/lib/experiments/spaGuard";
 import {
   validateBriefShape,
+  INSERT_POSITIONS,
   type ValidationError as BriefValidationError,
 } from "@/lib/experiments/validateBrief";
 
-const VALID_CHANGE_TYPES = ["copy", "style", "hide"] as const;
+const VALID_CHANGE_TYPES = ["copy", "style", "hide", "insert"] as const;
 type ChangeType = (typeof VALID_CHANGE_TYPES)[number];
 
 interface SaveBriefInput {
@@ -25,6 +26,7 @@ interface SaveBriefInput {
   variantDescription: string;
   primaryMetric: string;
   hypothesis: string;
+  insertPosition?: InsertPosition;
 }
 
 export type ValidationError = BriefValidationError;
@@ -44,8 +46,14 @@ export async function saveExperimentBriefAction(
   }
 
   const selector = input.selector.trim().slice(0, 500);
-  const newValue = input.newValue.trim();
-  const validation = validateBriefShape(input.changeType, selector, newValue);
+  // For 'insert' the field carries an HTML fragment, not a CSS class string —
+  // preserve internal whitespace, cap on total length to keep the proxy quick.
+  const newValue =
+    input.changeType === "insert"
+      ? input.newValue.slice(0, 8000)
+      : input.newValue.trim();
+  const insertPosition = input.changeType === "insert" ? input.insertPosition : undefined;
+  const validation = validateBriefShape(input.changeType, selector, newValue, insertPosition);
   if (validation) return validation;
 
   const experimentBrief = {
@@ -56,6 +64,7 @@ export async function saveExperimentBriefAction(
     variantDescription: input.variantDescription.trim(),
     primaryMetric: input.primaryMetric.trim().slice(0, 200),
     hypothesis: input.hypothesis.trim() || null,
+    insertPosition: insertPosition ?? null,
     createdAt: new Date().toISOString(),
   };
 
@@ -81,12 +90,20 @@ function briefToModifications(
   changeType: ChangeType,
   selector: string,
   newValue: string,
+  insertPosition: InsertPosition | undefined,
 ): VariantModification[] {
   if (changeType === "copy") {
     return [{ type: "text-replace", selector, text: newValue }];
   }
   if (changeType === "hide") {
     return [{ type: "element-hide", selector }];
+  }
+  if (changeType === "insert") {
+    const position: InsertPosition =
+      insertPosition && (INSERT_POSITIONS as readonly string[]).includes(insertPosition)
+        ? insertPosition
+        : "before";
+    return [{ type: "element-insert", selector, position, html: newValue }];
   }
   // style: use css-inject to force the variant visual. newValue may be class names
   // or raw CSS — the PM decides. We store the raw value; the manifest API
@@ -138,6 +155,7 @@ export async function launchExperimentAction(
     finding.experimentBrief.changeType,
     finding.experimentBrief.selector,
     finding.experimentBrief.newValue,
+    finding.experimentBrief.insertPosition ?? undefined,
   );
   if (briefValidation) return briefValidation;
 
@@ -221,7 +239,12 @@ export async function launchExperimentAction(
     durationDays: 14,
     status: "running",
     targetPath: finding.pathRef ?? null,
-    modifications: briefToModifications(brief.changeType, brief.selector, brief.newValue),
+    modifications: briefToModifications(
+      brief.changeType,
+      brief.selector,
+      brief.newValue,
+      brief.insertPosition ?? undefined,
+    ),
     overlappingExperimentIds: runningOnSite.length > 0 ? runningOnSite.map((e) => e.id) : null,
     // Store original brief fields so the client-side manifest can serve them directly
     notes: JSON.stringify({
@@ -229,6 +252,7 @@ export async function launchExperimentAction(
       selector: brief.selector,
       changeType: brief.changeType,
       newValue: brief.newValue,
+      insertPosition: brief.insertPosition ?? null,
     }),
     startedAt: now,
     createdAt: now,

@@ -61,5 +61,12 @@ export function describeModification(mod: VariantModification): DescribedModific
         payloadValue: mod.childOrder.join(", "),
         noOp: mod.parentSelector.length === 0 || mod.childOrder.length === 0,
       };
+    case "element-insert":
+      return {
+        selector: mod.selector,
+        payloadLabel: `${mod.position}=`,
+        payloadValue: mod.html,
+        noOp: mod.selector.length === 0 || mod.html.trim().length === 0,
+      };
   }
 }

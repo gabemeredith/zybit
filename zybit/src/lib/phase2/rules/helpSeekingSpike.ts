@@ -13,6 +13,7 @@ import type { PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { CanonicalEvent, GoalConfig, GoalType } from "@/lib/phase2/types";
 
 import { ANNOTATION_WARN_COLOR } from "./annotationColors";
+import { missingPlaceholder } from "./annotationHelpers";
 import {
   clamp,
   formatCount,
@@ -67,15 +68,21 @@ export const helpSeekingSpike: AuditRule = {
     finding: AuditFinding,
     ctx: ProposeModificationsContext,
   ): VariantModification[] {
+    // The prescription is "add a 2-3 question FAQ immediately above the
+    // primary CTA, with questions taken from the actual help-CTA labels
+    // visitors clicked." So the annotation places the *missing FAQ block*
+    // exactly where the prescription says it should go.
     const ref = finding.refs?.ctaRef;
     if (!ref) return [];
     const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
     if (!cta?.cssSelector) return [];
-    return [{
-      type: 'css-inject',
-      selector: cta.cssSelector,
-      css: `outline: 3px dashed ${ANNOTATION_WARN_COLOR} !important; outline-offset: 4px;`,
-    }];
+    return missingPlaceholder({
+      anchorSelector: cta.cssSelector,
+      position: 'before',
+      ruleClassName: 'zybit-anno-help',
+      label: 'FAQ answering the questions visitors clicked help for — place immediately above the primary CTA',
+      color: ANNOTATION_WARN_COLOR,
+    });
   },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {

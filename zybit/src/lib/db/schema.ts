@@ -510,11 +510,14 @@ export const zybitFindings = pgTable(
     experimentBrief: jsonb('experiment_brief').$type<{
       experimentName: string;
       selector: string;
-      changeType: 'copy' | 'style' | 'hide';
+      changeType: 'copy' | 'style' | 'hide' | 'insert';
       newValue: string;
       variantDescription: string;
       primaryMetric: string;
       hypothesis: string | null;
+      /** For changeType === 'insert': where to splice the new markup relative
+       * to the anchor element. Null/undefined for the other change types. */
+      insertPosition?: 'before' | 'after' | 'prepend' | 'append' | null;
       createdAt: string;
     } | null>(),
     learnAdjustment: jsonb('learn_adjustment').$type<{

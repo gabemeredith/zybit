@@ -147,15 +147,17 @@ describe('formAbandonment rule', () => {
       };
     }
 
-    it('returns one red outline mod when formRef resolves to a form with a selector', () => {
+    it('outlines the form (red) + captions it with the shorten/move-fields prescription', () => {
       const form = { ...makeForm('signup-form', [{ name: 'email', required: true }, { name: 'pw', required: true }]), cssSelector: 'form#signup' };
       const out = formAbandonment.proposeAnnotations!(
         makeFinding({ formRef: 'signup-form' }),
         { snapshot: makeSnapshot(PATH, [], [], [form]), designTokens: null },
       );
-      expect(out).toHaveLength(1);
+      expect(out).toHaveLength(3);
       expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'form#signup' });
       if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+      expect(out[1]).toMatchObject({ type: 'element-insert', position: 'before', selector: 'form#signup' });
+      expect(out[2]).toMatchObject({ type: 'css-inject', selector: '.zybit-anno-abandon' });
     });
 
     it('returns [] when formRef present but the form has no cssSelector', () => {
