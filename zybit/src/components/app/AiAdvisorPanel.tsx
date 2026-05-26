@@ -35,8 +35,7 @@ interface AdvisorOption {
   confidence: "high" | "low";
 }
 
-interface AdvisorSuccessResponse {
-  ok: true;
+interface AdvisorSuccessPayload {
   options: AdvisorOption[];
   droppedCount: number;
   note: string | null;
@@ -44,10 +43,42 @@ interface AdvisorSuccessResponse {
   usage: { usedToday: number; remaining: number; limit: number };
 }
 
-interface AdvisorErrorResponse {
-  ok: false;
-  error: string;
-  code?: string;
+/**
+ * The route emits three distinct envelopes depending on which gate the
+ * request hit:
+ *   - 200 via `success(...)`        → { success: true, data: {...} }
+ *   - 400 via `badRequest(...)`     → { success: false, error: { code, message } }
+ *   - 429/502/503 raw `NextResponse.json` → { ok: false, error: string, code }
+ * `normalizeAdvisorResponse` collapses them to a single tagged-union the
+ * render path consumes, so a future shape drift only has to be fixed here.
+ */
+function normalizeAdvisorResponse(
+  status: number,
+  body: unknown,
+):
+  | { kind: "ok"; data: AdvisorSuccessPayload }
+  | { kind: "err"; message: string; code?: string } {
+  const obj = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+
+  if (status >= 200 && status < 300 && obj.success === true && obj.data) {
+    return { kind: "ok", data: obj.data as AdvisorSuccessPayload };
+  }
+  if (obj.ok === false) {
+    return {
+      kind: "err",
+      message: typeof obj.error === "string" ? obj.error : "AI request failed.",
+      ...(typeof obj.code === "string" ? { code: obj.code } : {}),
+    };
+  }
+  if (obj.success === false && obj.error && typeof obj.error === "object") {
+    const err = obj.error as { code?: string; message?: string };
+    return {
+      kind: "err",
+      message: err.message ?? "AI request failed.",
+      ...(err.code ? { code: err.code } : {}),
+    };
+  }
+  return { kind: "err", message: `AI request failed (HTTP ${status}).` };
 }
 
 export interface AppliedProposal {
@@ -132,7 +163,7 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
   type State =
     | { kind: "idle" }
     | { kind: "loading" }
-    | { kind: "loaded"; data: AdvisorSuccessResponse }
+    | { kind: "loaded"; data: AdvisorSuccessPayload }
     | { kind: "error"; message: string; code?: string };
 
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -145,17 +176,17 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ findingId }),
       });
-      const json = (await res.json()) as AdvisorSuccessResponse | AdvisorErrorResponse;
-      if (!res.ok || ("ok" in json && json.ok === false)) {
-        const err = json as AdvisorErrorResponse;
+      const json = await res.json().catch(() => ({}));
+      const normalized = normalizeAdvisorResponse(res.status, json);
+      if (normalized.kind === "err") {
         setState({
           kind: "error",
-          message: err.error ?? "AI request failed.",
-          ...(err.code ? { code: err.code } : {}),
+          message: normalized.message,
+          ...(normalized.code ? { code: normalized.code } : {}),
         });
         return;
       }
-      setState({ kind: "loaded", data: json as AdvisorSuccessResponse });
+      setState({ kind: "loaded", data: normalized.data });
     } catch (err) {
       setState({
         kind: "error",
@@ -212,12 +243,12 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
           {state.data.note && (
             <p className="text-[11px] text-amber-700">{state.data.note}</p>
           )}
-          {state.data.options.length === 0 && (
+          {(state.data.options ?? []).length === 0 && (
             <p className="text-[11px] text-[#6B6B6B]">
               No valid proposals — try again or build manually.
             </p>
           )}
-          {state.data.options.map((option, i) => {
+          {(state.data.options ?? []).map((option, i) => {
             const mod = firstApplicableMod(option);
             const applicable = mod !== null;
             const displayMod = mod ?? option.modifications[0];
