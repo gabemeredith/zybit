@@ -349,22 +349,80 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   }
 
-  // Pull the top findings from the DB (the pipeline wrote them there).
-  // `rage-click-target` is excluded: the public audit has no real visitor
-  // events to ground it in. The synthetic-event generator fires a fixed
-  // RAGE_PROB on every session, so the rule fires on every site regardless
-  // of any real signal. Showing fabricated rage-click counts to a prospect
-  // is the kind of evidence error that destroys lead-magnet credibility.
+  // Findings that should never reach the public audit surface — either
+  // their input is synthetic (rage-click is fabricated by the lighthouse
+  // generator when behavior data is absent; the generator no longer emits
+  // it but the rule could still trigger if upstream data shifts) or their
+  // copy is unactionable on a structural-only pass (any finding that ends
+  // up rendering "(unnamed CTA)" because the visually heaviest button has
+  // no parseable text — see hero rule guard).
+  //
+  // Defense-in-depth: we *delete* the rows rather than just filter at read
+  // time. The audit auto-provisions an org + dashboard the prospect signs
+  // into; anything left in `zybitFindings` is visible there. We will not
+  // ship fake evidence to a paying surface.
   const SYNTHETIC_AUDIT_RULE_BLOCKLIST = new Set(['rage-click-target']);
 
-  const dbFindings = (
-    await db
-      .select()
-      .from(zybitFindings)
-      .where(eq(zybitFindings.siteId, siteId))
-      .orderBy(desc(zybitFindings.priorityScore))
-      .limit(20)
-  ).filter(f => !SYNTHETIC_AUDIT_RULE_BLOCKLIST.has(f.ruleId));
+  const purgeIds: string[] = [];
+  const allFindingsForSite = await db
+    .select()
+    .from(zybitFindings)
+    .where(eq(zybitFindings.siteId, siteId))
+    .orderBy(desc(zybitFindings.priorityScore))
+    .limit(50);
+  for (const f of allFindingsForSite) {
+    if (SYNTHETIC_AUDIT_RULE_BLOCKLIST.has(f.ruleId)) {
+      purgeIds.push(f.id);
+      continue;
+    }
+    // Belt-and-braces against any rule that still produces the legacy
+    // "(unnamed button)" string — the hero rule guard above is the real
+    // fix but this catches future regressions before they reach the email
+    // or the prospect's dashboard.
+    const evidenceText = JSON.stringify(f.evidence ?? []);
+    if (evidenceText.includes('(unnamed button)') || evidenceText.includes('(unnamed CTA)')) {
+      purgeIds.push(f.id);
+    }
+  }
+  if (purgeIds.length > 0) {
+    // chunked deletion via SQL ANY — small set in practice
+    await db.execute(sql`DELETE FROM zybit_findings WHERE id = ANY(${purgeIds})`);
+  }
+
+  const dbFindings = allFindingsForSite.filter((f) => !purgeIds.includes(f.id));
+
+  // Scrub synthetic numbers from the persisted evidence so the prospect's
+  // auto-provisioned dashboard shows the SAME structural framing the email
+  // shows. Without this, the dashboard surface (which the report-CTA signs
+  // them into) leaks `Nav clicks: 111` / `87 button clicks over the last
+  // 1 days` — fabricated counts from the synthetic event generator.
+  //
+  // Source of truth is `structuralPublicAuditCopy`; the email and the
+  // dashboard now agree on what the prospect sees.
+  for (const f of dbFindings) {
+    const structural = structuralPublicAuditCopy(f);
+    if (!structural) continue;
+    await db.execute(sql`
+      UPDATE zybit_findings
+      SET title = ${structural.title},
+          summary = ${structural.whyItMatters},
+          evidence = ${JSON.stringify([
+            { label: 'Based on', value: 'page structure (we cannot see your real visitors yet — connect PostHog to confirm with click data)' },
+          ])}::jsonb,
+          prescription = ${JSON.stringify({
+            ...(f.prescription ?? {}),
+            whyItMatters: structural.whyItMatters,
+          })}::jsonb
+      WHERE id = ${f.id}
+    `);
+    // Mutate the in-memory copy so the email renderer also reflects the scrub.
+    f.title = structural.title;
+    f.summary = structural.whyItMatters;
+    (f as { evidence: unknown }).evidence = [
+      { label: 'Based on', value: 'page structure (we cannot see your real visitors yet — connect PostHog to confirm with click data)' },
+    ];
+    f.prescription = { ...(f.prescription ?? { whatToChange: '', whyItWorks: '', experimentVariantDescription: '' }), whyItMatters: structural.whyItMatters };
+  }
 
   const topFindings: AuditFindingForEmail[] = dbFindings.slice(0, 4).map((f, i) => {
     // The synthetic-event generator means click counts / session shares / rage
