@@ -18,6 +18,7 @@ import '../lib/scenarios/wovenbasics';
 import '../lib/scenarios/kilnandclay';
 import '../lib/scenarios/northwind';
 import '../lib/scenarios/verdant';
+import '../lib/scenarios/plotandpatio';
 
 const PORT = Number.parseInt(process.env.LIGHTHOUSE_PORT ?? '3001', 10);
 
