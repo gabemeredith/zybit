@@ -64,6 +64,71 @@ Test outcomes — what moved the metric, what didn't — feed back into the mode
 
 ---
 
+## The snapshot audit is the front door, not the product
+
+A clarification that must be reflected in every demo, sales call, and
+internal decision about what to build.
+
+**The snapshot audit (Layer D design + Layer E structural + Layer F AI
+copy critique) is the *Understand* step of the loop and the public
+`/audit` lead magnet — nothing more.** It runs on HTML only. It has no
+evidence that anyone is hurt by what it surfaces. It is general-web
+convention applied to a parsed DOM. That is genuinely useful at the top
+of the funnel ("here is something concrete, give us your email") and as
+the element catalog that later behavioral findings attach to. **It is
+not the differentiated product.**
+
+The differentiated product starts at *Watch*. The moment PostHog /
+Segment / GA4 is connected, the behavioral rules light up and we can
+say "73% of mobile users on `/pricing` abandon at the password field"
+or "the visually heaviest CTA on `/checkout` is *not* the one most
+visitors click." Those findings are defensible in a room. "Your H1
+hierarchy skips a level" is not, on a site that is converting fine.
+
+**Operational consequences of treating the audit as front door, not
+product:**
+
+- **Findings on visibly polished sites will look thin.** Stripe, Vercel,
+  GitHub all surface only the two or three most pedantic structural
+  rules in snapshot-only mode. That is the medium, not a bug — there is
+  not much to say about a well-built site without user data.
+- **Public-audit findings have a bar of "interesting enough to convert,"
+  not "must fix."** PMs paying for Zybit should never be sold on the
+  snapshot audit alone — if Stripe paid tomorrow and we showed them only
+  the snapshot findings, they would cancel.
+- **The renewal lives behind the front door.** It lives in the
+  behavioral + outcome-labeled loop. Build budget tracks that, not
+  rule count.
+- **New rules belong here only if they advance the loop.** A new
+  structural rule is acceptable as lead-magnet polish. A new
+  *behavioral* rule grounded in real events is what moves the product
+  forward — but we already have the 12 we need (frozen at 12 per the
+  "What Zybit is not" list). Loop closure is the bottleneck.
+
+**What "ground truth" the audit rules actually enforce** — full table
+in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §"Ground truth per
+rule family". Short version:
+
+- **Layer E structural rules** cite the WCAG 2.1 AA accessibility spec
+  (1.1.1, 1.3.1, 2.4.4) and Google Search Central SEO guidance
+  (canonical, meta description). These are real standards. Findings
+  here are defensible against any reader.
+- **Layer F copy critique rules** cite conversion-copywriting
+  heuristics — specificity over vagueness, proof signals on sales-shaped
+  pages, CTA verb / page-intent alignment. There is no formal standard;
+  the input is the customer's own copy, judged against the page-type
+  context the vision pass classified. Honest in both audit modes.
+- **Layer D design + behavioral rules** are grounded in the customer's
+  *own* user behavior (click distribution, scroll depth, navigation
+  share). They are the most defensible class because they compare the
+  site to its own users, not to a generic template.
+
+If a finding's only support is "general web convention says so," it
+belongs in the lead-magnet surface. If it is backed by the customer's
+own user behavior, it belongs in the paid product.
+
+---
+
 ## The long-term vision
 
 **Close the loop entirely.** Today Zybit tells you what to change and runs the test. The next step is learning from every test result automatically — so each round of suggestions is measurably better than the last. The visible expression of this is a timeline a PM can point to: we detected this, we deployed this variant, it moved the metric by X%, and here is what we learned that changed the next recommendation. That sequence — visible, attributable, compounding — is the product.

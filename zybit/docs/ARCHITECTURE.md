@@ -86,7 +86,7 @@ Events are normalized to a canonical schema (`CanonicalEvent v2`) with deduplica
 
 ### Identify — Audit Rules (`src/lib/phase2/rules/`)
 
-19 deterministic rules. Pure functions. Same input → same output.
+23 deterministic rules. Pure functions. Same input → same output.
 
 **Design rules (5):** hero-hierarchy-inversion, above-fold-coverage, rage-click-target, mobile-engagement-asymmetry, nav-dispersion
 
@@ -94,9 +94,74 @@ Events are normalized to a canonical schema (`CanonicalEvent v2`) with deduplica
 
 **Flow rules (1):** flow-inter-step-dropoff (PRD Milestone 1) — identifies the mid-flow route with the highest session loss; only fires on nodes with inbound navigation edges (excludes pure landing pages); routed through Layer 2 calibration; emits a `flow-funnel` snapshot diagram.
 
-**Structural rules (6) — snapshot-only, no behavioral events required:** heading-hierarchy-jump, form-label-missing, image-alt-text-missing, link-text-generic, missing-meta-description, missing-canonical-url
+**Structural rules (7) — Layer E, snapshot-only, no behavioral events required:** heading-hierarchy-jump, form-label-missing, image-alt-text-missing, link-text-generic, missing-meta-description, missing-canonical-url, dead-click-target
+
+**AI copy critique rules (3) — Layer F, snapshot + capture-time Gemini call:** vague-claim-detected, proof-missing, cta-verb-mismatch. Pure deterministic functions over `snapshot.data.copyCritique` (validated structured output from `captureCopyCritique.ts`). `publicAuditBehavior: 'as-is'` — the rule's input is the customer's own copy, honest in both modes.
 
 Each finding includes: severity, confidence, priority score, structured evidence array, text prescription (what to change, why, variant description), conversion impact estimate, and (for the 9 rules that annotate the preview) a `proposeAnnotations(ctx, finding)` function whose output anchors each preview callout to the element the prescription is talking about — return-visit-thrash anchors a quick-answer placeholder above hero, help-seeking-spike anchors FAQ above the CTA, hesitation-pattern anchors a proof line above the CTA, above-fold-coverage shows the duplicate-CTA placement, bounce-on-key-page captions the first heading, etc. Dollar figures are intentionally absent — impact expressed as conversion counts to prevent fabricated revenue projections when site ARPU is not configured (revenue/ecommerce goal types now emit conversion counts, not currency amounts).
+
+#### Ground truth per rule family
+
+The audit rules enforce three different classes of "good design" with three
+different evidence standards. This matters because findings in the
+snapshot-only classes (Layers E + F) are general-web convention applied to
+HTML — defensible as lead-magnet polish, not as the differentiated product.
+The behavioral classes are the real product. See `DOCTRINE.md` §"The
+snapshot audit is the front door, not the product" for the strategic
+framing.
+
+**Layer E — accessibility & SEO (citable standards):**
+
+| Rule | Standard cited | Source |
+|------|----------------|--------|
+| `form-label-missing` | WCAG 2.1 AA — 1.3.1 Info and Relationships | [W3C WCAG 2.1](https://www.w3.org/TR/WCAG21/#info-and-relationships) |
+| `image-alt-text-missing` | WCAG 2.1 AA — 1.1.1 Non-text Content | [W3C WCAG 2.1](https://www.w3.org/TR/WCAG21/#non-text-content) |
+| `link-text-generic` | WCAG 2.1 AA — 2.4.4 Link Purpose (In Context) | [W3C WCAG 2.1](https://www.w3.org/TR/WCAG21/#link-purpose-in-context) |
+| `heading-hierarchy-jump` | WCAG-adjacent semantic structure + Google heading guidance | [WCAG 1.3.1](https://www.w3.org/TR/WCAG21/#info-and-relationships), [Google SEO Starter Guide — headings](https://developers.google.com/search/docs/fundamentals/seo-starter-guide) |
+| `missing-meta-description` | Google Search Central — snippet/meta description guidance | [Google Search Central](https://developers.google.com/search/docs/appearance/snippet) |
+| `missing-canonical-url` | Google Search Central — canonical URL guidance | [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/canonicalization) |
+| `dead-click-target` | HTML interactive-affordance hygiene (no formal spec, but obvious UX bug — `<a href="">` reloads the page, `href="#"` jumps to top) | HTML Living Standard — anchor element semantics |
+
+These rules are defensible against any reader: a screen-reader user
+*does* lose meaning when a form input has no label; Google *does*
+generate unpredictable SERP snippets when the meta description is
+missing. The standards are public and stable.
+
+**Layer F — copy / conversion (heuristic, vision-classified context):**
+
+| Rule | What it checks | Convention source |
+|------|---------------|-------------------|
+| `vague-claim-detected` | Hero specificity score < 0.4 (e.g. "Empower your team" → low; "Cut SOC2 audits from 80 hours to 6 hours" → high) | Conversion copywriting tradition — specificity beats abstraction. No formal standard. |
+| `proof-missing` | Zero proof signals (named logos, metrics, press, badges, testimonials, ratings) on `home` / `landing` / `pricing` pages | Cialdini-style social proof; widely-held conversion heuristic. No formal standard. |
+| `cta-verb-mismatch` | Primary CTA verb does not align with the vision-classified `pageType` (e.g. "Read more" on a pricing page) | Conversion copywriting — CTA verb must match buyer intent at that step. No formal standard. |
+
+Layer F rules are heuristics, not standards. They are honest because
+they critique the customer's *own* copy against the page-type the
+vision pass classified — they don't invent missing copy. But a PM
+cannot cite a W3C clause when defending one of these findings; the
+defense is "this pattern is widely-observed in conversion copywriting
+and we ran it against a Gemini structured-output critique of your own
+hero." Treat as advisory, not blocking.
+
+**Layer D + behavioral — grounded in the customer's own user data:**
+
+| Rule | What grounds it |
+|------|----------------|
+| `hero-hierarchy-inversion` | Compares visual weight (snapshot) to click distribution (behavioral). Fires when the visually heaviest CTA is *not* the most-clicked. The customer's own users decide. |
+| `above-fold-coverage` | Compares CTA position (snapshot) to scroll-depth distribution (behavioral). Fires when the only meaningful CTA is below the fold *and* most pageviews never scroll. |
+| `nav-dispersion` | Computes Gini coefficient over nav-click counts. The customer's own users decide whether the IA is focused or scattered. |
+| `rage-click-target`, `form-abandonment`, `hesitation-pattern`, `help-seeking-spike`, `bounce-on-key-page`, `error-exposure`, `return-visit-thrash`, `cohort-pain-asymmetry`, `mobile-engagement-asymmetry` | Pain rules — fire on observed user-event patterns (rage clicks, form-field abandonment, repeated FAQ visits, etc.). The behavior *is* the evidence. |
+| `flow-inter-step-dropoff` | Multi-step session-loss attribution from canonical events. The route with the worst conversion loss is identifiable from the customer's own sessions. |
+
+These are the most defensible class because they compare the site to
+its own users, not to a generic template. They cite no external
+standard because they need none — the evidence chain ends in the
+customer's own behavioral data.
+
+**Implication for product positioning:** "this page violates WCAG 2.4.4"
+is real but rarely a revenue-mover. "62% of your mobile pricing-page
+visitors abandon before reaching the CTA" is what closes deals. Build
+budget and PM attention should track the second class, not the first.
 
 ### Flow-Graph Advisory (`src/lib/phase2/flow/`)
 

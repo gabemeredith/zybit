@@ -129,6 +129,8 @@ zybit/
 
 **Never build:** sentiment analysis, GitHub PR generation, own event collection SDK / PostHog replacement, cross-site priors before 50+ customers. **Rules:** behavioral (event-based) rules are frozen at 12. New rules must be grounded in snapshot data (structural / SEO / accessibility / capture-time AI critique) and deterministic — **no LLM calls inside rule logic** (rule body is a pure function). LLM calls at *capture time* are allowed (Layer F pattern: `captureVisualSignals`, `captureCopyCritique`) — they must use structured-output mode + a strict validator + fail-soft return, and their output must be cached on the snapshot so rules see deterministic input.
 
+**The snapshot audit is the front door, not the differentiated product.** Layer D snapshot-only paths, Layer E (structural / WCAG / SEO), and Layer F (AI copy critique) together power the public `/audit` lead magnet and the *Understand* step. They run on HTML, have no evidence anyone is hurt, and apply general-web convention. The differentiated product is the behavioral + outcome-labeled loop (Pain rules + Layer D behavioral paths + Learn). Findings on visibly polished sites (Stripe, Vercel, GitHub) in snapshot-only mode will look thin — that is the medium, not a bug. See `DOCTRINE.md` §"The snapshot audit is the front door, not the product" and `docs/ARCHITECTURE.md` §"Ground truth per rule family" for the strategic framing + the WCAG / SEO / heuristic citations per rule.
+
 **For full specifications:** `docs/ARCHITECTURE.md` — "Priority Build Items" section. `docs/BACKLOG.md` — Epics J, K, L, M.
 
 **For the gap analysis and build plan:** [`../product_gap.md`](../product_gap.md)
