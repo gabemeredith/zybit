@@ -946,6 +946,51 @@ Files added / changed:
   added 2 vision-fallback tests (uses-vision-label, still-bails-when-
   no-vision).
 
+### Live verification
+
+Two e2e scripts in `scripts/` exercise the new functionality against
+real targets without needing the public-audit HTTP route's external
+service dependencies (Firecrawl / Browserless / Gemini / Resend):
+
+  - **`scripts/e2e-public-audit-mode.mjs`** — drives `runSnapshot` +
+    `runAuditRules` against real product landing pages. Default targets
+    are `github.com`, `vercel.com`, `linear.app`, `stripe.com`; the
+    script gracefully skips any host that returns 403 (sandbox / WAF
+    bot-mitigation) so a partial run on a restricted network still
+    asserts something real.
+    - Verifies all 10 `'empty'`-declared rules skip in public mode (the
+      orchestrator logs `PUBLIC_AUDIT_BEHAVIOR_EMPTY` in diagnostics).
+    - Verifies zero behavioral findings leak in public mode.
+    - Verifies no `(unnamed CTA)` / `(unnamed button)` artifacts.
+    - Verifies `applyDefenseInDepthScrub` is a no-op against clean
+      Ring-1 output (the orchestrator already produced safe rows).
+    - Injects synthetic `visualSignals` and verifies the hero rule's
+      vision-fallback path: `visualPrimaryCta.text = "Get started"`
+      is used as the heavy CTA label instead of bailing on empty text.
+    - Last run (2026-05-26, github.com reachable; vercel/linear/stripe
+      skipped from sandbox): 8 assertions passed, 0 failed.
+      Report: `/tmp/e2e-public-audit-mode-report.json`.
+
+  - **`scripts/e2e-audit-email-strict-hex.mjs`** — Playwright
+    (chromium-core) render of the audit-report email with three
+    `brandDna.primaryColor` scenarios: clean hex, CSS-injection payload,
+    `rgb()` non-hex. Asserts the PR #85 review issue #2 fix:
+    - Clean hex renders the swatch with the color applied.
+    - Injection payload (`#ff0000; }body{display:none;}{`) does not
+      appear anywhere in the rendered HTML.
+    - `rgb(...)` values are dropped (the brand-DNA writer is expected
+      to normalize to hex; if it doesn't, the email surfaces the gap
+      as a missing swatch rather than risk injection).
+    - The drop is per-swatch — the secondary clean swatch + the rest
+      of the brand-DNA section still render.
+    - Last run: 9 assertions passed; HTML + PNG artifacts in
+      `/tmp/audit-email-strict-hex-{clean,injection,non-hex}.{html,png}`.
+
+The existing `scripts/e2e-audit-email-visual.mjs` regression suite
+(brand-DNA terminology rename verification) was re-run and stayed
+green — the strict-hex change did not regress the swatch rendering
+for the sample-fixture colors.
+
 ### What's still TBD (next session)
 
 In handover-priority order:
