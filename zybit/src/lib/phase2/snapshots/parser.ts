@@ -208,6 +208,33 @@ function firstImgAlt(el: HTMLElement): string {
   return img ? (img.getAttribute('alt') ?? '').trim() : '';
 }
 
+/**
+ * Accessibility skip links ("Skip to content", "Skip to main content",
+ * "Jump to navigation", etc.) are a11y affordances, not call-to-action
+ * candidates. Including them in the CTA inventory pollutes every
+ * downstream rule: they sort to documentIndex=0 on most pages, so the
+ * synthetic generator's doc-order click weighting plus the public-audit
+ * pipeline reports "your visitors want `Skip to content`" — which is
+ * nonsense and destroys the audit's credibility. Detected via:
+ *   - text content matching common skip patterns
+ *   - href pointing at `#main`, `#content`, `#main-content`, `#skip`
+ *   - class names containing `skip-link`, `sr-only`, `visually-hidden`
+ *     (the last two are how skip links are conventionally visually hidden
+ *     until focused)
+ */
+const SKIP_LINK_TEXT = /^(skip|jump)\s+(to|past|over)\s+(main|content|navigation|nav)/i;
+const SKIP_LINK_HREF = /^#(main|content|main-content|skip|skip-link|skip-to-content|primary)$/i;
+const SKIP_LINK_CLASS = /(^|\s)(skip-link|skip-to-content|sr-only|visually-hidden|screen-reader|usa-skipnav)(\s|$)/i;
+
+function isSkipLink(el: HTMLElement, text: string, ariaLabel: string): boolean {
+  if (SKIP_LINK_TEXT.test(text) || SKIP_LINK_TEXT.test(ariaLabel)) return true;
+  const href = el.getAttribute('href') ?? '';
+  if (SKIP_LINK_HREF.test(href)) return true;
+  const cls = el.getAttribute('class') ?? '';
+  if (cls && SKIP_LINK_CLASS.test(cls)) return true;
+  return false;
+}
+
 function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
   const elements = root.querySelectorAll('a, button');
   const candidates: HTMLElement[] = [];
@@ -222,6 +249,8 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     // alt text as a label so we don't drop them from the inventory.
     const imgAlt = !text && !ariaLabel ? firstImgAlt(el) : '';
     if (!text && !ariaLabel && !imgAlt) continue;
+    // Skip links are accessibility affordances, not CTAs — see isSkipLink doc.
+    if (isSkipLink(el, text, ariaLabel)) continue;
     candidates.push(el);
   }
 

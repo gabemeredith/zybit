@@ -35,6 +35,10 @@ const HTML = `<!doctype html>
   <meta name="description" content="Checking and savings, simple.">
 </head>
 <body>
+  <!-- Three skip-link patterns the parser MUST exclude from the CTA inventory. -->
+  <a href="#main" class="skip-link">Skip to content</a>
+  <a href="#content" class="sr-only">Skip to main content</a>
+  <a href="#nav">Jump to navigation</a>
   <header>
     <nav>
       <a href="/products">Products</a>
@@ -117,6 +121,22 @@ describe('parser → buildMinimalHtml → validator round-trip (PR #84 follow-up
     expect(conversionCopy).not.toContain('Products');
     expect(conversionCopy).not.toContain('Pricing');
     expect(conversionCopy).not.toContain('Developers');
+  });
+
+  it('skip-link patterns are excluded from the CTA inventory (no "Skip to content" leak)', async () => {
+    // Pre-fix, "Skip to content" landed at documentIndex=0 on most sites.
+    // Combined with the synthetic generator's doc-order click weighting,
+    // the public audit reported "your visitors want `Skip to content`" —
+    // unactionable nonsense. The parser-level filter is the canonical fix
+    // because it removes the contamination from every downstream rule.
+    const data = await parseSnapshot({ html: HTML, finalUrl: FINAL_URL, rawByteSize: RAW_BYTE_SIZE });
+    const allCtaText = data.ctas.map((c) => c.text);
+    expect(allCtaText).not.toContain('Skip to content');
+    expect(allCtaText).not.toContain('Skip to main content');
+    expect(allCtaText).not.toContain('Jump to navigation');
+    // The legitimate CTAs survive.
+    expect(allCtaText).toContain('Open a checking account');
+    expect(allCtaText).toContain('Products');
   });
 
   it('PR #84 bug-1: parser does not throw on a heading whose body would otherwise feed undefined to .trim()', async () => {
