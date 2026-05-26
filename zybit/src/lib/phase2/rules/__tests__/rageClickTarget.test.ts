@@ -125,15 +125,17 @@ describe('rageClickTarget rule', () => {
       };
     }
 
-    it('returns one red outline mod when ctaRef resolves to a CTA with a selector', () => {
+    it('outlines the rage target (red) + captions it "Visitors rage-click here"', () => {
       const cta = { ...makeCta('Submit', 0.7, 'above', 'rage-cta'), cssSelector: 'button.submit' };
       const out = rageClickTarget.proposeAnnotations!(
         makeFinding({ ctaRef: 'rage-cta' }),
         { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
       );
-      expect(out).toHaveLength(1);
+      expect(out).toHaveLength(3);
       expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.submit' });
       if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+      expect(out[1]).toMatchObject({ type: 'element-insert', position: 'after', selector: 'button.submit' });
+      expect(out[2]).toMatchObject({ type: 'css-inject', selector: '.zybit-anno-rage' });
     });
 
     it('returns [] when ctaRef is present but the CTA has no cssSelector', () => {

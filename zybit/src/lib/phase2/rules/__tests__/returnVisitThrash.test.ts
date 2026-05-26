@@ -165,30 +165,22 @@ describe('returnVisitThrash rule', () => {
       };
     }
 
-    it('returns one amber outline mod when the primary CTA has a selector', () => {
+    it('inserts a "Missing: quick-answer" placeholder above the first heading (amber)', () => {
       const cta = { ...makeCta('Open account', 0.9, 'above', 'open-cta'), cssSelector: 'a.open' };
       const out = returnVisitThrash.proposeAnnotations!(
         makeFinding({ ctaRef: 'open-cta' }),
-        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+        { snapshot: makeSnapshot(PATH, [cta], [{ level: 1, text: 'Checking accounts' }]), designTokens: null },
       );
-      expect(out).toHaveLength(1);
-      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'a.open' });
-      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#f59e0b');
+      expect(out).toHaveLength(2);
+      expect(out[0]).toMatchObject({ type: 'element-insert', position: 'before', selector: 'h1:nth-of-type(1)' });
+      expect(out[1]).toMatchObject({ type: 'css-inject', selector: '.zybit-anno-thrash' });
+      if (out[1].type === 'css-inject') expect(out[1].css).toContain('#f59e0b');
     });
 
-    it('returns [] when ctaRef is present but the CTA has no cssSelector', () => {
-      const cta = makeCta('Open account', 0.9, 'above', 'open-cta');
-      const out = returnVisitThrash.proposeAnnotations!(
-        makeFinding({ ctaRef: 'open-cta' }),
-        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
-      );
-      expect(out).toEqual([]);
-    });
-
-    it('returns [] when refs.ctaRef is absent (no snapshot at finding time)', () => {
+    it('returns [] when the page has no headings (rare — nothing to anchor to)', () => {
       const cta = { ...makeCta('Open account', 0.9, 'above', 'open-cta'), cssSelector: 'a.open' };
       const out = returnVisitThrash.proposeAnnotations!(
-        makeFinding({}),
+        makeFinding({ ctaRef: 'open-cta' }),
         { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
       );
       expect(out).toEqual([]);

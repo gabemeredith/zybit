@@ -26,6 +26,7 @@ import {
   topByCount,
 } from "./helpers";
 import { ANNOTATION_CLICKED_COLOR, ANNOTATION_HEAVY_COLOR } from "./annotationColors";
+import { annotationCaption, outlineMod } from "./annotationHelpers";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -115,6 +116,10 @@ export const heroHierarchyInversion: AuditRule = {
     finding: AuditFinding,
     ctx: ProposeModificationsContext,
   ): VariantModification[] {
+    // The two-color outline is already the right story (eye-vs-clicks
+    // mismatch). Caption each one so the PM doesn't have to map color →
+    // meaning mentally — heavy = "your design emphasizes this," clicked =
+    // "users actually want this."
     const mods: VariantModification[] = [];
     const heavyRef = finding.refs?.ctaRef;
     const clickedRef = finding.refs?.clickedCtaRef;
@@ -125,18 +130,28 @@ export const heroHierarchyInversion: AuditRule = {
       ? ctx.snapshot.data?.ctas?.find((cta) => cta.ref === clickedRef)
       : null;
     if (heavy?.cssSelector) {
-      mods.push({
-        type: 'css-inject',
-        selector: heavy.cssSelector,
-        css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
-      });
+      mods.push(outlineMod(heavy.cssSelector, ANNOTATION_HEAVY_COLOR));
+      mods.push(
+        ...annotationCaption({
+          anchorSelector: heavy.cssSelector,
+          position: 'after',
+          ruleClassName: 'zybit-anno-hierarchy-heavy',
+          label: 'Heaviest visual — but visitors don\'t click here',
+          color: ANNOTATION_HEAVY_COLOR,
+        }),
+      );
     }
     if (clicked?.cssSelector) {
-      mods.push({
-        type: 'css-inject',
-        selector: clicked.cssSelector,
-        css: `outline: 3px dashed ${ANNOTATION_CLICKED_COLOR} !important; outline-offset: 4px;`,
-      });
+      mods.push(outlineMod(clicked.cssSelector, ANNOTATION_CLICKED_COLOR));
+      mods.push(
+        ...annotationCaption({
+          anchorSelector: clicked.cssSelector,
+          position: 'after',
+          ruleClassName: 'zybit-anno-hierarchy-clicked',
+          label: 'Visitors actually click here — give it the heavy treatment',
+          color: ANNOTATION_CLICKED_COLOR,
+        }),
+      );
     }
     return mods;
   },

@@ -134,15 +134,16 @@ describe('hesitationPattern rule', () => {
       };
     }
 
-    it('returns one amber outline mod when the primary CTA has a selector', () => {
+    it('inserts a "Missing: proof line" placeholder immediately above the CTA (amber)', () => {
       const cta = { ...makeCta('Choose plan', 0.85, 'above', 'plan-cta'), cssSelector: 'button.plan' };
       const out = hesitationPattern.proposeAnnotations!(
         makeFinding({ ctaRef: 'plan-cta' }),
         { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
       );
-      expect(out).toHaveLength(1);
-      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.plan' });
-      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#f59e0b');
+      expect(out).toHaveLength(2);
+      expect(out[0]).toMatchObject({ type: 'element-insert', position: 'before', selector: 'button.plan' });
+      expect(out[1]).toMatchObject({ type: 'css-inject', selector: '.zybit-anno-hesitation' });
+      if (out[1].type === 'css-inject') expect(out[1].css).toContain('#f59e0b');
     });
 
     it('returns [] when ctaRef present but the CTA has no cssSelector', () => {

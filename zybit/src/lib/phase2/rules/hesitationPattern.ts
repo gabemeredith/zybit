@@ -15,6 +15,7 @@ import type { CtaCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { CanonicalEvent, GoalConfig, GoalType } from "@/lib/phase2/types";
 
 import { ANNOTATION_WARN_COLOR } from "./annotationColors";
+import { missingPlaceholder } from "./annotationHelpers";
 import {
   clamp,
   formatCount,
@@ -60,15 +61,22 @@ export const hesitationPattern: AuditRule = {
     finding: AuditFinding,
     ctx: ProposeModificationsContext,
   ): VariantModification[] {
+    // The prescription is "add 1-3 sentences of proof immediately above the
+    // CTA — a specific outcome, a number, or a quote." So the annotation
+    // shows the missing proof block in the exact spot the prescription
+    // names. Outlining the CTA itself (the old behavior) was misleading:
+    // the CTA isn't the broken thing — what's missing is the proof above it.
     const ref = finding.refs?.ctaRef;
     if (!ref) return [];
     const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
     if (!cta?.cssSelector) return [];
-    return [{
-      type: 'css-inject',
-      selector: cta.cssSelector,
-      css: `outline: 3px dashed ${ANNOTATION_WARN_COLOR} !important; outline-offset: 4px;`,
-    }];
+    return missingPlaceholder({
+      anchorSelector: cta.cssSelector,
+      position: 'before',
+      ruleClassName: 'zybit-anno-hesitation',
+      label: '1-3 sentences of proof — a number, a specific outcome, or a quote — visitors hesitate here because there\'s no reason to click yet',
+      color: ANNOTATION_WARN_COLOR,
+    });
   },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {

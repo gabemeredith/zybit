@@ -17,6 +17,12 @@ import type { CanonicalEvent } from "@/lib/phase2/types";
 import type { VariantModification } from "@/lib/experiments/types";
 
 import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
+import {
+  annotationCaption,
+  missingPlaceholder,
+  outlineMod,
+  snapshotHeadingSelector,
+} from "./annotationHelpers";
 import { clamp, formatCount, pct, quote, readScrollFraction } from "./helpers";
 import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
@@ -44,15 +50,38 @@ export const aboveFoldCoverage: AuditRule = {
     finding: AuditFinding,
     ctx: ProposeModificationsContext,
   ): VariantModification[] {
+    // The prescription is "move this CTA above the fold." Two parts to the
+    // story: outline the CTA in red where it lives today (below the fold),
+    // and show a missing-placeholder above the first heading where it should
+    // go. The two annotations together tell the move-from-here-to-there
+    // story — outlining alone would just point at the wrong location.
     const ref = finding.refs?.ctaRef;
     if (!ref) return [];
     const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
     if (!cta?.cssSelector) return [];
-    return [{
-      type: 'css-inject',
-      selector: cta.cssSelector,
-      css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
-    }];
+    const mods: VariantModification[] = [
+      outlineMod(cta.cssSelector, ANNOTATION_HEAVY_COLOR),
+      ...annotationCaption({
+        anchorSelector: cta.cssSelector,
+        position: 'before',
+        ruleClassName: 'zybit-anno-fold-current',
+        label: 'Below the fold — most visitors never see this',
+        color: ANNOTATION_HEAVY_COLOR,
+      }),
+    ];
+    const headingAnchor = snapshotHeadingSelector(ctx.snapshot.data);
+    if (headingAnchor) {
+      mods.push(
+        ...missingPlaceholder({
+          anchorSelector: headingAnchor,
+          position: 'before',
+          ruleClassName: 'zybit-anno-fold-target',
+          label: 'a duplicate (or moved) primary CTA here — above the fold',
+          color: ANNOTATION_HEAVY_COLOR,
+        }),
+      );
+    }
+    return mods;
   },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {

@@ -14,6 +14,11 @@ import type { GoalConfig, GoalType } from "@/lib/phase2/types";
 
 import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
 import {
+  annotationCaption,
+  outlineMod,
+  snapshotHeadingSelector,
+} from "./annotationHelpers";
+import {
   clamp,
   formatCount,
   groupSessions,
@@ -67,15 +72,22 @@ export const bounceOnKeyPage: AuditRule = {
     finding: AuditFinding,
     ctx: ProposeModificationsContext,
   ): VariantModification[] {
-    const ref = finding.refs?.ctaRef;
-    if (!ref) return [];
-    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
-    if (!cta?.cssSelector) return [];
-    return [{
-      type: 'css-inject',
-      selector: cta.cssSelector,
-      css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
-    }];
+    // The prescription is "rewrite the hero headline to answer the implied
+    // question in the top referrer traffic." The element being asked to
+    // change is the headline, not the CTA — so outline the first heading
+    // in red and label it with the "why."
+    const anchor = snapshotHeadingSelector(ctx.snapshot.data);
+    if (!anchor) return [];
+    return [
+      outlineMod(anchor, ANNOTATION_HEAVY_COLOR),
+      ...annotationCaption({
+        anchorSelector: anchor,
+        position: 'after',
+        ruleClassName: 'zybit-anno-bounce',
+        label: 'Rewrite to answer the question referrer traffic is arriving with',
+        color: ANNOTATION_HEAVY_COLOR,
+      }),
+    ];
   },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {

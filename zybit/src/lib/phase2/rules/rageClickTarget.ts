@@ -11,6 +11,7 @@ import type { VariantModification } from "@/lib/experiments/types";
 import type { CanonicalEvent } from "@/lib/phase2/types";
 
 import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
+import { annotationCaption, outlineMod } from "./annotationHelpers";
 import {
   clamp,
   formatCount,
@@ -54,15 +55,24 @@ export const rageClickTarget: AuditRule = {
     finding: AuditFinding,
     ctx: ProposeModificationsContext,
   ): VariantModification[] {
+    // The rage target *is* the broken element — keep the red outline. Add a
+    // small caption so the PM immediately sees why it's flagged (visitors
+    // expected it to respond and it didn't), instead of having to read the
+    // finding body.
     const ref = finding.refs?.ctaRef;
     if (!ref) return [];
     const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
     if (!cta?.cssSelector) return [];
-    return [{
-      type: 'css-inject',
-      selector: cta.cssSelector,
-      css: `outline: 3px dashed ${ANNOTATION_HEAVY_COLOR} !important; outline-offset: 4px;`,
-    }];
+    return [
+      outlineMod(cta.cssSelector, ANNOTATION_HEAVY_COLOR),
+      ...annotationCaption({
+        anchorSelector: cta.cssSelector,
+        position: 'after',
+        ruleClassName: 'zybit-anno-rage',
+        label: 'Visitors rage-click here — they expect it to respond and it doesn\'t',
+        color: ANNOTATION_HEAVY_COLOR,
+      }),
+    ];
   },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {

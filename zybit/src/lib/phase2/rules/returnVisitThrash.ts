@@ -13,6 +13,7 @@ import type { PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { GoalConfig, GoalType, NarrativeConfig } from "@/lib/phase2/types";
 
 import { ANNOTATION_WARN_COLOR } from "./annotationColors";
+import { missingPlaceholder, snapshotHeadingSelector } from "./annotationHelpers";
 import type { SessionTrace } from "./helpers";
 import {
   clamp,
@@ -60,15 +61,21 @@ export const returnVisitThrash: AuditRule = {
     finding: AuditFinding,
     ctx: ProposeModificationsContext,
   ): VariantModification[] {
-    const ref = finding.refs?.ctaRef;
-    if (!ref) return [];
-    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
-    if (!cta?.cssSelector) return [];
-    return [{
-      type: 'css-inject',
-      selector: cta.cssSelector,
-      css: `outline: 3px dashed ${ANNOTATION_WARN_COLOR} !important; outline-offset: 4px;`,
-    }];
+    // The diagnosis is "visitors keep coming back because the answer they
+    // need isn't on this page" — the prescription is "add a quick-answer
+    // block or anchor nav above the hero." So the annotation shows the
+    // *empty space* where that missing block belongs, not the unrelated
+    // primary CTA. Anchor: first heading; falls back to nothing if the
+    // page has no headings (rare).
+    const anchor = snapshotHeadingSelector(ctx.snapshot.data);
+    if (!anchor) return [];
+    return missingPlaceholder({
+      anchorSelector: anchor,
+      position: 'before',
+      ruleClassName: 'zybit-anno-thrash',
+      label: 'quick-answer section or anchor nav — visitors keep coming back because the answer is hard to find here',
+      color: ANNOTATION_WARN_COLOR,
+    });
   },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
