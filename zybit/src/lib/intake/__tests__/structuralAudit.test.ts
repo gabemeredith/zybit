@@ -23,7 +23,7 @@ function makeSnapshotResult(overrides: Partial<RunSnapshotResult> = {}): RunSnap
         description: null, canonical: null, lang: null, charset: null,
         themeColor: null, viewport: null, robotsMeta: null,
       },
-      headings: [{ level: 1, text: 'Hello world', documentIndex: 0 }],
+      headings: [{ level: 1, text: 'Hello world', documentIndex: 0, cssSelector: null }],
       ctas: [
         {
           ref: 'cta-1', cssSelector: null, tag: 'button', text: 'Get started', href: null,
@@ -87,7 +87,7 @@ describe('runStructuralAudit — no_h1 finding', () => {
       makeSnapshotResult({
         data: {
           ...makeSnapshotResult().data,
-          headings: [{ level: 2, text: 'Subheading', documentIndex: 0 }],
+          headings: [{ level: 2, text: 'Subheading', documentIndex: 0, cssSelector: null }],
         },
       }),
     );

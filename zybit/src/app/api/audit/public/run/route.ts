@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from 'drizzle-orm';
+import { after } from 'next/server';
 import { getDb } from '@/lib/db/client';
 import { zybitFindings } from '@/lib/db/schema';
 import { sendAuditReportEmail } from '@/lib/email/auditReportEmail';
-import type { AuditReport, AuditFindingForEmail } from '@/lib/email/auditReportEmail';
+import type { AuditReport, AuditFindingForEmail, AuditBrandDna } from '@/lib/email/auditReportEmail';
+import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
+import type { DesignTokens } from '@/lib/phase2/snapshots/tokenExtractor';
+import type { PageSnapshotData } from '@/lib/phase2/snapshots/types';
 import { recordAuditCost, checkDailyBudget } from '@/lib/audit/publicAuditRateLimit';
 import { captureAuditScreenshot, runVisionPass } from '@/lib/audit/visionPass';
 import { validatePublicUrl } from '@/lib/audit/urlValidator';
+import { deriveIndustry } from '@/lib/audit/deriveIndustry';
+import { recordAuditUserActivity } from '@/lib/audit/recordAuditUserActivity';
 import { runUrlAudit } from '../../../../../../lighthouse/lib/runner/runUrlAudit';
 import { eq, desc } from 'drizzle-orm';
 
@@ -107,6 +113,107 @@ function structuralPublicAuditCopy(
     default:
       return null;
   }
+}
+
+/**
+ * Build the brand-DNA payload for the report email by joining the
+ * Browserless-captured design tokens (rows in `phase2_site_design_snapshot`,
+ * written by `runUrlAudit`'s parallel capture step) with the structural
+ * snapshot's CTA vocabulary. Returns `null` when neither side has data —
+ * the email renderer treats null as "skip the section".
+ */
+async function collectBrandDna(args: {
+  organizationId: string;
+  siteId: string;
+  auditUrl: string;
+}): Promise<AuditBrandDna | null> {
+  const pathRef = (() => {
+    try {
+      return new URL(args.auditUrl).pathname || '/';
+    } catch {
+      return '/';
+    }
+  })();
+
+  const db = getDb();
+  let tokens: DesignTokens | null = null;
+  let cssSystemFromDesign: string | null = null;
+  try {
+    const row = await createDesignSnapshotRepository().findBySitePath(
+      args.organizationId,
+      args.siteId,
+      pathRef,
+    );
+    if (row) {
+      tokens = (row.designTokens ?? null) as DesignTokens | null;
+      cssSystemFromDesign = row.cssSystem ?? null;
+    }
+  } catch {
+    // fail-soft — the section is optional. The audit row is already
+    // updated to 'done'; we don't want a brand-DNA read failure to flip
+    // the audit into a failed state.
+  }
+
+  // CTA vocabulary lives on the structural snapshot, not on the design
+  // snapshot row — pull from the existing phase2_page_snapshots row the
+  // structural fetch wrote earlier in the same run.
+  //
+  // The CTA-text register is "detected conversion copy" — what the page
+  // sells with, not its navigation. Including nav/header entries (Products,
+  // Solutions, Developers, Pricing — the labels we ship today on Stripe and
+  // Linear captures) confuses the email's "CTA voice" claim with the IA
+  // labels. Filter those landmarks out and prefer high-weight entries when
+  // selecting the top 5.
+  const ctaVocabulary: string[] = [];
+  let cssSystemFromSnapshot: string | null = null;
+  try {
+    const snap = await db.execute<{ data: PageSnapshotData }>(sql`
+      SELECT data FROM phase2_page_snapshots
+      WHERE site_id = ${args.siteId} AND path_ref = ${pathRef}
+      LIMIT 1
+    `);
+    const data = snap.rows[0]?.data;
+    if (data) {
+      cssSystemFromSnapshot = (data.cssSystem ?? null) as string | null;
+      const candidates = (data.ctas ?? [])
+        .filter((c) => c.landmark !== 'nav' && c.landmark !== 'header')
+        .slice()
+        // Rank by visualWeight so a hero "Start now" beats a footer link.
+        .sort((a, b) => (b.visualWeight ?? 0) - (a.visualWeight ?? 0));
+      const seen = new Set<string>();
+      for (const cta of candidates) {
+        const t = (cta.text ?? '').trim();
+        if (!t || seen.has(t)) continue;
+        seen.add(t);
+        ctaVocabulary.push(t);
+        if (ctaVocabulary.length >= 5) break;
+      }
+    }
+  } catch {
+    // fail-soft
+  }
+
+  const dna: AuditBrandDna = {
+    primaryColor: tokens?.primaryColor ?? null,
+    secondaryColor: tokens?.secondaryColor ?? null,
+    typeScale: tokens?.typeScale ?? null,
+    cssSystem: cssSystemFromDesign ?? cssSystemFromSnapshot,
+    ctaVocabulary,
+  };
+
+  // Return null when every field is empty so the route surfaces "no brand
+  // DNA available" cleanly instead of an all-null payload that the renderer
+  // would have to special-case downstream.
+  if (
+    !dna.primaryColor &&
+    !dna.secondaryColor &&
+    (!dna.typeScale || dna.typeScale.length === 0) &&
+    !dna.cssSystem &&
+    dna.ctaVocabulary.length === 0
+  ) {
+    return null;
+  }
+  return dna;
 }
 
 function formatDate(d: Date): string {
@@ -242,22 +349,80 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   }
 
-  // Pull the top findings from the DB (the pipeline wrote them there).
-  // `rage-click-target` is excluded: the public audit has no real visitor
-  // events to ground it in. The synthetic-event generator fires a fixed
-  // RAGE_PROB on every session, so the rule fires on every site regardless
-  // of any real signal. Showing fabricated rage-click counts to a prospect
-  // is the kind of evidence error that destroys lead-magnet credibility.
+  // Findings that should never reach the public audit surface — either
+  // their input is synthetic (rage-click is fabricated by the lighthouse
+  // generator when behavior data is absent; the generator no longer emits
+  // it but the rule could still trigger if upstream data shifts) or their
+  // copy is unactionable on a structural-only pass (any finding that ends
+  // up rendering "(unnamed CTA)" because the visually heaviest button has
+  // no parseable text — see hero rule guard).
+  //
+  // Defense-in-depth: we *delete* the rows rather than just filter at read
+  // time. The audit auto-provisions an org + dashboard the prospect signs
+  // into; anything left in `zybitFindings` is visible there. We will not
+  // ship fake evidence to a paying surface.
   const SYNTHETIC_AUDIT_RULE_BLOCKLIST = new Set(['rage-click-target']);
 
-  const dbFindings = (
-    await db
-      .select()
-      .from(zybitFindings)
-      .where(eq(zybitFindings.siteId, siteId))
-      .orderBy(desc(zybitFindings.priorityScore))
-      .limit(20)
-  ).filter(f => !SYNTHETIC_AUDIT_RULE_BLOCKLIST.has(f.ruleId));
+  const purgeIds: string[] = [];
+  const allFindingsForSite = await db
+    .select()
+    .from(zybitFindings)
+    .where(eq(zybitFindings.siteId, siteId))
+    .orderBy(desc(zybitFindings.priorityScore))
+    .limit(50);
+  for (const f of allFindingsForSite) {
+    if (SYNTHETIC_AUDIT_RULE_BLOCKLIST.has(f.ruleId)) {
+      purgeIds.push(f.id);
+      continue;
+    }
+    // Belt-and-braces against any rule that still produces the legacy
+    // "(unnamed button)" string — the hero rule guard above is the real
+    // fix but this catches future regressions before they reach the email
+    // or the prospect's dashboard.
+    const evidenceText = JSON.stringify(f.evidence ?? []);
+    if (evidenceText.includes('(unnamed button)') || evidenceText.includes('(unnamed CTA)')) {
+      purgeIds.push(f.id);
+    }
+  }
+  if (purgeIds.length > 0) {
+    // chunked deletion via SQL ANY — small set in practice
+    await db.execute(sql`DELETE FROM zybit_findings WHERE id = ANY(${purgeIds})`);
+  }
+
+  const dbFindings = allFindingsForSite.filter((f) => !purgeIds.includes(f.id));
+
+  // Scrub synthetic numbers from the persisted evidence so the prospect's
+  // auto-provisioned dashboard shows the SAME structural framing the email
+  // shows. Without this, the dashboard surface (which the report-CTA signs
+  // them into) leaks `Nav clicks: 111` / `87 button clicks over the last
+  // 1 days` — fabricated counts from the synthetic event generator.
+  //
+  // Source of truth is `structuralPublicAuditCopy`; the email and the
+  // dashboard now agree on what the prospect sees.
+  for (const f of dbFindings) {
+    const structural = structuralPublicAuditCopy(f);
+    if (!structural) continue;
+    await db.execute(sql`
+      UPDATE zybit_findings
+      SET title = ${structural.title},
+          summary = ${structural.whyItMatters},
+          evidence = ${JSON.stringify([
+            { label: 'Based on', value: 'page structure (we cannot see your real visitors yet — connect PostHog to confirm with click data)' },
+          ])}::jsonb,
+          prescription = ${JSON.stringify({
+            ...(f.prescription ?? {}),
+            whyItMatters: structural.whyItMatters,
+          })}::jsonb
+      WHERE id = ${f.id}
+    `);
+    // Mutate the in-memory copy so the email renderer also reflects the scrub.
+    f.title = structural.title;
+    f.summary = structural.whyItMatters;
+    (f as { evidence: unknown }).evidence = [
+      { label: 'Based on', value: 'page structure (we cannot see your real visitors yet — connect PostHog to confirm with click data)' },
+    ];
+    f.prescription = { ...(f.prescription ?? { whatToChange: '', whyItWorks: '', experimentVariantDescription: '' }), whyItMatters: structural.whyItMatters };
+  }
 
   const topFindings: AuditFindingForEmail[] = dbFindings.slice(0, 4).map((f, i) => {
     // The synthetic-event generator means click counts / session shares / rage
@@ -299,6 +464,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const bookCallUrl =
     process.env.ZYBIT_BOOK_CALL_URL ?? 'https://calendly.com/asad-getzybit/30min';
 
+  // Brand-DNA pull — runUrlAudit fires a parallel desktop Browserless
+  // capture and upserts to phase2_site_design_snapshot. Read the row here
+  // so the email can render the "Your brand DNA" section. Fail-soft: the
+  // section is omitted when nothing landed (Browserless error, budget
+  // exhausted, or just not configured locally).
+  const brandDna = await collectBrandDna({
+    organizationId: generateResult.organizationId,
+    siteId,
+    auditUrl: audit.url,
+  });
+
   const report: AuditReport = {
     auditId: audit.id,
     domain: audit.domain,
@@ -311,6 +487,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     bookCallUrl,
     screenshotUrl: screenshot?.screenshotUrl || null,
     visionObs,
+    brandDna,
   };
 
   // Approximate cost: $0.01 per snapshot page. Recorded against the budget
@@ -350,6 +527,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: emailError }, { status: 500 });
   }
 
+  // Capture the completion timestamp at the moment we flip status=done so
+  // the post-audit write-through can stamp `last_audit_at` with a value
+  // that lines up with the audit record's own `completed_at`. `new Date()`
+  // inside `after()` would drift by however long the callback waits before
+  // running.
+  const completedAt = new Date();
+
   await db.execute(sql`
     UPDATE public_audits
     SET
@@ -358,9 +542,64 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       pages_scanned = ${counts.snapshots},
       total_findings = ${counts.findings},
       cost_usd = ${estimatedCostUsd.toFixed(4)},
-      completed_at = now()
+      completed_at = ${completedAt.toISOString()}
     WHERE id = ${auditId} AND status = 'running'
   `);
+
+  // Post-audit profile + rules-fired write-through. Fire-and-forget so a
+  // slow Neon write can't push the route past Vercel's response budget;
+  // the writer itself is fail-soft. The snapshot-read is also wrapped in
+  // try/catch — without that guard a Neon timeout or empty-string siteId
+  // would propagate out of the callback and silently skip the entire
+  // write-through, undoing the declared fail-soft contract.
+  after(async () => {
+    try {
+      // One extra query for richer industry signal — the latest snapshot's
+      // meta usually has the strongest classification hint after the URL.
+      let snapData:
+        | { meta?: { title?: string | null; description?: string | null }; headings?: Array<{ text: string }> }
+        | undefined;
+      try {
+        const snapResult = await db.execute<{ data: { meta?: { title?: string | null; description?: string | null }; headings?: Array<{ text: string }> } }>(sql`
+          SELECT data FROM phase2_page_snapshots
+          WHERE site_id = ${siteId}
+          ORDER BY fetched_at DESC
+          LIMIT 1
+        `);
+        snapData = snapResult.rows[0]?.data;
+      } catch (err) {
+        // Snapshot read failed — degrade to URL-only industry derivation
+        // rather than skipping the entire write-through.
+        console.error('[audit/run] snapshot read for industry failed', {
+          auditId: audit.id,
+          siteId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      const industry = deriveIndustry(audit.url, {
+        title: snapData?.meta?.title ?? null,
+        description: snapData?.meta?.description ?? null,
+        headings: snapData?.headings?.slice(0, 3).map(h => h.text) ?? [],
+      });
+
+      await recordAuditUserActivity({
+        auditId: audit.id,
+        siteId,
+        firedRules: dbFindings.map(f => ({ findingId: f.id, ruleId: f.ruleId })),
+        generatedAt: completedAt,
+        industry,
+      });
+    } catch (err) {
+      // recordAuditUserActivity is already fail-soft, but defensively catch
+      // anything unexpected so an after() exception never reaches the
+      // runtime (where it would be invisible since the response is sent).
+      console.error('[audit/run] post-audit write-through failed', {
+        auditId: audit.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
 
   return NextResponse.json({
     status: 'done',

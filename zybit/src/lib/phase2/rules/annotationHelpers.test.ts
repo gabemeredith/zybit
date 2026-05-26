@@ -3,7 +3,7 @@ import { firstHeadingSelector, nthOfTypeIndex } from './annotationHelpers';
 import type { HeadingItem } from '@/lib/phase2/snapshots/types';
 
 function h(level: 1 | 2 | 3 | 4 | 5 | 6, documentIndex: number, text = `h${level}-${documentIndex}`): HeadingItem {
-  return { level, documentIndex, text };
+  return { level, documentIndex, text, cssSelector: null };
 }
 
 describe('nthOfTypeIndex', () => {

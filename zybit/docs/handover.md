@@ -1,8 +1,17 @@
 # Zybit — Audit Engine Handover
 
-**Branch:** `pr-57`  
-**Prepared:** 2026-05-26  
+**Branch:** `feat/audit-rules-fired-industry`
+**Prepared:** 2026-05-26 (original) · **Revised:** 2026-05-26
 **Purpose:** Engineering handover for the developer picking up the audit engine after this session. Covers what shipped, what needs to come next to make the audit endpoint fully defensible, and the full roadmap for the premium interactive visualization.
+
+> **Revision note (2026-05-26).** The original handover was written
+> assuming PRs #76–79 were still in flight and migration `0016` was the
+> next slot. Both turned out wrong; see inline `Status:` lines on each
+> section. Sections 3c, 3d are shipped on this branch (commits `6ca4084`
+> and `6ec19e7`). Section 4's merge sequence is **obsolete** — all
+> referenced PRs merged 2026-05-26; PRs #80/#81/#82 also merged. The 6
+> Layer E structural rules and migration `0022` (the work the original
+> handover describes as "this session") shipped via PR #80.
 
 ---
 
@@ -54,7 +63,7 @@ id, user_id, org_id, site_id, finding_id, rule_id, fired_at, created_at
 
 Four single-column indexes: `(user_id)`, `(rule_id)`, `(org_id)`, `(site_id)`. No `(finding_id)` index — queries filtering by `finding_id` will table-scan; add an index alongside the first real query path when that's built.
 
-**To apply:** Run `npx drizzle-kit migrate` against Neon. The migration file is `drizzle/0016_user_profile_and_audit_tracking.sql`.
+**To apply:** Run `npx drizzle-kit migrate` against Neon. The migration file landed as `drizzle/0022_user_profile_and_audit_tracking.sql` (renumbered when sibling PRs landed first) — **already applied to Neon** per `docs/sprints/REMEDIATION.md`.
 
 ### D — Six new structural/SEO/accessibility rules (Layer E)
 
@@ -71,7 +80,7 @@ All deterministic, snapshot-only (no behavioral events required). These fire on 
 
 All 6 rules are registered in `rules/index.ts` under `ALL_AUDIT_RULES`. Test coverage in `__tests__/structuralRules.test.ts` (~30 cases).
 
-**Rule budget:** Behavioral rules remain frozen at 12. Structural rules are now at 6 and can grow further if deterministic + snapshot-grounded.
+**Rule budget:** Behavioral rules remain frozen at 12 (7 pain + 5 design). Structural rules are at 6 and can grow further if deterministic + snapshot-grounded. With the 1 flow rule (`flowInterStepDropoff`) the registered total in `ALL_AUDIT_RULES` is **19**, not 18 as initially written.
 
 ### E — Doctrine updated
 
@@ -111,18 +120,27 @@ runInsightsPipeline(siteId, orgId)
         └─ persistFindings(findings, siteId)     ← upsert to DB
 ```
 
-**What works end-to-end:** Static HTML pages, PostHog/Segment/GA4 events, all 18 rules, outcome feedback loop (Layers 1+2), PM dashboard rendering.
+**What works end-to-end:** Static HTML pages, PostHog/Segment/GA4 events, all 19 rules, outcome feedback loop (Layers 1+2), PM dashboard rendering.
 
 **What doesn't work yet:**
-- JS-rendered/SPA pages: `browserFetcher.ts` fallback is a stub. Zybit logs a warning and returns the SSR shell. Modifications won't apply.
-- Rules-fired write-through: `app_user_rules_fired` table exists but nothing writes to it yet.
-- Industry auto-detection: `app_users.industry` column exists but nothing populates it.
+- JS-rendered/SPA pages: ~~`browserFetcher.ts` fallback is a stub.~~ **Update 2026-05-26:** Browserless is wired and was live-verified 2026-05-22 against a real SPA (`snapshotMethod: 'browser'` records returned). Production needs `BROWSERLESS_KEY` set in Vercel.
+- ~~Rules-fired write-through~~ **Shipped 2026-05-26** in the public-audit funnel — see commit `6ca4084`. The dashboard `runPhase2InsightsPipeline` path is deliberately not wired because `app_user_rules_fired.user_id` is `NOT NULL` and the in-app pipeline is org-scoped with multi-user ambiguity.
+- ~~Industry auto-detection~~ **Shipped 2026-05-26** as `deriveIndustry()` (host > subdomain > path > page-copy cascade), wired into the public-audit `done` UPDATE.
 
 ---
 
 ## 3. Making the audit endpoint fully defensible — next steps
 
 ### 3a. PageDNA capture
+
+> **Status (2026-05-26):** partially shipped. The design-snapshot table
+> (`phase2_site_design_snapshot`, migration `0016`) and the full-fidelity
+> capture writer (`buildFullDesignSnapshot` via Browserless) landed in
+> PR #58. Design-token extraction (`extractDesignTokens`, `tokenExtractor.ts`)
+> and the AI Variant Advisor API that consumes it landed in PR #66. So
+> the "computed styles / design tokens" half of this section is done.
+> Remaining items below (color contrast, viewport probes, weight signals)
+> are still real gaps.
 
 The snapshot parser currently extracts a subset of page data. The vision is a "PageDNA" — a lossless fingerprint of a page that makes every rule deterministic and every finding reproducible.
 
@@ -150,6 +168,13 @@ The snapshot parser currently extracts a subset of page data. The vision is a "P
 
 ### 3b. SPA support (Browserless)
 
+> **Status (2026-05-26):** shipped. `browserFetcher.ts` is wired and was
+> live-verified 2026-05-22 — a client-rendered SPA that returned an empty
+> HTTP shell rendered fully via Browserless. The snapshot records
+> `snapshotMethod: 'browser'` so downstream code can branch. Production
+> needs `BROWSERLESS_KEY` set in Vercel. The example sketch below was
+> the stub-era plan; the real implementation matches its shape.
+
 This is the biggest gap. JS-rendered pages (React, Vue, Angular) return an empty shell on HTTP fetch.
 
 **The path:**
@@ -171,6 +196,13 @@ Environment variable needed: `BROWSERLESS_WS_URL` — already in the third-party
 **Detection trigger:** `snapshotMethod === 'spa'` flag on `PageSnapshotData`. Already tracked in the schema, just not acted on in the rules yet.
 
 ### 3c. Industry auto-detection
+
+> **Status (2026-05-26):** shipped on this branch in commit `6ca4084`.
+> `src/lib/audit/deriveIndustry.ts` runs the host > subdomain > path >
+> page-copy cascade and is called from `/api/audit/public/run` after the
+> audit's `done` UPDATE, via `recordAuditUserActivity()`. Only writes
+> when the column is currently NULL — never overwrites an explicit
+> classification. The dashboard pipeline is *not* wired (see 3d).
 
 `app_users.industry` should be populated automatically when an audit runs, without asking the PM.
 
@@ -246,20 +278,18 @@ This is already architecturally correct (the cron exists, the drift detection ex
 
 ---
 
-## 4. PR merge sequence (do this before any new feature work)
+## 4. PR merge sequence — DONE
 
-These PRs are in flight and must merge before the next feature build begins, in this exact order:
+**Status (2026-05-26 revision):** All PRs in the original merge-sequence
+plan landed on `main` earlier today. The merge-train cleanup commit is
+`785b62d`. Concretely: **#73–#82 merged**, plus follow-up sanitizer/validator
+fixes on #82 and #83. Migration numbering settled at `0022_*.sql`. There
+is no longer a sequencing constraint blocking new feature work — the only
+open PR is **#84** (this branch).
 
-| PR | Description | Status | Migration |
-|----|-------------|--------|-----------|
-| **#76** | Preview highlight context + selector auto-fill | MERGEABLE NOW | none |
-| **#77** | Audit funnel auto-provision + signed signup links | Fix renumber → merge | **0017** (was 0020) |
-| **#78** | CSP/XSS hardening (stripScripts + sandbox="" + header hardening) | Fix renumber → merge | **0018** (was 0020/0021) |
-| **#79** | JSDoc + rule annotations | Fix renumber → merge; must adopt #78's `stripScripts` | **0019** (was post-0020) |
-
-**#76 is the priority** — it unblocks the interactive visualization work (the highlight context it adds is the foundation for the overlay system described in Section 5).
-
-**Migration renumbering:** `drizzle/` filenames must be sequential. Before merging #77, rename its migration file from `0020_*.sql` to `0017_*.sql`. Same pattern for #78 (→ 0018) and #79 (→ 0019).
+PR #84 status: **paused, draft, do-not-merge** while the bug list below
+clears. The advisor + brand-DNA work (3c, 3d, AI Variant Advisor UI) is
+all on this branch. See §10 below for the per-bug status.
 
 ---
 
@@ -456,3 +486,348 @@ Per doctrine — do not attempt these even if they seem useful:
 - Cross-site priors before 50+ customers with outcome data.
 - GitHub PR generation, sentiment analysis, PostHog replacement.
 - Voice-of-customer / NLP pipelines (PII + consent complexity, not loop-advancing).
+
+---
+
+## 10. PR #84 follow-up fixes (this session — 2026-05-26 second pass)
+
+Status as of close-of-session:
+
+| PR #84 item | Status | Notes |
+|---|---|---|
+| **Bug #1** — posthog.com capture crash on >2 MB DOM | ✅ **Fixed** | `parser.ts` — every `el.text.trim()` now uses `(el.text ?? '').trim()` (`findHeadings`, `findCtas`, `directText` paths). A truncated/malformed DOM no longer poisons the audit run. |
+| **Bug #2** — silent screenshot upload failures | ✅ **Observability fixed** | `capture/screenshots.ts` now logs `capture.screenshot.skipped` (no token) and `capture.screenshot.failed` (upload error) via the structured logger under `service: 'capture-record'`. Failure is no longer silent. Root-cause trace deferred until Axiom shows where the failures cluster (need a fresh capture to see). |
+| **Bug #3** — CTA vocabulary contaminated by nav | ✅ **Fixed** | `/api/audit/public/run` + `/api/dashboard/experiments/ai-suggest` both filter `cta.landmark !== 'nav' && !== 'header'` before building `ctaVocabulary`. Audit funnel additionally ranks by `visualWeight` before taking the top 5 so hero CTAs win over footer links. |
+| **Bug #4** — advisor never proposes element-insert + never sees headings | ✅ **Fixed end-to-end** | (a) `HeadingItem` now carries `cssSelector` (parser computes via `computeCssSelector`); (b) `buildMinimalHtml` re-emits heading attrs so the validator agrees; (c) `collectAllowedSelectors` in `ai-suggest/route.ts` now includes heading selectors; (d) `aiAdvisor.ts` schema offered to Gemini lists `element-insert` with `position` + `html`; (e) validator runs `sanitizeInsertHtml` and rejects empty-after-sanitize payloads; (f) 3 new tests cover the happy path, invalid position, and all-stripped HTML. |
+| **Bug #5** — paired with #4 above | ✅ **Fixed** | Same diff. Heading selectors now in the allowlist. |
+| **Brand-DNA terminology rename** | ✅ **Fixed in email** | `auditReportEmail.ts` relabeled: "Primary"→"CTA fill", "Secondary"→"Heading", "Type scale"→"Observed type sizes", "CTA voice"→"Conversion copy". Section heading "Your brand DNA"→"What we observed". `cssSystem: null` now renders an "unknown (compiled or hashed utility classes)" row instead of being silently skipped. Storage field names (`primaryColor`/`secondaryColor`/`typeScale`) kept as-is to stay drop-in with the existing `extractDesignTokens` writer; a future storage-side rename is non-blocking. |
+
+**Still NOT in this branch (carried forward, scope-out per the PR description):**
+
+- Phase 2 — confirm-time rebinding (synthetic org → real org). Cofounder-locked spec; ~half day.
+- Multi-viewport brand-DNA. Blocked on a schema change — `phase2_site_design_snapshot` is keyed `(siteId, pathRef)` and needs a `breakpoint` column added to the primary key before mobile won't clobber desktop on upsert. Capture-layer array shape is already forward-compatible.
+- Computed-styles pipeline expansion (the prerequisite for color-contrast, tap-target, and design-token-drift rules — multi-day, depends on Browserless permanent activation).
+- New evidence rules (`colorContrastInsufficient`, `mobileTapTargetSmall`, `largeUncompressedImages`, `noSocialProof`, `formFieldCountExcessive`, `ctaAboveFoldMissing`, `redirectChain`, `missingStructuredData`) — all snapshot-grounded, ~8 rules; sequenced after the Browserless activation.
+- Resend sender domain verification (env config, not code).
+
+**`npm run verify` baseline after this session:** 74 test files, 931 tests, 0 failures; TypeScript clean; ESLint clean (4 pre-existing warnings); build clean.
+
+---
+
+## 11. Public-audit legitimacy hardening (2026-05-26 third pass)
+
+Live-verifying the audit against vercel.com surfaced four output-quality
+issues that pre-dated PR #84 and would have shipped fabricated evidence
+to the first paying prospect. All four were closed in this session.
+
+| Issue | Mechanism | Fix |
+|---|---|---|
+| `Skip to content` reported as "what visitors click most" | Parser included accessibility skip-links in the CTA inventory. Synthetic generator weights clicks by `1/(docIndex+1)`, so on most accessible sites the skip link won. Public audit then said "your visitors want `Skip to content`" — nonsense. | `parser.ts:findCtas` now filters skip-link patterns at the source. Match by text (`/^(skip\|jump) (to\|past\|over) (main\|content\|nav)/i`), href (`#main`/`#content`/`#skip`/`#primary`/etc.), or class (`skip-link`/`sr-only`/`visually-hidden`/`usa-skipnav`). Every downstream rule benefits — single chokepoint fix. |
+| `(unnamed CTA)` artifact | Hero-hierarchy-inversion stringified `'(unnamed button)'` when the visually heaviest CTA had no parseable text (icon-only buttons, SVG-only CTAs). Output was gibberish: "your visitors want X but your page points them at `(unnamed CTA)`". | Both `evaluate()` paths in `heroHierarchyInversion.ts` now bail when either side resolves to no text. Better silence than fabrication. The vision pass is the real fix — see §12.B below. |
+| `rage_click` events fabricated on every audit | `groundedEvents.ts` fired `rage_click` at `RAGE_PROB=0.08` per session on the page's first non-disabled affordance. Even though the public route blocklisted the rule from the email, the fake findings still persisted to `zybitFindings` for the prospect's auto-provisioned dashboard to leak. | Removed the entire rage-click emission from the synthetic generator. The blocklist remains as defense-in-depth, plus the post-pipeline DELETE pass below. |
+| Fabricated counts in persisted evidence (`Nav clicks: 111`) | Email used `structuralPublicAuditCopy()` to rewrite evidence for hero/fold/nav — but only at email-render time. The DB rows kept the original synthetic counts. The prospect signed into the dashboard and saw "Nav clicks: 111" — that's a fabricated number. | `/api/audit/public/run` now does a post-pipeline DB scrub: (a) DELETE rows in `SYNTHETIC_AUDIT_RULE_BLOCKLIST`; (b) DELETE rows whose evidence contains `(unnamed button)`/`(unnamed CTA)`; (c) UPDATE the three overrideable rules' `title`/`summary`/`evidence`/`prescription.whyItMatters` in-place so the email and the dashboard show the same structural framing. |
+| Rage-click insight gone (but PMs still need the signal) | Without `rage-click-target` the public audit has nothing to say about broken interactivity. | New rule `dead-click-target` (`src/lib/phase2/rules/deadClickTarget.ts`). Pure structural — fires on `<a href="#">`, `<a href="javascript:void(0)">`, `<a href="">`, and `<a>` with no `href`. Severity scales with count (≥5 → warn). This is the real "rage-click precursor" PMs can fix today, before any analytics data exists. |
+
+**Live verification on vercel.com (same site, before vs. after this pass):**
+
+| | Before | After |
+|---|---|---|
+| Total findings | 12 | 6 |
+| `hero-hierarchy-inversion` | 3 (all unnamed-CTA artifacts) | 0 (correctly silent — vercel.com hero CTAs are icon-only) |
+| `rage-click-target` | 3 (all fabricated) | 0 (rule removed from synthetic path) |
+| `dead-click-target` | rule didn't exist | 0 on vercel.com (they ship clean) — fires correctly on test fixtures with `href="#"` |
+
+The legitimacy contract is now: **everything the prospect sees — email AND dashboard — is grounded in their actual HTML or PostHog-flagged as needing real data.** No fabricated counts anywhere.
+
+---
+
+## 12. AI-leveraged roadmap — what the audit needs next to stop being structural-only
+
+The audit today is honest but thin: 7 structural rules + 3 design rules with
+behavioral overrides. To deliver findings PMs would actually pay for, we
+need to stop treating the audit as a parser and start treating it as a
+PM-grade reviewer that just happens to use a parser as one input.
+
+**Doctrine still holds:** deterministic rules don't call LLMs (one input,
+one output, every time). But LLMs are first-class citizens for:
+1. **Filling capture gaps** (icon-only CTAs, visual hierarchy without
+   computed-styles)
+2. **Rewriting prescriptions** in the customer's voice
+3. **Compounding signals** that no single rule can express
+4. **Page-context classification** so rules apply correctly
+
+### A. Mandatory vision pass on every audit (today: opt-in single-shot)
+
+`src/lib/audit/visionPass.ts` runs at most once per audit and writes a
+2-sentence observation. Promote it to a true pipeline stage:
+
+1. **Above-fold screenshot per page** (not just homepage). Browserless
+   capture is already wired; budget impact: ~$0.001/page × 3 pages = $0.003.
+2. **Structured vision extraction** via Gemini 2.0 Flash:
+   - Identify the *visual* primary CTA (what the eye actually lands on)
+     and the *visual* secondary CTA. Returns bbox coords + extracted text.
+     Solves the unnamed-CTA problem at its root — icon-only "Get started"
+     buttons get their semantic label back.
+   - Classify page purpose: `landing` / `pricing` / `signup` / `checkout`
+     / `docs` / `about` / `blog` / `support` / `legal` — feeds rule
+     context-awareness (§D below).
+   - Extract the hero copy + sub-hero + the first body paragraph,
+     verbatim, into a structured object. This is the input to AI copy
+     critique (§C) and to the brand-voice prescription rewriting (§E).
+3. **Pull vision output into `PageSnapshotData`** as a new
+   `data.visualSignals` field so rules can read it as if it were any
+   other parser output. Rules stay deterministic; the LLM call is
+   capture-layer, not rule-layer.
+
+**Closes:** unnamed-CTA gap, brand-color limitation (vision sees colors
+the way humans do, not as mode-of-bg-color), CTA-vocab quality (icon-only
+CTAs get named), hero-hierarchy false negatives (vision sees emphasis
+the way humans do).
+
+**Effort:** 1-2 days. The hardest bit is the prompt schema + validator
+(borrow the `aiAdvisor.ts` pattern: structured-output mode + selector
+allowlist + sanitized output).
+
+### B. Computed-styles capture must ship — this is the rate-limiter on everything
+
+§3a of this handover (PageDNA capture gaps) is on the critical path for
+half of §12. `capture/styles.ts` measures CTA bg/fg and heading color —
+that's it. Every "more colors" / "color contrast" / "tap target" / "LCP
+candidate" rule wants more.
+
+**One-day-job extensions to `styles.ts`:**
+- CTA: also capture `borderColor`, `borderRadius`, `fontFamily`,
+  `fontWeight`, `padding`
+- Heading: also capture `fontFamily`, `fontWeight`, `letterSpacing`
+- Body / main / dominant `<section>`: capture `backgroundColor`, `color`,
+  `fontFamily` — so the token extractor can emit page background, surface
+  color, link color
+- Image elements: `width`/`height` rendered vs `naturalWidth`/`naturalHeight`
+  → enables `largeUncompressedImages` rule
+
+**Three-day-job extensions to `tokenExtractor.ts`:**
+- Emit `accentColor` (mode of CTA borderColor, fallback link color)
+- Emit `surfaceColor` (mode of section/body backgroundColor)
+- Emit `fontFamily` (mode of CTA fontFamily — usually the brand font)
+- Emit `borderRadiusScale` (sorted unique radii — "rounded" vs "sharp")
+
+**Critical-path env var:** `BROWSERLESS_URL` + `BROWSERLESS_KEY` must be
+set in prod. Without these the entire vision + computed-styles + brand-DNA
+path fails-soft and the audit degrades to structural-only.
+
+### C. New rule family — AI copy critique (Layer F)
+
+Once vision pass extracts hero copy verbatim, a deterministic-on-LLM-output
+rule can fire:
+
+- `vague-claim-detected` — input: hero claim. LLM returns
+  `{ specificity: 0-1, vague_phrases: [...], suggested_rewrites: [...] }`.
+  Rule fires when `specificity < 0.4`. PM-actionable: shows the vague
+  phrase + 3 concrete alternatives ranked by clarity.
+- `proof-missing` — input: hero block + first 3 body paragraphs.
+  LLM returns `{ proof_signals: [...], proof_gaps: [...] }`. Rule fires
+  when zero proof signals present.
+- `cta-verb-mismatch` — input: page purpose (from vision §A) + CTA copy.
+  LLM returns `{ matches_purpose: bool, suggested_verbs: [...] }`. Rule
+  fires when CTA copy is mismatched to page intent (e.g. "Book a demo"
+  on a help-docs page).
+
+These are not "LLM in the loop" — the rule itself is deterministic
+(threshold on a structured LLM output, run once at capture time, cached
+in the snapshot). Same trust model as the vision pass.
+
+**Effort:** 2-3 days for the three rules + their prompt validation.
+
+### D. Page-purpose context-awareness across the whole rule pipeline
+
+Once vision pass classifies pages, every existing rule can apply
+*differently* per page type. The current rule output is full of false
+positives because all pages get the same treatment.
+
+Examples:
+- `nav-dispersion`: 9 nav items is fine on a docs site, friction on a
+  pricing page.
+- `above-fold-coverage`: a blog index *should* have content below the
+  fold; a pricing page shouldn't.
+- `cta-above-fold-missing`: doesn't apply to legal/about pages.
+
+Implementation: add `data.pageType` to `PageSnapshotData`, populated by
+vision pass. Each rule's `evaluate()` reads it and either changes
+thresholds, suppresses entirely, or emits with a contextual confidence
+adjustment. Effort: 1 day to plumb, then per-rule (15-30 min each).
+
+### E. AI prescription rewriting in the customer's voice
+
+Today every finding's `prescription.whatToChange` is a templated string.
+Once we have brand-DNA captured (vision-extracted colors + CTA vocabulary +
+hero copy register), Gemini can rewrite the prescription in the customer's
+own voice. Same loop as the AI Variant Advisor (`aiAdvisor.ts`) but
+operating on `prescription` rather than `VariantModification`.
+
+Constraints (mirror the advisor):
+- Pure prompt + structured output + validator
+- Validator rejects anything that drifts from the source prescription's
+  semantics (use Gemini as judge with a second pass)
+- Cache rewrites by finding-id + brand-DNA hash so we don't re-spend on
+  every email render
+
+**Effort:** 1 day. Reuse 80% of `aiAdvisor.ts` infrastructure.
+
+### F. The architectural shift — `PublicAuditMode` as a first-class context
+
+The current public audit pipeline is "run the full rule set, then
+DELETE/UPDATE findings after the fact." That works but leaks the moment
+a new rule that consumes synthetic events is added without anyone
+updating the blocklist or override map.
+
+The architecturally correct fix: introduce a `mode: 'public-audit'` flag
+in `AuditRuleContext`. Each rule then either:
+1. Returns its findings as-is (pure structural rules)
+2. Returns a structural-only version of its findings (the 3 overrideable
+   design rules)
+3. Returns `[]` (rules that need real behavioral data)
+
+The route just runs the pipeline in public mode and trusts the output.
+No post-hoc scrubbing. A new rule that doesn't explicitly handle public
+mode emits nothing — fail-closed, which is the right default for a
+prospect-facing surface.
+
+**Effort:** 1 day (refactor + new test that every rule declares its
+public-audit behavior). High value — this is what stops the next
+synthetic-leak class of bug.
+
+### G. Cross-page intelligence — page-relationship inference
+
+Single-page analysis ignores 80% of what an audit could say. A real
+reviewer would observe: "Your /pricing page says 'Start free trial' but
+the trial signup at /signup uses the verb 'Get started' — visitors arrive
+expecting the former and see the latter, eroding trust."
+
+This is purely a rule over multiple `PageSnapshotData` rows + an LLM
+consistency check. The capture is already in place; we don't even need
+the vision pass for the first version (CTA vocab comparison across pages).
+
+**Effort:** 0.5 day for the deterministic version, +1 day for LLM-judged
+copy consistency.
+
+### H. AI-driven prescription validation loop
+
+For every prescription we emit, ask Gemini: "If I made this change to a
+page that currently has [evidence], would the change improve [the metric
+the prescription claims to move]? Return `{ likely_improves: bool,
+confidence: 0-1, alternative: string | null }`." Findings whose
+prescriptions don't pass the validation step ship with lower priority
+scores or get dropped.
+
+This is the dogfood version of the AI Variant Advisor pointed inward at
+our own rule output. Catches "we're suggesting the right thing for the
+wrong reason" — the failure mode behavioral rules have when synthetic
+data feeds them.
+
+**Effort:** 1 day.
+
+### I. The compound rule — vision + structure + behavior at the same time
+
+Today every rule consumes one or two of {snapshot, capture, behavioral}.
+A compound rule reads all three and fires on patterns no single rule
+sees:
+
+- "Your visually heaviest CTA (vision) is below the fold (structure) and
+  has zero clicks (behavior)" → much higher confidence than any single
+  rule.
+- "Your hero copy promises X (vision-extracted) but your /signup form
+  asks for Y (structure) and 60% of submitters abandon at field 3
+  (behavior)" → the promise/delivery gap rule.
+
+This is the long-term shape of where rules go once vision + computed
+styles + PostHog data are all present. Each compound rule needs a test
+fixture that constructs all three inputs; the rule itself stays pure
+deterministic. **Effort: 2-3 days per compound rule** — the cost is in
+test fixtures, not logic.
+
+### J. Sequencing — what to land in what order
+
+The dependency graph collapses to one critical path and three parallel tracks:
+
+**Critical path (must precede everything else in this list):**
+1. `BROWSERLESS_URL` + `BROWSERLESS_KEY` set permanently in Vercel prod.
+   Without this, §A–C, §E, §G are all dead.
+2. Vision pass elevated from opt-in to mandatory (§A). 1-2 days.
+3. `PublicAuditMode` context refactor (§F). 1 day.
+
+**Parallel track 1 — capture upgrades (§B):** unblocks the new evidence
+rules from the original handover §3a. ~3-4 days.
+
+**Parallel track 2 — AI rule family (§C, §E, §H):** depends only on §A.
+~4-5 days for all three.
+
+**Parallel track 3 — context-aware rule application (§D, §G, §I):**
+depends on §A + §B + §F. ~3-4 days.
+
+**Total to make the audit defensible as a paid product feature: ~3 weeks
+of focused work.** The single biggest unlock is mandatory vision pass —
+it converts every "structural blindness" gap in this handover into a
+solvable problem.
+
+### K. What we deliberately are NOT doing (even though AI could)
+
+Per `DOCTRINE.md` and `AGENTS.md`:
+- **LLM calls inside rule logic.** Rules stay pure functions. LLM output
+  is consumed as another deterministic data source (capture-time, cached,
+  validated). The rule is the contract; the LLM is just a more capable
+  parser.
+- **AI-generated impact estimates / dollar figures.** Already removed
+  (impactEstimate.ts emits conversion counts only). Don't re-add.
+- **AI-generated rules.** Every rule has a written specification, a test
+  suite, and a human reviewer. Adding rules autonomously breaks the trust
+  contract with PMs.
+- **Cross-customer learning before 50+ customers.** Even with vision +
+  AI prescriptions, per-customer Layer 1/2 calibration is the only
+  learning loop today.
+
+---
+
+## 13. Known open architectural risks (carry forward to next session)
+
+1. **The structural-override map (`structuralPublicAuditCopy`) and the
+   blocklist (`SYNTHETIC_AUDIT_RULE_BLOCKLIST`) are policy-only.** No test
+   enforces that every event-consuming rule has either an override or a
+   blocklist entry. Adding `flow-inter-step-dropoff` to the public audit
+   pipeline today would leak fabricated counts. §12.F is the structural
+   fix.
+
+2. **The post-pipeline scrub in `/api/audit/public/run` mutates `zybit_findings`
+   rows that were just written.** Cleaner architecture is don't-write-then-
+   delete: have the pipeline accept a `mode` parameter and refuse to emit
+   blocklisted findings in the first place. §12.F.
+
+3. **The lighthouse `runUrlAudit` runner writes findings directly without
+   the scrub.** Internal use only today, but anyone reusing the runner
+   gets the fabricated evidence. Move the scrub to a shared module both
+   surfaces import.
+
+4. **`dead-click-target` only covers `<a>` — handler-less `<button>`s
+   are still invisible.** Capturing this needs either `cursor: pointer`
+   measurement in `styles.ts` (cheap, ship with §B) or DOM event listener
+   inspection (expensive, defer).
+
+5. **Vision pass is best-effort and runs once per audit** — see §A for
+   the mandatory-pass plan.
+
+6. **`AUDIT_FROM_EMAIL` is `noreply@mail.getzybit.com`** — send-only.
+   Prospects who reply to the report email reach nothing. Either set up
+   a forwarding rule on that mailbox to a real human inbox, or change the
+   sender to a monitored address before scaling. Pre-existing, not in
+   scope for this session.
+
+7. **The advisor's "headings in scope" expansion needs real-world
+   verification.** Tests prove the schema flows through; we haven't
+   measured what fraction of real customer headings actually carry a
+   stable `cssSelector`. On vercel.com it was 27/78 (35%). If that's the
+   typical rate, the advisor will frequently propose options with CTA-only
+   anchors, which is fine, but worth measuring before promising "the AI
+   can edit your headings" externally.
+
+**`npm run verify` baseline after this third pass:** 76 test files,
+945 tests, 0 failures; TypeScript clean; ESLint clean (4 pre-existing
+warnings); build clean.

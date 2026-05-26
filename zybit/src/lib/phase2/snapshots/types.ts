@@ -49,6 +49,14 @@ export interface HeadingItem {
   level: 1 | 2 | 3 | 4 | 5 | 6;
   text: string;
   documentIndex: number;
+  /**
+   * See `CtaCandidate.cssSelector` — same stability ladder, same bail policy.
+   * Populated so the AI Variant Advisor can target headings (insert-shaped
+   * findings like return-visit-thrash anchor a quick-answer block above the
+   * top-most H1; without a selector the advisor degrades to text-replace on
+   * the nearest CTA).
+   */
+  cssSelector: string | null;
 }
 
 /**

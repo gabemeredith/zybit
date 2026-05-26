@@ -256,7 +256,7 @@ export function makeSnapshot(
       robotsMeta: null,
       ...metaOverrides,
     },
-    headings: headings.map((h, i) => ({ level: h.level, text: h.text, documentIndex: i })),
+    headings: headings.map((h, i) => ({ level: h.level, text: h.text, documentIndex: i, cssSelector: null })),
     ctas,
     forms,
     images,

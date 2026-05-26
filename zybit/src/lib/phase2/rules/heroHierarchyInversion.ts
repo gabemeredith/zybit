@@ -248,6 +248,16 @@ function evaluatePage(
     return null;
   }
 
+  // Bail when either side resolves to no text — the finding is unactionable
+  // and the rendered output is gibberish ("your visitors want '(unnamed
+  // button)' but your page emphasizes '(unnamed button)'"). Icon-only CTAs
+  // legitimately exist on real sites (search, hamburger, account menu);
+  // until the vision pass fills in their semantic label we keep them out
+  // of the inversion check. This protects every audit, not just public.
+  const clickedHasText = !!clickedText && clickedText.length > 0;
+  const heavyHasText = !!heavy.text && heavy.text.length > 0;
+  if (!clickedHasText || !heavyHasText) return null;
+
   const pageName = humanizePath(pathRef);
   const heavyLocation = describeLandmark(heavy.landmark);
   const heavyTreatment = describeVisualTreatment(heavy.visualWeightSignals);
@@ -416,6 +426,12 @@ function evaluatePageWithCapture(
   );
   const heavy = pickHeaviest(visibleCtas) as CtaCandidateMeasured | null;
   if (!heavy) return null;
+
+  // Mirror the snapshot-path guard: don't fire when either side has no text.
+  // See the snapshot-only `evaluate()` path above for the rationale.
+  const clickedHasText = !!clickedText && clickedText.length > 0;
+  const heavyHasText = !!heavy.text && heavy.text.length > 0;
+  if (!clickedHasText || !heavyHasText) return null;
 
   if (sameCta(clickedCta, clickedText, heavy)) return null;
 

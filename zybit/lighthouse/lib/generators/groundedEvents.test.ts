@@ -94,11 +94,13 @@ describe('generateGroundedEvents', () => {
     ).toBe(true);
   });
 
-  it('emits rage_click events on the page affordance', () => {
+  it('emits zero rage_click events — rage is PostHog-grounded signal, not synthesizable', () => {
+    // Pre-fix the generator fired ~8%/session, producing ~6+ rage events per
+    // page that fed `rage-click-target` and surfaced as fabricated finding
+    // counts. The public audit blocklisted the rule downstream; this kills
+    // the leak at the source so no surface can ever see synthetic rage data.
     const events = generateGroundedEvents({ siteId: 's', pages, baseTime: 1_000 });
-    const rage = events.filter((e) => e.type === 'rage_click');
-    expect(rage.length).toBeGreaterThanOrEqual(1);
-    expect(rage.every((e) => typeof e.properties?.rage_target_text === 'string')).toBe(true);
+    expect(events.filter((e) => e.type === 'rage_click').length).toBe(0);
   });
 
   it('is deterministic across runs with identical input', () => {

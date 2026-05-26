@@ -19,6 +19,15 @@
  * only when the page exposes ≥6 nav destinations.
  *
  * Determinism: every draw flows through a `seededRng` keyed on siteId+pathRef.
+ *
+ * NOT emitted: `rage_click`. Rage is a real-visitor signal — it cannot be
+ * inferred from page structure without lying. The static counterpart for
+ * the rage-click insight is `dead-click-target` (anchors with junk hrefs,
+ * pseudo-buttons with no handler) which fires on the parsed snapshot
+ * directly. See `src/lib/phase2/rules/deadClickTarget.ts`.
+ *
+ * NOT emitted today (would also require behavior data): form submit /
+ * abandon, hesitation timing, return visits, help-search queries.
  */
 
 import type { CanonicalEventInput } from '@/lib/phase2/types';
@@ -41,8 +50,15 @@ export interface GenerateGroundedEventsOpts {
 const SESSIONS_PER_PAGE = 80;
 const CONTENT_CLICK_PROB = 0.65;
 const NAV_CLICK_PROB = 0.45;
-const RAGE_PROB = 0.08;
 const LOW_SCROLL_PROB = 0.6;
+// `rage_click` is intentionally NOT in the synthetic event mix. The old
+// 8% per-session probability fired `rage-click-target` on every audit run
+// regardless of any real signal — the public audit then had to blocklist
+// the rule and the rage findings still landed in `zybitFindings` for any
+// downstream surface to leak. Rage-clicks are PostHog-grounded signal;
+// the static counterpart is `dead-click-target` (anchors with junk hrefs,
+// buttons that look interactive but aren't) which is detected directly
+// from HTML, not fabricated from probability.
 /** Landmarks treated as site navigation (feeds `nav-dispersion`). */
 const NAV_LANDMARKS = new Set(['header', 'nav']);
 /** Spread window for event timestamps (kept well inside the pipeline window). */
@@ -79,7 +95,6 @@ export function generateGroundedEvents(
 
     const contentCtas = data.ctas.filter((c) => !c.disabled && !isNavCta(c));
     const navCtas = data.ctas.filter((c) => !c.disabled && isNavCta(c));
-    const rageTarget = data.ctas.find((c) => !c.disabled) ?? null;
 
     // Topmost-CTA click pressure: weight ∝ 1/(documentIndex+1).
     const contentWeighted = contentCtas.map((cta) => ({
@@ -144,23 +159,7 @@ export function generateGroundedEvents(
         seq += 1;
       }
 
-      // 4) rage click on the page's first affordance (feeds `rage-click-target`).
-      if (rageTarget !== null && rng.next() < RAGE_PROB) {
-        events.push({
-          siteId,
-          sessionId,
-          type: 'rage_click',
-          path: pathRef,
-          anonymousId,
-          properties: {
-            rage_target_text: rageTarget.text,
-            element_tag: rageTarget.tag,
-          },
-          sourceEventId: `ua_${pageSlug}_${i}_rage`,
-          occurredAt: stamp(),
-        });
-        seq += 1;
-      }
+      // No synthetic `rage_click` emission — see top-of-file comment.
     }
   }
 

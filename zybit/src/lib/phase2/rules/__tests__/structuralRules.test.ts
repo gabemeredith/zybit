@@ -9,6 +9,7 @@ import { imageAltTextMissing } from '@/lib/phase2/rules/imageAltTextMissing';
 import { linkTextGeneric } from '@/lib/phase2/rules/linkTextGeneric';
 import { missingMetaDescription } from '@/lib/phase2/rules/missingMetaDescription';
 import { missingCanonicalUrl } from '@/lib/phase2/rules/missingCanonicalUrl';
+import { deadClickTarget } from '@/lib/phase2/rules/deadClickTarget';
 import {
   makeContext,
   makeSnapshot,
@@ -343,5 +344,76 @@ describe('missingCanonicalUrl', () => {
     const snap3 = makeSnapshot('/about', [], [], [], [], { canonical: null });
     const findings = missingCanonicalUrl.evaluate(makeContext([], [snap1, snap2, snap3]));
     expect(findings).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deadClickTarget — the deterministic counterpart to rage-click-target
+// ---------------------------------------------------------------------------
+
+describe('deadClickTarget', () => {
+  it('all real hrefs → no findings', () => {
+    const snap = makeSnapshot('/', [
+      makeLink('See pricing', '/pricing'),
+      makeLink('Read docs', 'https://docs.example.com'),
+      makeLink('Contact', 'mailto:hello@example.com'),
+    ]);
+    expect(deadClickTarget.evaluate(makeContext([], [snap]))).toEqual([]);
+  });
+
+  it('href="#" placeholder → fires', () => {
+    const snap = makeSnapshot('/', [makeLink('Pricing', '#')]);
+    const findings = deadClickTarget.evaluate(makeContext([], [snap]));
+    expect(findings).toHaveLength(1);
+    expect(findings[0].ruleId).toBe('dead-click-target');
+    expect(findings[0].severity).toBe('info');
+    expect(JSON.stringify(findings[0].evidence)).toContain('Pricing');
+  });
+
+  it('javascript:void(0) → fires', () => {
+    const snap = makeSnapshot('/', [makeLink('Demo', 'javascript:void(0)')]);
+    const findings = deadClickTarget.evaluate(makeContext([], [snap]));
+    expect(findings).toHaveLength(1);
+  });
+
+  // The parens-less variant `javascript:void 0` is a common placeholder in
+  // production HTML — Gemini code review flagged that the original regex
+  // missed it.
+  it('javascript:void 0 (no parens) → fires', () => {
+    const snap = makeSnapshot('/', [makeLink('Demo', 'javascript:void 0')]);
+    const findings = deadClickTarget.evaluate(makeContext([], [snap]));
+    expect(findings).toHaveLength(1);
+    expect(findings[0].ruleId).toBe('dead-click-target');
+  });
+
+  it('5+ dead links on a page → severity warn', () => {
+    const snap = makeSnapshot('/', [
+      makeLink('A', '#'),
+      makeLink('B', '#'),
+      makeLink('C', '#'),
+      makeLink('D', '#'),
+      makeLink('E', '#'),
+      makeLink('F', 'javascript:void(0)'),
+    ]);
+    const findings = deadClickTarget.evaluate(makeContext([], [snap]));
+    expect(findings).toHaveLength(1);
+    expect(findings[0].severity).toBe('warn');
+    expect(JSON.stringify(findings[0].evidence)).toContain('+1 more');
+  });
+
+  it('skip-link patterns (`#main`, `#content`) are not treated as dead', () => {
+    // Defensive — parser filters these out upstream, but the rule should
+    // not double-count them if they ever leak through (e.g. via a custom
+    // capture path that doesn't run the parser's skip-link filter).
+    const snap = makeSnapshot('/', [
+      makeLink('Skip to content', '#main'),
+      makeLink('Skip nav', '#content'),
+    ]);
+    expect(deadClickTarget.evaluate(makeContext([], [snap]))).toEqual([]);
+  });
+
+  it('buttons are ignored (rule scopes to <a>) — handler-less buttons need a separate signal', () => {
+    const snap = makeSnapshot('/', [makeCta('Click', 0.5, 'above')]);
+    expect(deadClickTarget.evaluate(makeContext([], [snap]))).toEqual([]);
   });
 });

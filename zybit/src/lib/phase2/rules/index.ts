@@ -52,6 +52,7 @@ import { imageAltTextMissing } from "./imageAltTextMissing";
 import { linkTextGeneric } from "./linkTextGeneric";
 import { missingMetaDescription } from "./missingMetaDescription";
 import { missingCanonicalUrl } from "./missingCanonicalUrl";
+import { deadClickTarget } from "./deadClickTarget";
 
 export { aboveFoldCoverage } from "./aboveFoldCoverage";
 export { heroHierarchyInversion } from "./heroHierarchyInversion";
@@ -72,6 +73,7 @@ export { imageAltTextMissing } from "./imageAltTextMissing";
 export { linkTextGeneric } from "./linkTextGeneric";
 export { missingMetaDescription } from "./missingMetaDescription";
 export { missingCanonicalUrl } from "./missingCanonicalUrl";
+export { deadClickTarget } from "./deadClickTarget";
 
 export function getRuleById(ruleId: string): AuditRule | null {
   return ALL_AUDIT_RULES.find((r) => r.id === ruleId) ?? null;
@@ -101,6 +103,7 @@ export const ALL_AUDIT_RULES: readonly AuditRule[] = [
   linkTextGeneric,
   missingMetaDescription,
   missingCanonicalUrl,
+  deadClickTarget,
 ];
 
 const SEVERITY_RANK: Record<AuditFindingSeverity, number> = {

@@ -159,9 +159,19 @@ function findHeadings(root: HTMLElement): HeadingItem[] {
     const tag = getTag(el);
     const level = Number(tag.slice(1));
     if (!Number.isInteger(level) || level < 1 || level > 6) continue;
-    const text = el.text.trim().slice(0, TEXT_CAP);
+    // `el.text` can be undefined when the parser hands back a node from a
+    // truncated/malformed DOM (posthog.com hits this on >2 MB pages — the
+    // capture is trimmed at the last `>` and a child element can land with
+    // no text accessor). `?? ''` keeps the crash from poisoning the entire
+    // audit run; the heading is simply skipped by the empty-text guard.
+    const text = (el.text ?? '').trim().slice(0, TEXT_CAP);
     if (!text) continue;
-    results.push({ level: level as HeadingItem['level'], text, documentIndex });
+    results.push({
+      level: level as HeadingItem['level'],
+      text,
+      documentIndex,
+      cssSelector: computeCssSelector(el, tag),
+    });
     documentIndex++;
   }
   return results;
@@ -198,6 +208,33 @@ function firstImgAlt(el: HTMLElement): string {
   return img ? (img.getAttribute('alt') ?? '').trim() : '';
 }
 
+/**
+ * Accessibility skip links ("Skip to content", "Skip to main content",
+ * "Jump to navigation", etc.) are a11y affordances, not call-to-action
+ * candidates. Including them in the CTA inventory pollutes every
+ * downstream rule: they sort to documentIndex=0 on most pages, so the
+ * synthetic generator's doc-order click weighting plus the public-audit
+ * pipeline reports "your visitors want `Skip to content`" — which is
+ * nonsense and destroys the audit's credibility. Detected via:
+ *   - text content matching common skip patterns
+ *   - href pointing at `#main`, `#content`, `#main-content`, `#skip`
+ *   - class names containing `skip-link`, `sr-only`, `visually-hidden`
+ *     (the last two are how skip links are conventionally visually hidden
+ *     until focused)
+ */
+const SKIP_LINK_TEXT = /^(skip|jump)\s+(to|past|over)\s+(main|content|navigation|nav)/i;
+const SKIP_LINK_HREF = /^#(main|content|main-content|skip|skip-link|skip-to-content|primary)$/i;
+const SKIP_LINK_CLASS = /(^|\s)(skip-link|skip-to-content|sr-only|visually-hidden|screen-reader|usa-skipnav)(\s|$)/i;
+
+function isSkipLink(el: HTMLElement, text: string, ariaLabel: string): boolean {
+  if (SKIP_LINK_TEXT.test(text) || SKIP_LINK_TEXT.test(ariaLabel)) return true;
+  const href = el.getAttribute('href') ?? '';
+  if (SKIP_LINK_HREF.test(href)) return true;
+  const cls = el.getAttribute('class') ?? '';
+  if (cls && SKIP_LINK_CLASS.test(cls)) return true;
+  return false;
+}
+
 function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
   const elements = root.querySelectorAll('a, button');
   const candidates: HTMLElement[] = [];
@@ -205,13 +242,15 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     if (candidates.length >= MAX_CTAS) break;
     const tag = getTag(el);
     if (tag !== 'a' && tag !== 'button') continue;
-    const text = el.text.trim();
+    const text = (el.text ?? '').trim();
     const ariaLabel = (el.getAttribute('aria-label') ?? '').trim();
     // Graphical buttons / logo links often have no text or aria-label and
     // rely on a child <img alt="..."> for their accessible name. Treat that
     // alt text as a label so we don't drop them from the inventory.
     const imgAlt = !text && !ariaLabel ? firstImgAlt(el) : '';
     if (!text && !ariaLabel && !imgAlt) continue;
+    // Skip links are accessibility affordances, not CTAs — see isSkipLink doc.
+    if (isSkipLink(el, text, ariaLabel)) continue;
     candidates.push(el);
   }
 
@@ -220,7 +259,7 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     const el = candidates[i];
     const tag = getTag(el) as 'a' | 'button';
     const className = el.getAttribute('class') ?? null;
-    const directText = el.text.trim();
+    const directText = (el.text ?? '').trim();
     // For graphical CTAs, fall back to the first child img's alt as the
     // visible label so downstream rules can reason about them.
     const text = (directText || firstImgAlt(el)).slice(0, TEXT_CAP);
