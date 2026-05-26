@@ -92,6 +92,13 @@ export interface RunSessionOpts {
    * without making the persona mix universally bouncy.
    */
   lowScrollPaths?: Set<string>;
+  /**
+   * Per-CTA click-weight multipliers, keyed by `${pathRef}|${cssSelector}`.
+   * Driver multiplies the matched CTA's visualWeight by the lookup value
+   * (default 1.0) before weighted sampling. Lets scenarios model
+   * intent-driven clicks that diverge from visual hierarchy.
+   */
+  ctaIntentBoosts?: Map<string, number>;
   sink: EventSink;
   sessionId: string;
   /** Stable visitor handle; becomes anonymousId on every emitted event. */
@@ -173,12 +180,25 @@ function samplePagesCount(persona: Persona, rng: Rng): number {
   return Math.max(1, Math.min(MAX_PAGES_HARD_CAP, Math.round(v)));
 }
 
-/** Pick a CTA from the snapshot weighted by visual weight. */
-function pickSnapshotCta(ctas: readonly CtaCandidate[], rng: Rng): CtaCandidate | null {
+/**
+ * Pick a CTA from the snapshot weighted by visual weight, with optional
+ * per-CTA `intentBoosts` (path|selector → multiplier) layered on top.
+ * Lets scenarios decouple click distribution from visual hierarchy when
+ * the realistic pattern requires it (e.g. hero-hierarchy-inversion).
+ */
+function pickSnapshotCta(
+  ctas: readonly CtaCandidate[],
+  rng: Rng,
+  path: string,
+  intentBoosts?: Map<string, number>,
+): CtaCandidate | null {
   const eligible = ctas.filter((c) => !c.disabled && c.visualWeight > 0);
   if (eligible.length === 0) return null;
   return weightedSample(
-    eligible.map((c) => ({ item: c, weight: c.visualWeight })),
+    eligible.map((c) => {
+      const boost = intentBoosts?.get(`${path}|${c.cssSelector ?? ''}`) ?? 1.0;
+      return { item: c, weight: c.visualWeight * boost };
+    }),
     rng,
   );
 }
@@ -216,6 +236,7 @@ export async function runSession(
     rageClickRate,
     hesitationPaths,
     lowScrollPaths,
+    ctaIntentBoosts,
     sink,
     sessionId,
     distinctId,
@@ -271,7 +292,9 @@ export async function runSession(
     // the current page's CTAs, so HTML determines which CTA wins clicks.
     if (rng.next() < persona.clickIntent) {
       advance(randInt(200, 1500, rng));
-      const snapshotCta = snapshot ? pickSnapshotCta(snapshot.ctas, rng) : null;
+      const snapshotCta = snapshot
+        ? pickSnapshotCta(snapshot.ctas, rng, path, ctaIntentBoosts)
+        : null;
       const properties = snapshotCta
         ? {
             cta_text: snapshotCta.text,

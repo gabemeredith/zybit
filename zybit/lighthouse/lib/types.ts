@@ -92,6 +92,18 @@ export interface SiteManifest {
     sourcePathRef: string;
     expectedPathRefs: string[];
   }>;
+  /**
+   * Per-CTA click-weight multipliers — let scenarios model intent-driven
+   * clicks that diverge from visual hierarchy (the precondition for
+   * `hero-hierarchy-inversion` to fire). Driver multiplies the sampled
+   * CTA's visualWeight by the matching multiplier before weighted sampling.
+   * Default multiplier is 1.0 — only listed CTAs deviate.
+   */
+  ctaIntentBoosts?: Array<{
+    pathRef: string;
+    selector: string;
+    multiplier: number;
+  }>;
   requiresTunnel: boolean;
   isSpa: boolean;
   businessProfile: BusinessProfile;

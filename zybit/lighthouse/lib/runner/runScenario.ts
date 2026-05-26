@@ -200,6 +200,14 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
   const lowScrollPaths = scenario.siteManifest.lowScrollPaths
     ? new Set(scenario.siteManifest.lowScrollPaths)
     : undefined;
+  const ctaIntentBoosts = scenario.siteManifest.ctaIntentBoosts
+    ? new Map(
+        scenario.siteManifest.ctaIntentBoosts.map((b) => [
+          `${b.pathRef}|${b.selector}`,
+          b.multiplier,
+        ]),
+      )
+    : undefined;
   const sessionStart = new Date();
 
   for (let i = 0; i < sessions; i++) {
@@ -230,6 +238,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
       rageClickRate: scenario.siteManifest.rageClickRate,
       hesitationPaths,
       lowScrollPaths,
+      ctaIntentBoosts,
       sink,
       sessionId,
       distinctId,

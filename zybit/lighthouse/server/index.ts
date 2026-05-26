@@ -16,6 +16,7 @@ import { resolveStaticPath, serveStatic } from './static';
 import '../lib/scenarios/acmebank';
 import '../lib/scenarios/wovenbasics';
 import '../lib/scenarios/kilnandclay';
+import '../lib/scenarios/northwind';
 
 const PORT = Number.parseInt(process.env.LIGHTHOUSE_PORT ?? '3001', 10);
 
