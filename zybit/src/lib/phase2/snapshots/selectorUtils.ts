@@ -25,7 +25,11 @@ import type { PageSnapshotData } from './types';
 function attrsFromCssSelector(selector: string | null | undefined): string {
   if (!selector) return '';
   const out: string[] = [];
-  const idMatch = selector.match(/^#([A-Za-z][\w-]*)/);
+  // Match `#id` at string start or after a CSS combinator. `cssSelector.ts`
+  // only emits bare `#id` today, so the previous start-anchored form was
+  // sufficient — this widened shape matches `selectorStability` (line 67)
+  // and stays correct if the ladder ever grows a `tag#id` rung.
+  const idMatch = selector.match(/(?:^|[\s>+~,])#([A-Za-z][\w-]*)/);
   if (idMatch) out.push(`id="${idMatch[1]}"`);
   // [attr="value"] — captures testid/test/qa/cy, name, role. Skips aria-label
   // because the CTA loop already emits it from `cta.ariaLabel`.

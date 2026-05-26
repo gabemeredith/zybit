@@ -12,7 +12,7 @@ import type {
   AuditFindingEvidence,
   AuditFindingPrescription,
 } from "@/lib/phase2/rules/types";
-import type { CtaCandidate, HeadingItem } from "@/lib/phase2/snapshots/types";
+import type { CtaCandidate, FormCandidate, HeadingItem } from "@/lib/phase2/snapshots/types";
 import { pickSelectorForFinding } from "@/lib/phase2/snapshots/pickSelector";
 import { selectorStability, type SelectorStability } from "@/lib/phase2/snapshots/selectorUtils";
 
@@ -51,14 +51,15 @@ function defaultPrimaryMetric(category: string, pathRef: string | null): string 
 function defaultSelector(
   refs: Record<string, string | undefined> | null,
   ctas: CtaCandidate[],
+  forms: FormCandidate[],
 ): string {
   // Snapshot-grounded: prefer the parser-computed `cssSelector` from the
-  // referenced CTA (testid → human id → name → role+aria-label ladder),
-  // falling back to the highest-visual-weight CTA with a stable selector.
-  // Returns "" only when no element on the page has a selector that will
-  // survive into production — better empty than a synthetic `data-zybit-ref`
-  // or evidence-derived `:has-text()` selector that the proxy can't match.
-  return pickSelectorForFinding(ctas, refs?.ctaRef) ?? "";
+  // referenced element (CTA via `ctaRef`, form via `formRef` — see
+  // `pickSelectorForFinding` for the ladder). Returns "" only when no
+  // element on the page has a selector that will survive into production —
+  // better empty than a synthetic `data-zybit-ref` or evidence-derived
+  // `:has-text()` selector that the proxy can't match.
+  return pickSelectorForFinding(ctas, forms, refs) ?? "";
 }
 
 function defaultNewValue(
@@ -88,6 +89,7 @@ function defaultNewValue(
 
 function buildSuggestions(
   ctas: CtaCandidate[],
+  forms: FormCandidate[],
   headings: HeadingItem[],
 ): SelectorSuggestion[] {
   const suggestions: SelectorSuggestion[] = [];
@@ -105,6 +107,18 @@ function buildSuggestions(
       label: `${cta.tag} "${text}" (${cta.landmark})`,
       selector: cta.cssSelector,
       stability: selectorStability(cta.cssSelector),
+    });
+  }
+
+  // Forms with a stable selector — surfaces the abandoned form itself as a
+  // pickable target so form-abandonment experiments aren't limited to
+  // whatever CTAs happen to share the page.
+  for (const form of forms) {
+    if (!form.cssSelector) continue;
+    suggestions.push({
+      label: `form (${form.landmark}, ${form.fieldCount} field${form.fieldCount === 1 ? '' : 's'})`,
+      selector: form.cssSelector,
+      stability: selectorStability(form.cssSelector),
     });
   }
 
@@ -165,6 +179,7 @@ export default async function ExperimentBuilderPage({
   // Load snapshot for selector suggestions and CSS system hint (best-effort)
   let suggestions: SelectorSuggestion[] = [];
   let ctas: CtaCandidate[] = [];
+  let forms: FormCandidate[] = [];
   let cssSystem: import('@/lib/phase2/snapshots/cssSystemDetector').CssSystem | undefined;
   if (finding.pathRef) {
     try {
@@ -176,14 +191,16 @@ export default async function ExperimentBuilderPage({
       });
       if (snapshot?.data) {
         ctas = snapshot.data.ctas ?? [];
+        forms = snapshot.data.forms ?? [];
         suggestions = buildSuggestions(
           ctas,
+          forms,
           snapshot.data.headings ?? [],
         );
         cssSystem = snapshot.data.cssSystem;
       }
     } catch {
-      // no snapshot — suggestions, ctas, and cssSystem stay empty
+      // no snapshot — suggestions, ctas, forms, and cssSystem stay empty
     }
   }
 
@@ -191,7 +208,7 @@ export default async function ExperimentBuilderPage({
 
   const freshDefaults = {
     experimentName: `${finding.title} — Variant B`,
-    selector: defaultSelector(refs, ctas),
+    selector: defaultSelector(refs, ctas, forms),
     changeType,
     newValue: defaultNewValue(changeType, finding.category, evidence),
     variantDescription: prescription.experimentVariantDescription,

@@ -29,6 +29,30 @@ function snapshot(): PageSnapshotData {
   } as unknown as PageSnapshotData;
 }
 
+function snapshotWithCtaSelector(cssSelector: string, ariaLabel: string | null = null): PageSnapshotData {
+  return {
+    headings: [],
+    ctas: [
+      {
+        ref: 'cta-1',
+        tag: 'button',
+        text: 'Sign up',
+        href: null,
+        ariaLabel,
+        landmark: 'main',
+        visualWeight: 0.5,
+        visualWeightSignals: [],
+        foldGuess: 'above',
+        domDepth: 3,
+        documentIndex: 0,
+        disabled: false,
+        cssSelector,
+      },
+    ],
+    forms: [],
+  } as unknown as PageSnapshotData;
+}
+
 describe('buildMinimalHtml + countSelectorMatches', () => {
   it('renders ctas with data-zybit-ref so ref selectors match', () => {
     const html = buildMinimalHtml(snapshot());
@@ -48,6 +72,52 @@ describe('buildMinimalHtml + countSelectorMatches', () => {
   it('flags empty and invalid selectors distinctly', () => {
     expect(countSelectorMatches(snapshot(), '   ').status).toBe('empty');
     expect(countSelectorMatches(snapshot(), '>>>broken').status).toBe('invalid_selector');
+  });
+});
+
+describe('buildMinimalHtml — attrsFromCssSelector re-emission', () => {
+  // Each case asserts both (a) the right attribute is on the synthesised
+  // element, and (b) the parser-emitted cssSelector matches that element in
+  // the validator — which is the bug this helper exists to close.
+
+  it('re-emits id="…" from a bare `#id` cssSelector', () => {
+    const data = snapshotWithCtaSelector('#signup-btn');
+    const html = buildMinimalHtml(data);
+    expect(html).toContain('id="signup-btn"');
+    expect(countSelectorMatches(data, '#signup-btn')).toEqual({ count: 1, status: 'ok' });
+  });
+
+  it('re-emits data-testid="…" from a [data-testid="…"] cssSelector', () => {
+    const data = snapshotWithCtaSelector('[data-testid="signup-cta"]');
+    const html = buildMinimalHtml(data);
+    expect(html).toContain('data-testid="signup-cta"');
+    expect(countSelectorMatches(data, '[data-testid="signup-cta"]')).toEqual({
+      count: 1,
+      status: 'ok',
+    });
+  });
+
+  it('re-emits name="…" from a `tag[name="…"]` cssSelector', () => {
+    const data = snapshotWithCtaSelector('button[name="newsletter"]');
+    const html = buildMinimalHtml(data);
+    expect(html).toContain('name="newsletter"');
+    expect(countSelectorMatches(data, 'button[name="newsletter"]')).toEqual({
+      count: 1,
+      status: 'ok',
+    });
+  });
+
+  it('re-emits role="…" but does not duplicate aria-label (already emitted from cta.ariaLabel)', () => {
+    const data = snapshotWithCtaSelector('[role="button"][aria-label="Close"]', 'Close');
+    const html = buildMinimalHtml(data);
+    expect(html).toContain('role="button"');
+    // aria-label appears exactly once — emitted from `cta.ariaLabel`, not
+    // duplicated by attrsFromCssSelector. The skip is what keeps the
+    // synthesised element valid HTML and the selector match unambiguous.
+    expect(html.match(/aria-label="Close"/g)).toHaveLength(1);
+    expect(
+      countSelectorMatches(data, '[role="button"][aria-label="Close"]'),
+    ).toEqual({ count: 1, status: 'ok' });
   });
 });
 

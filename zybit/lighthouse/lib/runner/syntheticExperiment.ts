@@ -131,8 +131,12 @@ export async function generateSyntheticExperiment(
     .limit(1);
   if (!snapshotRow) return noFinding;
   const snapshotData = snapshotRow.data as unknown as PageSnapshotData;
-  const findingRefs = (finding.refs ?? {}) as { ctaRef?: string };
-  const selector = pickSelectorForFinding(snapshotData.ctas, findingRefs.ctaRef);
+  const findingRefs = (finding.refs ?? {}) as { ctaRef?: string; formRef?: string };
+  const selector = pickSelectorForFinding(
+    snapshotData.ctas,
+    snapshotData.forms ?? [],
+    findingRefs,
+  );
   if (!selector) return noFinding;
 
   // 2) Size each arm above the sequential-guard sample floor.
