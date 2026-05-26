@@ -132,27 +132,37 @@ export function runAuditRules(ctx: AuditRuleContext): AuditFindingsReport {
         continue;
       }
 
-      const out = rule.evaluate(ctx);
+      let out = rule.evaluate(ctx);
 
       // Apply structural-only rewrites in-place so persisted rows and the
       // email read identically. The rewrite is colocated with the rule it
-      // covers — see each rule's `structuralPublicAuditCopy`.
+      // covers — see each rule's `structuralPublicAuditCopy`. A null rewrite
+      // means the rule decided this finding cannot be safely reframed for a
+      // prospect — drop it here rather than letting the original behavioral
+      // copy fall through to the defense-in-depth scrub.
       if (isPublicAudit && behavior === 'structural-only' && rule.structuralPublicAuditCopy) {
+        const rewritten: AuditFinding[] = [];
         for (const f of out) {
           const rewrite = rule.structuralPublicAuditCopy(f, ctx);
           if (!rewrite) continue;
           f.title = rewrite.title;
           f.summary = rewrite.summary;
           f.evidence = rewrite.evidence;
+          // When `f.prescription` is undefined the fallback seeds `whatToChange`
+          // from `f.recommendation?.[0]` — the route reads `prescription.whatToChange`
+          // first via `??`, and an empty string is not nullish, so seeding `''`
+          // would shadow a valid recommendation downstream.
           f.prescription = {
             ...(f.prescription ?? {
-              whatToChange: '',
+              whatToChange: f.recommendation?.[0] ?? '',
               whyItWorks: '',
               experimentVariantDescription: '',
             }),
             whyItMatters: rewrite.whyItMatters,
           };
+          rewritten.push(f);
         }
+        out = rewritten;
       }
 
       const cal = ctx.calibration?.get(rule.id);

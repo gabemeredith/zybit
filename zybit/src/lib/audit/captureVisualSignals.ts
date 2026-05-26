@@ -178,6 +178,9 @@ interface GeminiBody {
 }
 
 function extractText(body: unknown): string | null {
+  // Gemini can return the JSON literal `null` (valid JSON, parses to JS null),
+  // and `b.candidates` would throw `TypeError` before optional chaining kicks in.
+  if (!body || typeof body !== 'object') return null;
   const b = body as GeminiBody;
   return b.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
 }

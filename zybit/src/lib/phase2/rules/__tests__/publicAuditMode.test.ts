@@ -94,15 +94,18 @@ function runOneRule(rule: AuditRule, ctx: AuditRuleContext): AuditFinding[] {
   const isPublic = ctx.mode === 'public-audit';
   const behavior = rule.publicAuditBehavior ?? 'empty';
   if (isPublic && behavior === 'empty') return [];
-  const out = rule.evaluate(ctx);
+  let out = rule.evaluate(ctx);
   if (isPublic && behavior === 'structural-only' && rule.structuralPublicAuditCopy) {
+    const rewritten: AuditFinding[] = [];
     for (const f of out) {
       const rewrite = rule.structuralPublicAuditCopy(f, ctx);
       if (!rewrite) continue;
       f.title = rewrite.title;
       f.summary = rewrite.summary;
       f.evidence = rewrite.evidence;
+      rewritten.push(f);
     }
+    out = rewritten;
   }
   return out;
 }
@@ -160,6 +163,33 @@ describe('runAuditRules mode behavior', () => {
     expect(out).toHaveLength(1);
     expect(out[0].title).toBe('Structural title');
     expect(out[0].evidence).toEqual([{ label: 'Based on', value: 'page structure' }]);
+  });
+
+  it('public-audit mode drops structural-only findings whose rewrite returns null', () => {
+    // The "null means bail" contract: a structural-only rule that cannot
+    // safely reframe a finding for prospects (e.g., evidence still contains
+    // an unnamed-CTA placeholder) signals that by returning null from
+    // `structuralPublicAuditCopy`. The orchestrator must drop the finding —
+    // not just skip the rewrite and emit the original behavioral copy.
+    const ctx = { ...makeContext([], []), mode: 'public-audit' as const };
+    const rule = makeFakeRule({
+      id: 'null-rewrite-rule',
+      behavior: 'structural-only',
+      findings: [makeFinding(), makeFinding({ id: 'finding-2', title: 'Other' })],
+      rewrite: (f) =>
+        f.id === 'finding-2'
+          ? {
+              title: 'Rewritten',
+              summary: 'Rewritten summary',
+              whyItMatters: 'Because',
+              evidence: [{ label: 'Based on', value: 'page structure' }],
+            }
+          : null,
+    });
+    const out = runOneRule(rule, ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe('finding-2');
+    expect(out[0].title).toBe('Rewritten');
   });
 
   it('end-to-end: public-audit mode drops undeclared rules via the real orchestrator', () => {

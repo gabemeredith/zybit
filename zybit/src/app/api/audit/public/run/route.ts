@@ -318,7 +318,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ruleId: f.ruleId,
     title: f.title,
     whyItMatters: f.prescription?.whyItMatters ?? null,
-    evidence: f.evidence
+    evidence: (Array.isArray(f.evidence) ? f.evidence : [])
       .map((e: { label: string; value: string | number }) => `${e.label}: ${e.value}`)
       .join(' · '),
     whatToChange: f.prescription?.whatToChange ?? f.recommendation?.[0] ?? '',

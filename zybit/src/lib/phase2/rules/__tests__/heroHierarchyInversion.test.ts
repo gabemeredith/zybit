@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { heroHierarchyInversion } from '@/lib/phase2/rules/heroHierarchyInversion';
 import type { AuditFinding } from '@/lib/phase2/rules/types';
 import type { CtaCandidate, PageSnapshot, VisualSignals } from '@/lib/phase2/snapshots/types';
-import { makeContext, makeCtaClick, makeGoalConfig, makeSnapshot, makeCta } from './fixtures';
+import { makeContext, makeCtaClick, makeEvent, makeGoalConfig, makeSnapshot, makeCta } from './fixtures';
 
 const PATH = '/pricing';
 
@@ -316,6 +316,32 @@ describe('heroHierarchyInversion rule', () => {
           makeCtaClick(PATH, 'Learn more', `s-${i}`),
         ),
       ];
+      const ctx = makeContext(events, [snapshot]);
+      expect(heroHierarchyInversion.evaluate(ctx)).toEqual([]);
+    });
+
+    it('does not borrow visualSecondaryCta for the clicked-side label', () => {
+      // The most-clicked CTA is icon-only (no parser text) and vision saw
+      // "Learn more" as the secondary CTA. Pairing these two would label
+      // the clicked side with a button that is *not* what most visitors
+      // actually clicked — fabricated evidence on the prospect surface.
+      // The rule must bail instead of borrowing visualSecondaryCta.
+      const heavyCta = makeCta('Buy now', 0.9, 'above', 'cta-primary');
+      const clickedIconCta = makeCta('', 0.3, 'above', 'cta-icon');
+      const snapshot = makeSnapshot(PATH, [heavyCta, clickedIconCta]);
+      snapshot.data.visualSignals = makeVisionSignals();
+
+      // 40 clicks matched to the icon-only CTA by cta_id (Strategy 3 in
+      // matchCtaToEvent — text-based Strategy 1 would route empty text
+      // to __unmatched__ and bail before the clickedLabel logic ran).
+      const events = Array.from({ length: 40 }, (_, i) =>
+        makeEvent({
+          type: 'cta_click',
+          path: PATH,
+          sessionId: `s-${i}`,
+          properties: { cta_text: '', cta_id: 'cta-icon' },
+        }),
+      );
       const ctx = makeContext(events, [snapshot]);
       expect(heroHierarchyInversion.evaluate(ctx)).toEqual([]);
     });

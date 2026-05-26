@@ -289,20 +289,25 @@ function evaluatePage(
     return null;
   }
 
-  // Vision-pass fallback: when the parser couldn't read CTA text — typical
-  // for icon-only "Get started" buttons that ship as `<button><svg/></button>`
-  // — borrow the semantic label from `visualSignals.visualPrimaryCta` /
-  // `visualSecondaryCta`. The vision pass is per-page and identifies the
-  // visually-primary CTA from a screenshot, so its `text` field is exactly
-  // what we'd want for `heavy.text` when the parser came up empty. Closes
-  // handover §12.A's "unnamed-CTA root cause" item.
+  // Vision-pass fallback for `heavyLabel` only: when the parser couldn't
+  // read CTA text — typical for icon-only "Get started" buttons that ship
+  // as `<button><svg/></button>` — borrow the semantic label from
+  // `visualSignals.visualPrimaryCta`. Both `pickHeaviest()` and the vision
+  // pass rank by visual prominence, so the correspondence holds well
+  // enough for evidence copy. Closes handover §12.A's "unnamed-CTA root
+  // cause" item.
+  //
+  // No symmetric fallback for `clickedLabel`: `visualSecondaryCta` is "the
+  // second-most-visually-prominent CTA Gemini saw," not "the CTA visitors
+  // clicked most." Borrowing it would mislabel icon-only most-clicked
+  // elements (hamburger menus, search icons) with whatever vision called
+  // secondary — fabricated evidence on the prospect surface. When clicked
+  // text is missing, fall through to the bail below instead.
   const visual = snapshot.data.visualSignals;
   const heavyLabel =
     (heavy.text && heavy.text.length > 0) ? heavy.text :
     visual?.visualPrimaryCta?.text ?? '';
-  const clickedLabel =
-    (clickedText && clickedText.length > 0) ? clickedText :
-    visual?.visualSecondaryCta?.text ?? '';
+  const clickedLabel = clickedText ?? '';
 
   // Bail when either side STILL resolves to no text — the finding is
   // unactionable and the rendered output is gibberish ("your visitors want

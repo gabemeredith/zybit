@@ -149,6 +149,21 @@ describe('captureVisualSignals', () => {
     expect(out).toBeNull();
   });
 
+  it('returns null when the response body is the JSON literal null', async () => {
+    // `null` is valid JSON. Without a guard, extractText would access
+    // `.candidates` on null and throw a TypeError that rejects the
+    // captureVisualSignals promise and breaks the page snapshot loop.
+    const out = await captureVisualSignals(
+      { url: 'https://example.com', domain: 'example.com', screenshot: Buffer.from('fake') },
+      {
+        apiKey: 'fake-key',
+        fetch: () =>
+          Promise.resolve(new Response('null', { status: 200, headers: { 'content-type': 'application/json' } })),
+      },
+    );
+    expect(out).toBeNull();
+  });
+
   it('returns null when the model output is not valid JSON', async () => {
     const out = await captureVisualSignals(
       { url: 'https://example.com', domain: 'example.com', screenshot: Buffer.from('fake') },
