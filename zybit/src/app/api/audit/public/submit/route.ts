@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash, randomBytes } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
-import { isPersonalEmail } from '@/lib/audit/personalEmailDomains';
+import { isPersonalEmail, isAllowlistedTestEmail } from '@/lib/audit/personalEmailDomains';
 import { validatePublicUrl } from '@/lib/audit/urlValidator';
 import { checkPublicAuditRateLimit, checkDailyBudget } from '@/lib/audit/publicAuditRateLimit';
 import { runStructuralAudit } from '@/lib/intake/structuralAudit';
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Please enter a valid email address.' }, { status: 400 });
   }
 
-  if (isPersonalEmail(email)) {
+  if (isPersonalEmail(email) && !isAllowlistedTestEmail(email)) {
     return NextResponse.json(
       {
         error:
