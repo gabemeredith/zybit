@@ -96,7 +96,13 @@ export const navDispersion: AuditRule = {
 
     const countVector = [...counts.values()];
     const giniValue = gini(countVector);
-    if (giniValue >= calibratedCap(ctx, "nav-dispersion", MAX_GINI_FOR_FINDING) * modulation.capMultiplier) return [];
+    // Gini is bounded by [0, 1] — clamp the modulated cap below the
+    // theoretical maximum (0.95) so a capMultiplier > 1 on a conversion
+    // surface cannot push the cap to or beyond Gini's ceiling (which
+    // would silently fire the rule on a perfectly focused nav).
+    const baseCap = calibratedCap(ctx, "nav-dispersion", MAX_GINI_FOR_FINDING);
+    const modulatedCap = Math.min(0.95, baseCap * modulation.capMultiplier);
+    if (giniValue >= modulatedCap) return [];
 
     const ordered = [...counts.entries()].sort((a, b) => {
       if (b[1] !== a[1]) return b[1] - a[1];

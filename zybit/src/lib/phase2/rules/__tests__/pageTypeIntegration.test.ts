@@ -147,13 +147,39 @@ describe('link-text-generic × pageType', () => {
 });
 
 describe('heading-hierarchy-jump × pageType', () => {
-  it('docs page requires more jumps to fire (floorMultiplier > 1)', () => {
-    // Single H1→H3 jump: would normally fire (warn for missing-H1, info for jump).
-    // On docs, minJumpsToFire = round(1 × 1.4) = 1 — same threshold; single
-    // jump still fires for now. Verify the rule did fire (not suppressed).
+  it('docs page suppresses a single H1→H3 jump (Math.ceil(1 × 1.4) = 2)', () => {
+    // With floorMultiplier 1.4 + ceil rounding, minJumpsToFire = 2 on docs,
+    // so a single H1→H3 jump no longer fires. The H1 is present and unique,
+    // so missing-H1 / multiple-H1 paths don't kick in either — the rule
+    // emits nothing.
     const snap = makeSnapshot('/docs/api', [], [
       { level: 1, text: 'API' },
       { level: 3, text: 'Authentication' },
+    ]);
+    snap.data.visualSignals = makeVisionSignals('docs');
+    const ctx = makeContext([], [snap]);
+    expect(headingHierarchyJump.evaluate(ctx)).toEqual([]);
+  });
+
+  it('docs page still fires when two or more jumps are present', () => {
+    // Two H1→H3 jumps clears the docs floor (2 ≥ ceil(1 × 1.4) = 2).
+    const snap = makeSnapshot('/docs/api', [], [
+      { level: 1, text: 'API' },
+      { level: 3, text: 'Authentication' },
+      { level: 1, text: 'Endpoints' },
+      { level: 3, text: 'GET /users' },
+    ]);
+    snap.data.visualSignals = makeVisionSignals('docs');
+    const ctx = makeContext([], [snap]);
+    expect(headingHierarchyJump.evaluate(ctx).length).toBe(1);
+  });
+
+  it('docs page still fires on missing-H1 regardless of floorMultiplier', () => {
+    // Missing-H1 is an unambiguous semantic error — modulation doesn't
+    // gate it.
+    const snap = makeSnapshot('/docs/api', [], [
+      { level: 2, text: 'Authentication' },
+      { level: 3, text: 'Bearer tokens' },
     ]);
     snap.data.visualSignals = makeVisionSignals('docs');
     const ctx = makeContext([], [snap]);

@@ -160,30 +160,32 @@ export const aboveFoldCoverage: AuditRule = {
     for (const [pathRef, pageviews] of pageviewsByPath) {
       if (pageviews.length < MIN_PAGEVIEWS) continue;
 
+      // PageType modulation runs *before* the capture/snapshot branch so
+      // suppression and floor-tightening apply uniformly to both paths.
+      // blog / legal / docs / about / support legitimately have content
+      // below the fold — emitting "your primary CTA is below the fold"
+      // on a Privacy Policy is noise regardless of whether we measured
+      // it via headless capture or static snapshot. We still need to
+      // read pageType from the snapshot (the capture itself doesn't
+      // carry visualSignals), so look that up first and fall back to
+      // neutral if no snapshot exists yet.
+      const snapshot = ctx.pageSnapshotsByPath.get(pathRef);
+      const pageType = pageTypeFromSnapshot(snapshot?.data.visualSignals);
+      const modulation = pageTypeModulation("above-fold-coverage", pageType);
+      if (modulation.suppress) continue;
+
       // Prefer headless capture (precise bbox) over legacy heuristic snapshot
       if (ctx.pageCapturesByPath) {
         const captures = ctx.pageCapturesByPath.get(pathRef);
         if (captures && captures.length > 0) {
           const desktop = captures.find(c => c.breakpoint === 'desktop') ?? captures[0];
-          const finding = evaluatePageWithCapture(pathRef, desktop, pageviews, windowDays, ctx);
+          const finding = evaluatePageWithCapture(pathRef, desktop, pageviews, windowDays, ctx, modulation.floorMultiplier);
           if (finding !== null) findings.push(finding);
           continue;
         }
       }
 
-      const snapshot = ctx.pageSnapshotsByPath.get(pathRef);
       if (!snapshot) continue;
-
-      // PageType modulation: blog / legal / docs / about / support pages
-      // legitimately have content below the fold — emitting "your primary
-      // CTA is below the fold" on a Privacy Policy is noise. When the
-      // vision pass classifies the page into one of those types, drop the
-      // candidate before we spend time on it. Other page types may
-      // continue to fire with a tightened floor (see pageTypeModulation
-      // table — pricing/signup/checkout get floorMultiplier 0.7).
-      const pageType = pageTypeFromSnapshot(snapshot.data.visualSignals);
-      const modulation = pageTypeModulation("above-fold-coverage", pageType);
-      if (modulation.suppress) continue;
 
       const finding = evaluatePage(pathRef, snapshot, pageviews, windowDays, ctx, modulation.floorMultiplier);
       if (finding !== null) findings.push(finding);
@@ -370,6 +372,7 @@ function evaluatePageWithCapture(
   pageviews: CanonicalEvent[],
   windowDays: number,
   ctx: AuditRuleContext,
+  floorMultiplier = 1,
 ): AuditFinding | null {
   const primary = pickPrimaryBelowFoldCtaMeasured(capture.ctas, capture.fold.foldY);
   if (!primary) return null;
@@ -382,7 +385,11 @@ function evaluatePageWithCapture(
   }
   const totalPageviews = pageviews.length;
   const belowFoldShare = totalPageviews > 0 ? lowScrollCount / totalPageviews : 0;
-  if (belowFoldShare <= calibratedFloor(ctx, "above-fold-coverage", MIN_BELOW_FOLD_SHARE)) return null;
+  // PageType-modulated floor (same shape as the snapshot path in
+  // `evaluatePage`): pricing/signup/checkout get a lower bar
+  // (floorMultiplier ~0.7); other rules pass 1 (neutral). Calibrated
+  // floor still applies first.
+  if (belowFoldShare <= calibratedFloor(ctx, "above-fold-coverage", MIN_BELOW_FOLD_SHARE) * floorMultiplier) return null;
 
   const signals = primary.visualWeightSignals.slice(0, 3);
   const signalList = signals.length > 0 ? signals.join(", ") : "no class signals";

@@ -50,9 +50,11 @@ export const headingHierarchyJump: AuditRule = {
       // Docs pages legitimately ship H1→H3 jumps when their renderer groups
       // sections under a parent. floorMultiplier > 1 raises the count
       // required to fire — e.g. 1.4 means a single jump no longer fires
-      // (we need ≥ 2). Keep the rule firing on missing-H1 / multiple-H1 in
+      // (we need ≥ 2). `Math.ceil` is the right rounding here: any
+      // multiplier strictly above 1 must produce a stricter threshold, not
+      // silently round back down. Missing-H1 / multiple-H1 still fire in
       // all cases — those are unambiguous semantic errors.
-      const minJumpsToFire = Math.max(1, Math.round(1 * modulation.floorMultiplier));
+      const minJumpsToFire = Math.max(1, Math.ceil(1 * modulation.floorMultiplier));
       const jumps = allJumps.length >= minJumpsToFire ? allJumps : [];
 
       if (!missingH1 && !multipleH1 && jumps.length === 0) continue;

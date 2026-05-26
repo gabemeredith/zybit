@@ -101,15 +101,21 @@ const MODULATION: Record<string, Partial<Record<PageType, PageTypeModulation>>> 
   // table of contents) and on legal/about pages (low-traffic, not a
   // conversion surface). Tighten on pricing/signup/checkout where every
   // extra nav item is an exit ramp.
+  //
+  // `floorMultiplier` is intentionally left at 1 (neutral) for every cell:
+  // nav-dispersion has no floor check — it fires when Gini is *below* a
+  // cap, so only `capMultiplier` modulates the threshold. Keeping floor
+  // neutral avoids carrying dead values that a future contributor might
+  // believe are wired up.
   'nav-dispersion': {
     docs: { suppress: true, floorMultiplier: 1, capMultiplier: 1 },
     legal: { suppress: true, floorMultiplier: 1, capMultiplier: 1 },
     about: { suppress: true, floorMultiplier: 1, capMultiplier: 1 },
     support: { suppress: true, floorMultiplier: 1, capMultiplier: 1 },
     blog: { suppress: false, floorMultiplier: 1, capMultiplier: 1.2 },
-    pricing: { suppress: false, floorMultiplier: 0.8, capMultiplier: 1.1 },
-    signup: { suppress: false, floorMultiplier: 0.8, capMultiplier: 1.1 },
-    checkout: { suppress: false, floorMultiplier: 0.7, capMultiplier: 1.2 },
+    pricing: { suppress: false, floorMultiplier: 1, capMultiplier: 1.1 },
+    signup: { suppress: false, floorMultiplier: 1, capMultiplier: 1.1 },
+    checkout: { suppress: false, floorMultiplier: 1, capMultiplier: 1.2 },
   },
 
   // Generic link text — "Read more"/"Learn more" footers are universal on
