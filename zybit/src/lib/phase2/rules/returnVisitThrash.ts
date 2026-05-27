@@ -276,6 +276,21 @@ function buildFinding(
   // isn't here." Same mechanism as `bounce-on-key-page`.
   const primary = snapshot ? pickPrimaryCta(snapshot.data.ctas) : null;
 
+  const factsJson = {
+    pathRef: agg.pathRef,
+    thrashSessions: agg.thrashSessions,
+    totalSessions: agg.pathSessions,
+    thrashRate,
+    medianVisitsPerThrashSession: median,
+    windowDays,
+    deviceMode,
+    narrative: narrative
+      ? { label: narrative.label, expectedPathRefs: narrative.expectedPathRefs }
+      : null,
+    interimTopPaths: interimTop.map((p) => ({ key: p.key, count: p.count })),
+    primaryCtaText: primary?.text ?? null,
+  };
+
   return {
     id: `return-visit-thrash:${sanitizeIdSegment(agg.pathRef)}`,
     ruleId: "return-visit-thrash",
@@ -290,6 +305,7 @@ function buildFinding(
     impactEstimate,
     recommendation: [docPara, narrativePara],
     evidence,
+    factsJson,
     ...(snapshot
       ? {
           refs: {

@@ -188,6 +188,16 @@ export interface AuditFinding {
   recommendation: string[];
   evidence: AuditFindingEvidence[];
   /**
+   * Rule's structured facts (the input to Layer B). Present on rules that
+   * have been converted to the Layer A/B contract (see
+   * `docs/sprints/llm-refactor.md`). Layer B reads this to generate
+   * `summary` / `recommendation` / `prescription` when
+   * `LLM_REFACTOR_ENABLED=1`; the deterministic templating function on the
+   * rule produces the same fields when the flag is off OR when Layer B
+   * fails. The persisted JSON value is the rule's own — never the LLM's.
+   */
+  factsJson?: Record<string, unknown>;
+  /**
    * Opinionated fix brief. More concrete than `recommendation` — tells the
    * operator exactly what to change, not just what the problem is.
    */
