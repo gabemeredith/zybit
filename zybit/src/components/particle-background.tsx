@@ -495,11 +495,13 @@ function ParticleSwarm() {
 
     const onResize = () => {
       const w = window.innerWidth;
-      // Re-measure only if width changed (orientation / desktop window resize),
-      // ignoring vh-only deltas from iOS Safari URL-bar collapse.
-      if (Math.abs(w - lastWidth) > 4) {
+      const h = window.innerHeight;
+      const isMobileViewport = w < 768;
+      // Desktop: always update vh (vertical resize is common).
+      // Mobile: only update on width change to ignore iOS Safari URL-bar collapse.
+      if (!isMobileViewport || Math.abs(w - lastWidth) > 4) {
         lastWidth = w;
-        lastVh = window.innerHeight;
+        lastVh = h;
       }
       measure();
     };
@@ -514,6 +516,7 @@ function ParticleSwarm() {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("load", measure);
     };
   }, []);
 
@@ -615,8 +618,8 @@ function ParticleSwarm() {
       uP = Math.min(5, scrollY / window.innerHeight);
     }
 
-    // Smoothing — keep just enough to absorb dropped frames, fast enough that
-    // particles feel pinned to scroll. Time-constant ≈ 40ms at lambda=25.
+    // Mobile: exponential-decay lerp absorbs dropped frames + URL-bar jitter. ~40ms time constant.
+    // Desktop: instant tracking — precise mice feel best without smoothing lag.
     const lerpFactor = isMobile ? 1 - Math.exp(-25 * delta) : 1.0;
     smoothProgressRef.current += (uP - smoothProgressRef.current) * lerpFactor;
 
