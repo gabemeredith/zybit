@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { SiteNav } from '@/components/SiteNav';
 import { IntakeModal } from '@/components/IntakeModal';
-import { isPersonalEmail, rejectionMessage } from '@/lib/audit/personalEmailDomains';
+import { isPersonalEmail, isAllowlistedTestEmail, rejectionMessage } from '@/lib/audit/personalEmailDomains';
 import type { IntakeFinding } from '@/lib/intake/structuralAudit';
 
 const INK = '#111';
@@ -115,7 +115,7 @@ export default function AuditPage() {
       setError('Please enter a valid email address.');
       return;
     }
-    if (isPersonalEmail(form.email)) {
+    if (isPersonalEmail(form.email) && !isAllowlistedTestEmail(form.email)) {
       setError(rejectionMessage());
       return;
     }
