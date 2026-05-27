@@ -608,6 +608,10 @@ export const zybitFindings = pgTable(
     fixRationale: text('fix_rationale'),
     fixModifications: jsonb('fix_modifications').$type<unknown | null>(),
     fixPreviewGeneratedAt: timestamp('fix_preview_generated_at', { withTimezone: true }),
+    // Discriminator for the prose path that wrote summary/recommendation/
+    // prescription. 'template' = rule's deterministic templating function;
+    // 'llm-v1' = Layer B Gemini call. See drizzle/0024.
+    proseSource: text('prose_source').notNull().default('template').$type<'template' | 'llm-v1'>(),
     // Run context (most recent sync that emitted this finding)
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),
     insightWindowStart: timestamp('insight_window_start', { withTimezone: true }),
