@@ -533,7 +533,12 @@ function ParticleSwarm() {
         new THREE.Vector3(0, -vh * 2 + vh * 0.2, -1),  // 2: Jet
         new THREE.Vector3(0, -vh * 3 - vh * 0.15, -1), // 3: Chip — pushed below top text
         new THREE.Vector3(0, -vh * 4, -1),              // 4: Scatter (finding card)
-        new THREE.Vector3(0, -vh * 5 - 0.5, -1),       // 5: SilkWave (CTA)
+        // 5: SilkWave (CTA) — anchored low enough that the wave crest stays in the
+        // bottom band of the viewport and never climbs into the "Or request product
+        // access" link sitting under the primary CTA button. Previous value of -0.5
+        // put the shape centre near world origin, so the upper third of the wave
+        // sat right behind the secondary link and made it unreadable.
+        new THREE.Vector3(0, -vh * 5 - 3.0, -1),
       ];
     }
     return [
@@ -542,7 +547,11 @@ function ParticleSwarm() {
       new THREE.Vector3(-2.5, -vh * 2, 0),     // 2: Jet left
       new THREE.Vector3(4.5, -vh * 3, 0),      // 3: Chip right
       new THREE.Vector3(0, -vh * 4, 0),        // 4: Scatter (finding card) center
-      new THREE.Vector3(0, -vh * 5 - 0.5, 0), // 5: SilkWave (CTA) center
+      // 5: SilkWave (CTA) — desktop uScale=1.0 makes the shape ~4× taller than on
+      // mobile, so the previous -0.5 anchor put the wave crest right through the
+      // body paragraph and obscured the "Or request product access" link. Drop
+      // anchor to keep the wave a contained decorative band at the bottom.
+      new THREE.Vector3(0, -vh * 5 - 4.0, 0),
     ];
   }, [isMobile, stableVh]);
 
