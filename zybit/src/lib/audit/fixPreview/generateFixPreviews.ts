@@ -101,6 +101,23 @@ export interface FixPreviewDeps {
 
 const DEFAULT_MAX = 4;
 
+/**
+ * Rules whose findings are purely structural — the "fix" is a code edit
+ * (add `<meta name="description">`, fix heading order, add an `href`, etc.)
+ * that produces no visible delta in a screenshot. Generating before/after
+ * imagery for these wastes Browserless + Gemini calls and produces visually
+ * identical pairs that confuse the reader. Skip them at orchestration time;
+ * the email gracefully renders the card without a preview row.
+ */
+const SKIP_FIX_PREVIEW_RULE_IDS = new Set<string>([
+  'dead-click-target',
+  'heading-hierarchy-jump',
+  'missing-meta-description',
+  'missing-canonical-url',
+  'form-label-missing',
+  'image-alt-text-missing',
+]);
+
 export async function generateFixPreviews(
   args: GenerateFixPreviewsArgs,
   deps: FixPreviewDeps = {},
@@ -141,6 +158,14 @@ export async function generateFixPreviews(
   const outcomes: FixPreviewOutcome[] = [];
 
   for (const finding of targets) {
+    if (SKIP_FIX_PREVIEW_RULE_IDS.has(finding.ruleId)) {
+      outcomes.push({
+        findingId: finding.id,
+        preview: null,
+        reason: 'rule-skipped',
+      });
+      continue;
+    }
     if (!finding.pathRef || !finding.prescription || !domain) {
       outcomes.push({ findingId: finding.id, preview: null, reason: 'no-html' });
       continue;

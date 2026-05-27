@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { BeforeAfterSlider } from '@/components/audit/BeforeAfterSlider';
+import { PUBLIC_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 
 const INK = '#111';
 const CREAM = '#FAFAF8';
@@ -238,7 +239,7 @@ function AuditStatusPageInner() {
             <Dots />
           </h1>
           <p style={{ margin: '0 0 16px', fontSize: 15, lineHeight: 1.6, color: INK }}>
-            We&rsquo;re crawling your pages and running the 13 friction rules now.
+            We&rsquo;re crawling your pages and running the {PUBLIC_AUDIT_RULE_COUNT} friction rules now.
             This takes 45&ndash;90 seconds. The full report will arrive in your inbox
             as soon as it&rsquo;s done.
           </p>

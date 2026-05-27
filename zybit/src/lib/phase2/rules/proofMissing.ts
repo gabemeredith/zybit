@@ -87,9 +87,7 @@ export const proofMissing: AuditRule = {
         ],
         prescription: {
           whyItMatters:
-            `On a ${pageType} page, the visitor is comparing your claim against the dozen vendors they ` +
-            `looked at this week. Without a single proof signal above the fold, every claim sits at the ` +
-            `same level as the next vendor's claim. Buyers default to the one with proof.`,
+            `Without a single proof signal above the fold, your claim sits at the same level as every other vendor's — and buyers default to the one with proof.`,
           whatToChange:
             `Add a proof row immediately under the hero: 3–5 named customer logos, or one quantified ` +
             `customer outcome ("Acme cut their onboarding time 12×"), or a single named testimonial with ` +

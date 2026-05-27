@@ -111,9 +111,8 @@ export const vagueClaimDetected: AuditRule = {
         ],
         prescription: {
           whyItMatters:
-            `Vague hero copy is one of the highest-leverage single fixes on a landing page. Visitors ` +
-            `decide whether to read further in seconds, and a headline that doesn't tell them what your ` +
-            `product does forces every visitor to do the diligence work themselves — most don't.`,
+            `Visitors decide in seconds whether ${snapshot.pathRef} is for them; a hero that doesn't ` +
+            `name what your product does makes every visitor do the diligence themselves — most won't.`,
           whatToChange:
             `Replace "${headline}" with a headline that names the specific outcome ${rewrites[0] ? `(e.g. "${rewrites[0]}")` : ''} — ` +
             `a verb that describes what the product does, plus the named benefit a customer would talk about.`,

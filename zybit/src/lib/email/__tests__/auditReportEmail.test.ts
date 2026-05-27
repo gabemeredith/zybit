@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderAuditReportEmailHtml, sampleAuditReport } from '../auditReportEmail';
+import {
+  renderAuditReportEmailHtml,
+  sampleAuditReport,
+  subjectForReport,
+} from '../auditReportEmail';
 
 const sendMock = vi.hoisted(() => vi.fn());
 
@@ -68,6 +72,61 @@ describe('renderAuditReportEmailHtml', () => {
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
   });
 
+  it('renders multi-atom evidence as bulleted rows', () => {
+    const sample = sampleAuditReport();
+    const multi = {
+      ...sample,
+      findings: [
+        {
+          ...sample.findings[0],
+          evidence: 'Dead links: 15 · Examples: "Reload" · Page: /foo · Based on: page structure',
+        },
+      ],
+    };
+    const html = renderAuditReportEmailHtml(multi);
+    const evidenceSectionStart = html.indexOf('>Evidence<');
+    const evidenceSectionEnd = html.indexOf('What to change', evidenceSectionStart);
+    const section = html.slice(evidenceSectionStart, evidenceSectionEnd);
+    expect(section.match(/•/g)?.length ?? 0).toBe(4);
+    expect(section).not.toContain(' · ');
+  });
+
+  it('renders a single-sentence evidence as a plain block (no bullet)', () => {
+    const sample = sampleAuditReport();
+    const single = {
+      ...sample,
+      findings: [{ ...sample.findings[0], evidence: 'Single sentence with no separators.' }],
+    };
+    const html = renderAuditReportEmailHtml(single);
+    const evidenceSectionStart = html.indexOf('>Evidence<');
+    const evidenceSectionEnd = html.indexOf('What to change', evidenceSectionStart);
+    const section = html.slice(evidenceSectionStart, evidenceSectionEnd);
+    expect(section).toContain('Single sentence with no separators.');
+    expect(section).not.toContain('•');
+  });
+
+  it('renders the Finding title above the Why this matters block (when both present)', () => {
+    const sample = sampleAuditReport();
+    // Pick a finding that has both a title and whyItMatters set.
+    const sampleWithBoth = {
+      ...sample,
+      findings: sample.findings.filter((f) => f.whyItMatters).slice(0, 1),
+    };
+    expect(sampleWithBoth.findings.length).toBe(1);
+    const html = renderAuditReportEmailHtml(sampleWithBoth);
+    const findingLabelAt = html.indexOf('>Finding<');
+    const whyLabelAt = html.indexOf('>Why this matters<');
+    expect(findingLabelAt).toBeGreaterThan(-1);
+    expect(whyLabelAt).toBeGreaterThan(-1);
+    expect(findingLabelAt).toBeLessThan(whyLabelAt);
+  });
+
+  it('no longer renders the severity badge or estimated impact figure', () => {
+    const html = renderAuditReportEmailHtml(sampleAuditReport());
+    expect(html).not.toContain('Est. impact');
+    expect(html).not.toMatch(/>(High|Medium|Low)</);
+  });
+
   it('signs different emails to different sigs', () => {
     const a = renderAuditReportEmailHtml({
       ...sampleAuditReport(),
@@ -85,6 +144,21 @@ describe('renderAuditReportEmailHtml', () => {
     expect(sigA).toBeTruthy();
     expect(sigB).toBeTruthy();
     expect(sigA).not.toEqual(sigB);
+  });
+});
+
+describe('subjectForReport', () => {
+  const base = sampleAuditReport();
+  it('uses the empty-state subject when there are zero findings', () => {
+    expect(subjectForReport({ ...base, findings: [] })).toBe('Your acme.com audit is ready');
+  });
+  it('uses the singular form for a one-finding report', () => {
+    expect(subjectForReport({ ...base, findings: base.findings.slice(0, 1) })).toBe(
+      'One thing to fix on acme.com',
+    );
+  });
+  it('uses the four-finding capitalized form for the common path', () => {
+    expect(subjectForReport(base)).toBe('Four things to fix on acme.com');
   });
 });
 

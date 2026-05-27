@@ -52,9 +52,7 @@ export const navDispersion: AuditRule = {
         `load before the visitor can do the thing they came for. The best-converting marketing sites ` +
         `keep top-level nav to 4-5 items.`,
       whyItMatters:
-        `A wide nav forces every visitor to choose. The more options at the top, the more cognitive ` +
-        `load before the visitor can do the thing they came for. The best-converting marketing sites ` +
-        `keep top-level nav to 4-5 items.`,
+        `A wide nav forces every visitor to choose before doing the thing they came for; the best-converting marketing sites keep top-level nav to 4–5 items.`,
       evidence: [
         { label: 'Page', value: page },
         {

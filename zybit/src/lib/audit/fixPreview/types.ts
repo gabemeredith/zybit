@@ -37,5 +37,5 @@ export interface FixPreview {
 export interface FixPreviewOutcome {
   findingId: string;
   preview: FixPreview | null;
-  reason: 'ok' | 'no-html' | 'no-mods' | 'render-failed' | 'inpaint-failed' | 'tier3-fallback';
+  reason: 'ok' | 'no-html' | 'no-mods' | 'render-failed' | 'inpaint-failed' | 'tier3-fallback' | 'rule-skipped';
 }

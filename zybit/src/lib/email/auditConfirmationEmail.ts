@@ -17,6 +17,7 @@
  */
 
 import { Resend } from 'resend';
+import { PUBLIC_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 
 export interface AuditConfirmationRequest {
   /** Bare host the prospect asked us to audit, e.g. "acme.com". */
@@ -87,7 +88,7 @@ export function renderAuditConfirmationEmailHtml(req: AuditConfirmationRequest):
           <tr>
             <td style="padding: 16px 28px 8px;">
               <p style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.6; color: ${INK};">
-                Click the button below to confirm. We&rsquo;ll run our 13 friction rules against your homepage and email you the report — usually within an hour.
+                Click the button below to confirm. We&rsquo;ll run our ${PUBLIC_AUDIT_RULE_COUNT} friction rules against your homepage and email you the report — usually within an hour.
               </p>
             </td>
           </tr>

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { SiteNav } from '@/components/SiteNav';
 import { IntakeModal } from '@/components/IntakeModal';
 import { isPersonalEmail, isAllowlistedTestEmail, rejectionMessage } from '@/lib/audit/personalEmailDomains';
+import { PUBLIC_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 import type { IntakeFinding } from '@/lib/intake/structuralAudit';
 
 const INK = '#111';
@@ -47,7 +48,7 @@ const PROGRESS_STEPS: ProgressStep[] = [
   { label: 'Fetching homepage', ms: 4000 },
   { label: 'Parsing structure & extracting CTAs', ms: 6000 },
   { label: 'Mapping internal pages', ms: 7000 },
-  { label: 'Running 13 friction rules', ms: 9000 },
+  { label: `Running ${PUBLIC_AUDIT_RULE_COUNT} friction rules`, ms: 9000 },
   { label: 'Ranking findings by impact', ms: 5000 },
 ];
 
@@ -246,10 +247,9 @@ function Hero() {
           maxWidth: 620,
         }}
       >
-        Give us your URL and we&rsquo;ll run the same 13 friction rules our customers
+        Give us your URL and we&rsquo;ll run the same {PUBLIC_AUDIT_RULE_COUNT} friction rules our customers
         use — against your live site. You&rsquo;ll get a one-page report by email:
-        four ranked findings, the evidence behind each, what to change, and a rough
-        dollar estimate.
+        ranked findings, the evidence behind each, and what to change.
       </p>
       <p
         className="sans-text"
@@ -570,8 +570,8 @@ function TeaserPanel({
         style={{ fontSize: 15, lineHeight: 1.55, color: MUTED, marginBottom: 24, maxWidth: 600 }}
       >
         {teaserFinding
-          ? 'The full ranked list — plus evidence, suggested changes, and dollar estimates for the top four findings — is in the report. Confirm below and it goes straight to your inbox.'
-          : 'We ran 13 friction rules against your homepage. The full report — four priority findings with evidence and what to change — will arrive in your inbox once you confirm.'}
+          ? 'The full ranked list — plus evidence and suggested changes for the top findings — is in the report. Confirm below and it goes straight to your inbox.'
+          : `We ran ${PUBLIC_AUDIT_RULE_COUNT} friction rules against your homepage. The full report — priority findings with evidence and what to change — will arrive in your inbox once you confirm.`}
       </p>
 
       {teaserFinding && <TeaserCard finding={teaserFinding} />}

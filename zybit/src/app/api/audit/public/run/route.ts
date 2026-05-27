@@ -14,6 +14,8 @@ import { validatePublicUrl } from '@/lib/audit/urlValidator';
 import { deriveIndustry } from '@/lib/audit/deriveIndustry';
 import { recordAuditUserActivity } from '@/lib/audit/recordAuditUserActivity';
 import { generateFixPreviews } from '@/lib/audit/fixPreview';
+import { PUBLIC_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
+import { severityFromScore, formatAuditDate } from '@/lib/audit/auditReportFormatting';
 import { runUrlAudit } from '../../../../../../lighthouse/lib/runner/runUrlAudit';
 import { eq, desc } from 'drizzle-orm';
 
@@ -39,13 +41,6 @@ type AuditRow = {
   role: string;
   status: string;
 };
-
-function severityFromScore(priorityScore: number): 'high' | 'medium' | 'low' {
-  if (priorityScore >= 0.6) return 'high';
-  if (priorityScore >= 0.3) return 'medium';
-  return 'low';
-}
-
 
 /**
  * Build the brand-DNA payload for the report email by joining the
@@ -150,15 +145,6 @@ async function collectBrandDna(args: {
     return null;
   }
   return dna;
-}
-
-function formatDate(d: Date): string {
-  return d.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'America/New_York',
-  }) + ' ET';
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -413,8 +399,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     domain: audit.domain,
     url: audit.url,
     prospect: { email: audit.email, role: audit.role },
-    generatedAt: formatDate(new Date()),
+    generatedAt: formatAuditDate(new Date()),
     pagesScanned: counts.snapshots,
+    rulesEvaluated: PUBLIC_AUDIT_RULE_COUNT,
     totalFindings: counts.findings,
     findings: topFindings,
     bookCallUrl,

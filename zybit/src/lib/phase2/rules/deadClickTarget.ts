@@ -115,7 +115,7 @@ export const deadClickTarget: AuditRule = {
         evidence,
         prescription: {
           whatToChange: `On ${snapshot.pathRef}, replace placeholder hrefs (\`#\`, \`javascript:void(0)\`, empty) with real destinations, or remove the affordance entirely for visual-only elements.`,
-          whyItMatters: `A click that goes nowhere is the highest-friction outcome a visitor can have on your page — they tried, you ignored them. This pattern is the deterministic precursor to rage-click sessions; you can fix it today without waiting for analytics data to confirm.`,
+          whyItMatters: `A click that goes nowhere is the highest-friction outcome a visitor can have — they tried, the page ignored them.`,
           whyItWorks: `Real destinations turn high-intent clicks into real outcomes. Removing dead affordances removes the false visual promise.`,
           experimentVariantDescription: `Variant replaces dead hrefs with real destinations (or removes the affordance). Measure: click-through to the intended destination on first session; rage-click rate on the same elements once PostHog is connected.`,
         },

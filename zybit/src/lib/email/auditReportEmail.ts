@@ -19,6 +19,7 @@
 
 import { Resend } from 'resend';
 import { signAuditSignupParam } from '@/lib/audit/cookies';
+import { PUBLIC_AUDIT_DEFERRED_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 
 export interface AuditFindingForEmail {
   id: string;
@@ -94,6 +95,13 @@ export interface AuditReport {
   };
   generatedAt: string;
   pagesScanned: number;
+  /**
+   * Count of rules actually evaluated against the site in public-audit
+   * mode. Threaded through so the intro line ("We ran our N friction
+   * rules…") stays accurate as the rule set grows; computed from
+   * `getPublicAuditRuleCount()` at the call site.
+   */
+  rulesEvaluated: number;
   totalFindings: number;
   findings: AuditFindingForEmail[];
   bookCallUrl: string;
@@ -125,23 +133,56 @@ const CREAM = '#FAFAF8';
 const MUTED = '#6B6B6B';
 const HAIRLINE = 'rgba(0,0,0,0.12)';
 
-function fmtDollars(usd: number | null): string {
-  if (usd === null) return '—';
-  if (usd >= 10_000) return `~$${(usd / 1000).toFixed(0)}k`;
-  if (usd >= 1000) return `~$${(usd / 1000).toFixed(1)}k`;
-  return `~$${usd.toFixed(0)}`;
-}
-
-function severityLabel(s: AuditFindingForEmail['severity']): string {
-  return s === 'high' ? 'High' : s === 'medium' ? 'Medium' : 'Low';
-}
-
 // Number word for prose flow at the small counts the audit produces.
 // Falls back to digits for 11+ (the audit caps at 4 today, so the high
 // branch only exists for safety).
 const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'] as const;
 function numberWord(n: number): string {
   return n >= 0 && n < NUMBER_WORDS.length ? NUMBER_WORDS[n] : String(n);
+}
+
+// "1 page" vs "7 pages" — the homepage-only case needs the singular form.
+function pagesPhrase(n: number): string {
+  if (n <= 0) return 'your homepage';
+  return `your homepage and the ${numberWord(n)} internal page${n === 1 ? '' : 's'} we could reach`;
+}
+
+function introCopy(report: AuditReport): string {
+  const n = report.findings.length;
+  const rulesCount = numberWord(report.rulesEvaluated);
+  const pages = pagesPhrase(report.pagesScanned);
+  if (n === 0) {
+    return `We ran our ${rulesCount} friction rules against ${pages}. Nothing surfaced above our confidence floor today — that's a real signal, not an empty report. The other ${numberWord(PUBLIC_AUDIT_DEFERRED_RULE_COUNT)} rules light up once you connect PostHog so we can see how your visitors actually behave.`;
+  }
+  const findingPhrase = `<strong>${numberWord(n)} finding${n === 1 ? '' : 's'} below</strong>`;
+  const tail = n === 1 ? 'is the one' : 'are the ones';
+  return `We ran our ${rulesCount} friction rules against ${pages}. The ${findingPhrase} ${tail} most worth fixing first — ranked by impact and how confident we are in the call. Each one cites what we saw on your site and what to change.`;
+}
+
+/**
+ * Audit-rule evidence strings concatenate atoms with ` · ` (e.g.
+ * "Dead links on this page: 15 · Examples: 'Reload' · Page: /foo · Based
+ * on: page structure"). Rendered as a paragraph that wraps illegibly in
+ * Gmail. Split on the separator and emit a bulleted list when there's
+ * more than one atom, falling back to a plain block for a single
+ * sentence. Email-safe: indented divs with a leading bullet glyph
+ * (real `<ul>` rendering varies wildly across Outlook).
+ */
+function renderEvidence(evidence: string): string {
+  const parts = evidence
+    .split(/\s+·\s+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  if (parts.length <= 1) {
+    return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK};">${escapeHtml(evidence)}</div>`;
+  }
+  const items = parts
+    .map(
+      (part) =>
+        `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK}; padding-left: 16px; text-indent: -10px; margin: 0 0 6px;"><span style="color: ${MUTED};">•</span>&nbsp;${escapeHtml(part)}</div>`,
+    )
+    .join('');
+  return items;
 }
 
 function escapeHtml(value: string): string {
@@ -203,34 +244,28 @@ function fixPreviewRow(f: AuditFindingForEmail): string {
 }
 
 function findingCard(f: AuditFindingForEmail): string {
-  const impact = fmtDollars(f.estimatedImpactMonthlyUsd);
-  // Severity-only badge — the numeric confidence score was dropped because
-  // it adds no PM signal beyond what the label already conveys.
   const whyItMattersRow = f.whyItMatters
     ? `
       <tr>
-        <td style="padding: 18px 18px 4px;">
+        <td style="padding: 18px 18px 4px; border-bottom: 1px solid ${HAIRLINE};">
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Why this matters</div>
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.6; color: ${INK};">${escapeHtml(f.whyItMatters)}</div>
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.6; color: ${INK}; padding-bottom: 14px;">${escapeHtml(f.whyItMatters)}</div>
         </td>
       </tr>`
     : '';
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 0 0 20px; border-collapse: separate; border: 2px solid ${INK}; box-shadow: 6px 6px 0 ${INK}; background: ${CREAM};">
       <tr>
-        <td align="right" style="padding: 12px 18px; border-bottom: 2px solid ${INK}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED};">${severityLabel(f.severity)}</td>
-      </tr>
-      ${whyItMattersRow}
-      <tr>
         <td style="padding: 18px; border-bottom: 1px solid ${HAIRLINE};">
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Finding</div>
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 18px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; color: ${INK};">${escapeHtml(f.title)}</div>
         </td>
       </tr>
+      ${whyItMattersRow}
       <tr>
         <td style="padding: 16px 18px; border-bottom: 1px solid ${HAIRLINE};">
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Evidence</div>
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK};">${escapeHtml(f.evidence)}</div>
+          ${renderEvidence(f.evidence)}
         </td>
       </tr>
       <tr>
@@ -241,14 +276,7 @@ function findingCard(f: AuditFindingForEmail): string {
       </tr>
       ${fixPreviewRow(f)}
       <tr>
-        <td style="padding: 16px 18px; background: ${INK}; color: ${CREAM};">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-            <tr>
-              <td style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.6;">Est. impact</td>
-              <td align="right" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 22px; font-weight: 900; letter-spacing: -0.02em; white-space: nowrap;">${impact}/mo</td>
-            </tr>
-          </table>
-        </td>
+        <td style="padding: 14px 18px; background: ${INK};">&nbsp;</td>
       </tr>
     </table>
   `;
@@ -414,7 +442,7 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
             <td style="padding: 0 28px 24px;">
               <h1 style="margin: 8px 0 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 36px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: ${INK};">${safeDomain}</h1>
               <p style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK};">
-                We ran our 13 friction rules against your homepage and the ${report.pagesScanned} internal pages we could reach. The <strong>${numberWord(report.findings.length)} finding${report.findings.length === 1 ? '' : 's'} below</strong> ${report.findings.length === 1 ? 'is the one' : 'are the ones'} most worth fixing first — ranked by potential revenue impact and how confident we are in the call. Each one cites what we saw on your site, what to change, and a rough dollar estimate.
+                ${introCopy(report)}
               </p>
             </td>
           </tr>
@@ -477,7 +505,7 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
               <div style="border: 1px dashed ${HAIRLINE}; padding: 14px 16px; background: rgba(0,0,0,0.02);">
                 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 6px;">Based on page structure, not your visitors yet</div>
                 <p style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; line-height: 1.55; color: ${INK};">
-                  The findings above come from parsing your HTML — what your page emphasizes, how the nav is structured, where the CTAs sit. They&rsquo;re real structural observations, but we can&rsquo;t see how your real users behave on the page yet. <a href="${escapeHtml(signupLink)}" style="color: ${INK}; text-decoration: underline; font-weight: 600;">Connect PostHog</a> (or send us your data) and the other 9 rules light up — rage-clicks, drop-offs, form abandonment, hesitation, mobile asymmetry, and the patterns you only see in session data.
+                  The findings above come from parsing your HTML — what your page emphasizes, how the nav is structured, where the CTAs sit. They&rsquo;re real structural observations, but we can&rsquo;t see how your real users behave on the page yet. <a href="${escapeHtml(signupLink)}" style="color: ${INK}; text-decoration: underline; font-weight: 600;">Connect PostHog</a> (or send us your data) and the other ${numberWord(PUBLIC_AUDIT_DEFERRED_RULE_COUNT)} rules light up — rage-clicks, drop-offs, form abandonment, hesitation, mobile asymmetry, and the patterns you only see in session data.
                 </p>
               </div>
             </td>
@@ -514,6 +542,20 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
 </html>`;
 }
 
+/**
+ * Inbox-line subject for the report email. Used to be hardcoded "Four
+ * things to fix" — broken once the body learned to handle 0/1/N findings.
+ * Empty-state runs need a subject that doesn't promise findings, and the
+ * common 4-finding path still reads as "Four things to fix on acme.com".
+ */
+export function subjectForReport(report: AuditReport): string {
+  const n = report.findings.length;
+  if (n === 0) return `Your ${report.domain} audit is ready`;
+  const word = numberWord(n);
+  const capitalized = word.charAt(0).toUpperCase() + word.slice(1);
+  return `${capitalized} ${n === 1 ? 'thing' : 'things'} to fix on ${report.domain}`;
+}
+
 export async function sendAuditReportEmail(
   to: string,
   report: AuditReport,
@@ -533,7 +575,7 @@ export async function sendAuditReportEmail(
       // pipeline will mark the audit failed via the existing error path.
       from: process.env.AUDIT_FROM_EMAIL ?? 'Asad & Jad at Zybit <asad@getzybit.com>',
       to,
-      subject: `Four things to fix on ${report.domain}`,
+      subject: subjectForReport(report),
       html,
     });
     if (error) {
@@ -560,6 +602,7 @@ export function sampleAuditReport(): AuditReport {
     },
     generatedAt: 'May 23, 2026 at 4:12 PM ET',
     pagesScanned: 7,
+    rulesEvaluated: 13,
     totalFindings: 11,
     bookCallUrl: 'https://calendly.com/asad-getzybit/30min',
     brandDna: {

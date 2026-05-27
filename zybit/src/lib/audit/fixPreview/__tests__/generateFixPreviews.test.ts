@@ -243,6 +243,25 @@ describe('generateFixPreviews — tier ladder', () => {
     expect(deps.suggestAuditFix).toHaveBeenCalledTimes(2);
   });
 
+  it('skips structural rules where the fix has no visible delta', async () => {
+    const deps = makeDeps();
+    const structural = { ...FINDING, id: 'f_dead', ruleId: 'dead-click-target' };
+    const [outcome] = await generateFixPreviews(
+      {
+        organizationId: 'org_1',
+        siteId: 'site_1',
+        auditUrl: 'https://example.com',
+        findings: [structural],
+      },
+      deps,
+    );
+    expect(outcome.preview).toBeNull();
+    expect(outcome.reason).toBe('rule-skipped');
+    expect(deps.renderBeforeOnly).not.toHaveBeenCalled();
+    expect(deps.suggestAuditFix).not.toHaveBeenCalled();
+    expect(deps.inpaintFixAfter).not.toHaveBeenCalled();
+  });
+
   it('skips findings without a pathRef', async () => {
     const deps = makeDeps();
     const orphan = { ...FINDING, id: 'f_orphan', pathRef: null };

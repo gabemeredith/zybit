@@ -88,9 +88,7 @@ export const aboveFoldCoverage: AuditRule = {
         `scroll. Visitors who don't scroll never see your main action — and a meaningful share of any ` +
         `audience doesn't scroll.`,
       whyItMatters:
-        `On ${page}, the heaviest CTA in your design ("${ctaLabel}") only becomes visible after a ` +
-        `scroll. Visitors who don't scroll never see your main action — and a meaningful share of any ` +
-        `audience doesn't scroll.`,
+        `Your heaviest CTA ("${ctaLabel}") only becomes visible after a scroll on ${page} — and a meaningful share of any audience never scrolls.`,
       evidence: [
         { label: 'Primary CTA', value: ctaLabel },
         { label: 'Page', value: page },

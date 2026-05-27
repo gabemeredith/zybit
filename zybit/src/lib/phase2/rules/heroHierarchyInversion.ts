@@ -119,9 +119,7 @@ export const heroHierarchyInversion: AuditRule = {
         `is on "${heavy}". The button the eye lands on and the button the page leads with aren't the ` +
         `same — visitors have to scan past the loud one to find the topmost one. That's friction.`,
       whyItMatters:
-        `${page} leads with "${topmost}" at the top of the DOM, but your design's visual weight ` +
-        `is on "${heavy}". The button the eye lands on and the button the page leads with aren't the ` +
-        `same — visitors have to scan past the loud one to find the topmost one. That's friction.`,
+        `On ${page} the eye lands on "${heavy}" but the page leads with "${topmost}" — visitors pay a scan tax on every session to reconcile the mismatch.`,
       evidence: [
         { label: 'Topmost CTA', value: topmost },
         { label: 'Most visually emphasized CTA', value: heavy },

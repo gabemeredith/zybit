@@ -99,9 +99,7 @@ export const ctaVerbMismatch: AuditRule = {
         ],
         prescription: {
           whyItMatters:
-            `CTA verbs are the visitor's last cognitive step before clicking. A mismatched verb forces ` +
-            `the visitor to do a quick mental translation — "is 'Contact us' the same as 'sign up'?" — ` +
-            `and a meaningful share don't bother. The cost compounds on every session.`,
+            `A mismatched CTA verb forces the visitor to translate — "is 'Contact us' the same as 'sign up'?" — and a meaningful share don't bother.`,
           whatToChange:
             suggested.length > 0
               ? `Replace "${ctaLabel}" with "${suggested[0]}" on ${snapshot.pathRef}.`
