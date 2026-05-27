@@ -13,7 +13,7 @@
  * the lead-magnet conversion page; every kilobyte counts).
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 
 const INK = '#111';
 const CREAM = '#FAFAF8';
@@ -154,15 +154,10 @@ function ActiveSlider({
     }
   }, []);
 
-  // Re-center on resize so the handle stays aligned with whatever the
-  // current splitPct is. (Pure CSS would keep the percentage; we just
-  // recompute on resize to be defensive about subpixel jitter on Safari.)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onResize = () => setSplitPct((p) => p);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+  // No resize handler needed — the split position is stored as a percentage
+  // and all CSS values (left, clipPath) are percentage-based, so the browser
+  // reflows correctly on resize without JS intervention. A setState no-op
+  // (p => p) would be bailed out by React anyway.
 
   return (
     <div style={{ marginTop: 12 }}>

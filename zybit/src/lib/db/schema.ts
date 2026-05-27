@@ -555,6 +555,7 @@ export const zybitFindings = pgTable(
     screenshotBeforeUrl: text('screenshot_before_url'),
     screenshotAfterUrl: text('screenshot_after_url'),
     fixPreviewTier: smallint('fix_preview_tier'),
+    fixRationale: text('fix_rationale'),
     fixModifications: jsonb('fix_modifications').$type<unknown | null>(),
     fixPreviewGeneratedAt: timestamp('fix_preview_generated_at', { withTimezone: true }),
     // Run context (most recent sync that emitted this finding)

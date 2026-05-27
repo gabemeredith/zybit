@@ -15,5 +15,6 @@
 ALTER TABLE "forge_findings" ADD COLUMN IF NOT EXISTS "screenshot_before_url" text;
 ALTER TABLE "forge_findings" ADD COLUMN IF NOT EXISTS "screenshot_after_url" text;
 ALTER TABLE "forge_findings" ADD COLUMN IF NOT EXISTS "fix_preview_tier" smallint;
+ALTER TABLE "forge_findings" ADD COLUMN IF NOT EXISTS "fix_rationale" text;
 ALTER TABLE "forge_findings" ADD COLUMN IF NOT EXISTS "fix_modifications" jsonb;
 ALTER TABLE "forge_findings" ADD COLUMN IF NOT EXISTS "fix_preview_generated_at" timestamptz;

@@ -351,6 +351,7 @@ async function persistFixPreview(
         screenshotBeforeUrl: preview.beforeUrl,
         screenshotAfterUrl: preview.afterUrl,
         fixPreviewTier: preview.tier,
+        fixRationale: preview.rationale,
         fixModifications: preview.modifications ?? null,
         fixPreviewGeneratedAt: preview.generatedAt,
         updatedAt: preview.generatedAt,

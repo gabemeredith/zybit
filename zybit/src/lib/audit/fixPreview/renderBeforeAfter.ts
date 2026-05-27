@@ -237,8 +237,9 @@ export function isVisiblyChanged(before: Buffer, after: Buffer): boolean {
     return true;
   }
   if (img1.width !== img2.width || img1.height !== img2.height) return true;
-  const diff = new Uint8Array(img1.width * img1.height * 4);
-  const changed = pixelmatch(img1.data, img2.data, diff, img1.width, img1.height, {
+  // Pass undefined for the diff buffer — we only need the changed-pixel count,
+  // not a diff image. Skips allocating ~4.6 MB per comparison (1280×900×4 bytes).
+  const changed = pixelmatch(img1.data, img2.data, undefined, img1.width, img1.height, {
     threshold: 0.1,
   });
   return changed > PIXEL_DIFF_THRESHOLD;
