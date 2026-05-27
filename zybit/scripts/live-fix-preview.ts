@@ -161,8 +161,11 @@ async function renderLiveToPng(
         await route.continue();
       });
     }
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 });
-    await page.waitForTimeout(800);
+    // `networkidle` hangs on real marketing sites (persistent analytics
+    // / chat sockets). `load` fires after DOMContentLoaded + onload, then
+    // we settle 1.5s for late-arriving fonts + JS-rendered hero blocks.
+    await page.goto(url, { waitUntil: 'load', timeout: 25_000 });
+    await page.waitForTimeout(1500);
     await page.screenshot({
       path: outPath,
       type: 'png',
@@ -200,10 +203,12 @@ async function processOneSite(url: string): Promise<void> {
   await fs.mkdir(outDir, { recursive: true });
   console.log(`\n── ${url}  →  ${outDir}`);
 
-  // 1. Fetch + parse snapshot.
-  const fetched = await fetchHtml(url, { respectRobots: false });
+  // 1. Fetch + parse snapshot. Default fetcher timeout (5s) is too aggressive
+  // for marketing pages with chunked transfer + redirects; widen to 20s so
+  // a slow CDN doesn't fail us before the bytes land.
+  const fetched = await fetchHtml(url, { respectRobots: false, timeoutMs: 20_000 });
   console.log(`  fetched ${fetched.byteSize} bytes from ${fetched.finalUrl}`);
-  const snap = await runSnapshot(url, { respectRobots: false });
+  const snap = await runSnapshot(url, { respectRobots: false, timeoutMs: 20_000 });
   console.log(`  parsed: ${snap.data.headings.length} headings, ${snap.data.ctas.length} ctas, ${snap.data.forms.length} forms`);
   await fs.writeFile(
     path.join(outDir, 'snapshot.json'),
@@ -234,7 +239,14 @@ async function processOneSite(url: string): Promise<void> {
 
   // 2. Browser session — reused across both renders + every finding.
   const browser = await chromium.launch({ executablePath: CHROMIUM_PATH });
-  const ctx = await browser.newContext({ viewport: VIEWPORT });
+  // `ignoreHTTPSErrors` for sandbox cert quirks; UA that doesn't scream
+  // automation so anti-bot middleware doesn't 403 us.
+  const ctx = await browser.newContext({
+    viewport: VIEWPORT,
+    ignoreHTTPSErrors: true,
+    userAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  });
 
   // Pre-render the "before" once — live navigation so styles + fonts
   // hydrate the same way the prospect sees the page.
