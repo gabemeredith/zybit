@@ -89,20 +89,42 @@ export const linkTextGeneric: AuditRule = {
       const evidence: AuditFindingEvidence[] = [];
 
       if (genericLinks.length > 0) {
+        // Distinguish "anchors with no destination signal in their text"
+        // from "anchors whose text repeats on the page." Both count toward
+        // the title's total, but they're different patterns the PM can
+        // act on separately. Label is verbose-but-unambiguous so the
+        // evidence row clearly maps to a subset of the title's total.
+        const distinctPhrases = [...new Set(genericLinks.map((c) => `"${c.text.trim()}"`))];
         evidence.push({
-          label: 'Generic link texts',
+          label: 'Anchors with vague text ("read more", "click here", …)',
           value: genericLinks.length,
-          context: [...new Set(genericLinks.map((c) => `"${c.text.trim()}"`))]
-            .slice(0, 5)
-            .join(', '),
+          context: `${distinctPhrases.length} distinct phrase${distinctPhrases.length === 1 ? '' : 's'}: ${distinctPhrases.slice(0, 5).join(', ')}`,
         });
       }
 
-      for (const group of highFrequency.slice(0, 2)) {
+      // Surface up to 5 high-frequency groups (was previously 2). The title's
+      // total used to mention 21 instances while the visible evidence only
+      // accounted for ~14 — the missing rows were the 3rd+ high-frequency
+      // groups silently dropped from evidence. Widening the slice makes the
+      // title's number fully explained by what the PM can see.
+      const VISIBLE_REPEAT_GROUPS = 5;
+      const visibleGroups = highFrequency.slice(0, VISIBLE_REPEAT_GROUPS);
+      for (const group of visibleGroups) {
         evidence.push({
           label: `Repeated link text "${group[0].text.trim()}"`,
           value: group.length,
           context: `appears ${group.length}× — screen reader users hear the same announcement each time`,
+        });
+      }
+      // Account for any high-frequency groups beyond the slice in a single
+      // summary row so the title's total still reconciles with the evidence.
+      const hiddenGroups = highFrequency.slice(VISIBLE_REPEAT_GROUPS);
+      if (hiddenGroups.length > 0) {
+        const hiddenInstances = hiddenGroups.reduce((s, g) => s + g.length, 0);
+        evidence.push({
+          label: `Other repeated phrases`,
+          value: hiddenInstances,
+          context: `${hiddenGroups.length} additional phrase${hiddenGroups.length === 1 ? '' : 's'} repeat 3+ times`,
         });
       }
 
@@ -159,7 +181,7 @@ export const linkTextGeneric: AuditRule = {
         confidence: 0.88,
         priorityScore: 0.35,
         pathRef: snapshot.pathRef,
-        title: `Generic link text on ${snapshot.pathRef} (${totalFlagged} instance${totalFlagged > 1 ? 's' : ''})`,
+        title: `${totalFlagged} link${totalFlagged > 1 ? 's' : ''} on ${snapshot.pathRef} use vague or repeated text`,
         summary: `${snapshot.pathRef} has ${totalFlagged} link${totalFlagged > 1 ? 's' : ''} with generic text. Screen reader users navigating by links hear a list of "click here", "read more", and "learn more" with no context about the destination. Search engines similarly lose link-destination signals when anchor text is uninformative.`,
         recommendation: [
           `Replace generic link text with descriptive text that identifies the destination: "Read the pricing guide" instead of "Read more", "Get started with the free plan" instead of "Get started".`,
