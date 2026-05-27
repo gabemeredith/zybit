@@ -37,7 +37,7 @@ import { runUrlAudit } from '../lighthouse/lib/runner/runUrlAudit.ts';
 import { getDb } from '../src/lib/db/client.ts';
 import { zybitFindings } from '../src/lib/db/schema.ts';
 import { renderAuditReportEmailHtml } from '../src/lib/email/auditReportEmail.ts';
-import { pickTopFindings } from '../src/lib/audit/pickTopFindings.ts';
+import { pickTopFindings, collapseDuplicateFindings } from '../src/lib/audit/pickTopFindings.ts';
 
 // Curated mix: well-designed SaaS (Stripe), product-led SaaS that has
 // historically tripped CTA bloat (Linear), developer platform (Vercel),
@@ -149,7 +149,8 @@ async function auditOne(url) {
     try { return new URL(url).pathname || '/'; }
     catch { return '/'; }
   })();
-  const { top: top4, ranked } = pickTopFindings(dbFindings, submittedPath);
+  const dedupedFindings = collapseDuplicateFindings(dbFindings, submittedPath);
+  const { top: top4, ranked } = pickTopFindings(dedupedFindings, submittedPath);
 
   // Diversity diagnostic — surfaces issue #1 (page selection) at-a-glance.
   const top4Paths = [...new Set(top4.map((f) => f.pathRef))];

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isOffConversionPath, localeNormalizedPath, pickTopFindings } from '../pickTopFindings';
+import {
+  collapseDuplicateFindings,
+  isOffConversionPath,
+  localeNormalizedPath,
+  pickTopFindings,
+} from '../pickTopFindings';
 
 function f(
   id: string,
@@ -8,6 +13,17 @@ function f(
   priorityScore: number,
 ) {
   return { id, ruleId, pathRef, priorityScore };
+}
+
+// Helper for collapse tests — adds evidence shape.
+function fe(
+  id: string,
+  ruleId: string,
+  pathRef: string | null,
+  priorityScore: number,
+  evidence: Array<{ label: string; value: string | number; context?: string }>,
+) {
+  return { id, ruleId, pathRef, priorityScore, evidence };
 }
 
 describe('isOffConversionPath', () => {
@@ -181,6 +197,134 @@ describe('pickTopFindings', () => {
     ];
     const { top } = pickTopFindings(findings, '/');
     expect(top.map((x) => x.id)).toEqual(['gb', 'pricing']);
+  });
+});
+
+describe('collapseDuplicateFindings', () => {
+  it('collapses ≥3 identical findings into one with an "Also affects" row', () => {
+    // Linear case: 8 pages × "no H1" finding under one rule.
+    const linearLikeEvidence = [{ label: 'H1 headings', value: 0 }];
+    const findings = [
+      fe('a', 'heading-hierarchy-jump', '/billing', 0.5, linearLikeEvidence),
+      fe('b', 'heading-hierarchy-jump', '/agent', 0.5, linearLikeEvidence),
+      fe('c', 'heading-hierarchy-jump', '/about-us', 0.5, linearLikeEvidence),
+      fe('d', 'heading-hierarchy-jump', '/case-studies', 0.5, linearLikeEvidence),
+    ];
+    const out = collapseDuplicateFindings(findings, '/');
+    expect(out).toHaveLength(1);
+    const ev = out[0].evidence as Array<{ label: string; value: string }>;
+    const alsoAffects = ev.find((r) => r.label === 'Also affects');
+    expect(alsoAffects).toBeDefined();
+    // Representative is whichever was picked; the other 3 paths land in "Also affects"
+    expect(alsoAffects!.value.split(',').map((s) => s.trim()).length).toBe(3);
+  });
+
+  it('prefers the submitted path as the representative', () => {
+    const ev = [{ label: 'Meta description', value: 'absent' }];
+    const findings = [
+      fe('billing', 'missing-meta', '/billing', 0.5, ev),
+      fe('agent', 'missing-meta', '/agent', 0.5, ev),
+      fe('home', 'missing-meta', '/', 0.5, ev),
+    ];
+    const out = collapseDuplicateFindings(findings, '/');
+    expect(out).toHaveLength(1);
+    expect(out[0].pathRef).toBe('/');
+  });
+
+  it('leaves groups of <3 unchanged', () => {
+    const ev = [{ label: 'H1 headings', value: 0 }];
+    const findings = [
+      fe('a', 'heading-hierarchy-jump', '/billing', 0.5, ev),
+      fe('b', 'heading-hierarchy-jump', '/agent', 0.5, ev),
+    ];
+    const out = collapseDuplicateFindings(findings, '/');
+    expect(out).toHaveLength(2);
+  });
+
+  it('groups by ruleId AND evidence — different rules with same evidence do not collapse', () => {
+    const ev = [{ label: 'H1 headings', value: 0 }];
+    const findings = [
+      fe('a', 'rule-1', '/x', 0.5, ev),
+      fe('b', 'rule-1', '/y', 0.5, ev),
+      fe('c', 'rule-1', '/z', 0.5, ev),
+      fe('d', 'rule-2', '/x', 0.5, ev),
+      fe('e', 'rule-2', '/y', 0.5, ev),
+      fe('g', 'rule-2', '/z', 0.5, ev),
+    ];
+    const out = collapseDuplicateFindings(findings, '/');
+    expect(out).toHaveLength(2); // one rep per ruleId
+  });
+
+  it('different evidence values under same ruleId do NOT collapse', () => {
+    // Stripe's link-text-generic on /fr-ca says "Démarrer maintenant",
+    // on /es says "Empieza ahora" — different evidence values, shouldn't dedup.
+    const findings = [
+      fe('frca', 'link-text-generic', '/fr-ca', 0.35, [
+        { label: 'Repeated link text "Démarrer maintenant"', value: 4 },
+      ]),
+      fe('es', 'link-text-generic', '/es', 0.35, [
+        { label: 'Repeated link text "Empieza ahora"', value: 4 },
+      ]),
+      fe('home', 'link-text-generic', '/', 0.35, [
+        { label: 'Repeated link text "Get started"', value: 4 },
+      ]),
+    ];
+    const out = collapseDuplicateFindings(findings, '/');
+    expect(out).toHaveLength(3);
+  });
+
+  it('truncates "Also affects" listing past 5 paths with a "+ N more" tail', () => {
+    const ev = [{ label: 'H1 headings', value: 0 }];
+    const findings = Array.from({ length: 10 }, (_, i) =>
+      fe(`f${i}`, 'rule-1', `/page-${i}`, 0.5, ev),
+    );
+    const out = collapseDuplicateFindings(findings, '/');
+    expect(out).toHaveLength(1);
+    const alsoAffects = (out[0].evidence as Array<{ label: string; value: string }>)
+      .find((r) => r.label === 'Also affects')!;
+    expect(alsoAffects.value).toMatch(/\+ ?4 more/);
+  });
+
+  it('collapses findings where rule embeds pathRef in evidence (missing-canonical-url shape)', () => {
+    // `missing-canonical-url` emits `{ label: 'Page path', value: pathRef }`
+    // so naive (label, value) signatures would think every page is unique.
+    // Filter the pathRef out of the signature before grouping.
+    const findings = [
+      fe('a', 'missing-canonical-url', '/compare', 0.25, [
+        { label: 'Canonical tag', value: 'absent' },
+        { label: 'Page path', value: '/compare' },
+      ]),
+      fe('b', 'missing-canonical-url', '/company', 0.25, [
+        { label: 'Canonical tag', value: 'absent' },
+        { label: 'Page path', value: '/company' },
+      ]),
+      fe('c', 'missing-canonical-url', '/champions', 0.25, [
+        { label: 'Canonical tag', value: 'absent' },
+        { label: 'Page path', value: '/champions' },
+      ]),
+    ];
+    const out = collapseDuplicateFindings(findings, '/');
+    expect(out).toHaveLength(1);
+  });
+
+  it('end-to-end: collapse → cascade → top-4 has 4 distinct rules', () => {
+    // Simulates Linear's pre-fix shape: 8 pages × 3 rules. Expect after
+    // collapse + cascade: 3 distinct rules in top-4 (or 4 if a 4th rule exists).
+    const evH1 = [{ label: 'H1 headings', value: 0 }];
+    const evMeta = [{ label: 'Meta description', value: 'absent' }];
+    const evCanonical = [{ label: 'Canonical tag', value: 'absent' }];
+    const paths = ['/billing', '/agent', '/about-us', '/compliance', '/compare', '/company', '/champions', '/case-studies'];
+    const findings = [
+      ...paths.map((p, i) => fe(`h${i}`, 'heading-hierarchy-jump', p, 0.5, evH1)),
+      ...paths.map((p, i) => fe(`m${i}`, 'missing-meta-description', p, 0.45, evMeta)),
+      ...paths.map((p, i) => fe(`c${i}`, 'missing-canonical-url', p, 0.25, evCanonical)),
+    ];
+    const deduped = collapseDuplicateFindings(findings, '/');
+    expect(deduped).toHaveLength(3); // 3 rules → 3 representatives
+    const { top } = pickTopFindings(deduped, '/');
+    expect(top).toHaveLength(3);
+    const ruleIds = new Set(top.map((x) => x.ruleId));
+    expect(ruleIds.size).toBe(3);
   });
 });
 

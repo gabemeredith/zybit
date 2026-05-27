@@ -24,7 +24,16 @@ export interface FindingForRanking {
   priorityScore: number;
 }
 
+/**
+ * Shape needed for site-template dedup. Subset of the full finding row —
+ * just the fields needed to build a stable evidence signature.
+ */
+export interface FindingForCollapse extends FindingForRanking {
+  evidence: unknown;
+}
+
 const SUBMITTED_PAGE_BOOST = 1.5;
+const DUPLICATE_GROUP_THRESHOLD = 3;
 
 /**
  * Path patterns we consider off-conversion-surface. The list is built from
@@ -92,6 +101,127 @@ export function localeNormalizedPath(pathRef: string | null | undefined): string
   if (!pathRef) return '/';
   const stripped = pathRef.replace(LOCALE_SEGMENT_RE, '');
   return stripped === '' ? '/' : stripped;
+}
+
+/**
+ * Build a stable signature for a finding's evidence, used as the dedup
+ * key alongside ruleId. Only the (label, value) pairs are keyed.
+ *
+ * The `pathRef` argument is the finding's own path — when an evidence
+ * value equals it, the row is dropped from the signature. Some rules
+ * embed the path in their own evidence (e.g. `missing-canonical-url`
+ * emits `{ label: 'Page path', value: snapshot.pathRef }`), which
+ * would otherwise make every page's finding signature unique and defeat
+ * the dedup. Filtering by the finding's own pathRef catches that
+ * pattern without needing a per-rule label allowlist.
+ *
+ * The `context` field is allowed to vary because rules sometimes embed
+ * pathRef-derived prose ("No H1 found on `/billing`") — same reasoning.
+ *
+ * Non-array / unrecognized evidence shapes return the empty signature,
+ * which still groups identically-shaped "no evidence" findings together.
+ */
+function evidenceSignature(evidence: unknown, pathRef: string | null): string {
+  if (!Array.isArray(evidence)) return '';
+  return evidence
+    .map((e) => {
+      if (!e || typeof e !== 'object') return '';
+      const label = String((e as { label?: unknown }).label ?? '');
+      const value = String((e as { value?: unknown }).value ?? '');
+      if (pathRef && value === pathRef) return '';
+      return `${label}=${value}`;
+    })
+    .filter(Boolean)
+    .sort()
+    .join('|');
+}
+
+/**
+ * Pick the representative for a duplicate group. Prefers the submitted
+ * path so the PM sees their landing page as the canonical instance, then
+ * highest priorityScore, then `/` over any other path, then alphabetical
+ * for determinism.
+ */
+function pickRepresentative<T extends FindingForCollapse>(
+  group: readonly T[],
+  submittedPath: string,
+): T {
+  const submitted = group.find((f) => f.pathRef === submittedPath);
+  if (submitted) return submitted;
+  const sorted = [...group].sort((a, b) => {
+    if (b.priorityScore !== a.priorityScore) return b.priorityScore - a.priorityScore;
+    if (a.pathRef === '/') return -1;
+    if (b.pathRef === '/') return 1;
+    return (a.pathRef ?? '').localeCompare(b.pathRef ?? '');
+  });
+  return sorted[0];
+}
+
+/**
+ * Build the "Also affects" evidence row appended to the representative's
+ * existing evidence. Truncates long path lists so the email card stays
+ * readable.
+ */
+function buildAffectsRow(otherPaths: readonly string[]): { label: string; value: string; context?: string } {
+  const MAX_PATHS_SHOWN = 5;
+  const head = otherPaths.slice(0, MAX_PATHS_SHOWN).join(', ');
+  const tail = otherPaths.length > MAX_PATHS_SHOWN
+    ? ` (+${otherPaths.length - MAX_PATHS_SHOWN} more)`
+    : '';
+  return {
+    label: 'Also affects',
+    value: `${head}${tail}`,
+    context: `Same issue on ${otherPaths.length} other page${otherPaths.length === 1 ? '' : 's'} sharing this template`,
+  };
+}
+
+/**
+ * Collapse template-duplicate findings before the diversity cascade runs.
+ *
+ * The schema `findingPk(siteId, ruleId, pathRef)` allows one row per
+ * (rule, path), so a site whose 8 pages share a template missing the same
+ * three HTML elements emits 24 findings. The handover §16.5 called this
+ * out as the Linear case ("affects 8 pages" should be one finding, not
+ * eight). Collapse here means: when ≥ 3 findings under one ruleId share
+ * the same evidence signature, keep the representative (homepage-favored)
+ * and append an "Also affects: /a, /b, /c…" evidence row.
+ *
+ * Returns a new array; never mutates the input. Findings with no
+ * duplicate group (or with fewer than the threshold's worth of duplicates)
+ * pass through unchanged.
+ */
+export function collapseDuplicateFindings<T extends FindingForCollapse>(
+  findings: readonly T[],
+  submittedPath: string,
+): T[] {
+  const groups = new Map<string, T[]>();
+  for (const f of findings) {
+    const key = `${f.ruleId}|${evidenceSignature(f.evidence, f.pathRef)}`;
+    const bucket = groups.get(key) ?? [];
+    bucket.push(f);
+    groups.set(key, bucket);
+  }
+  const out: T[] = [];
+  for (const group of groups.values()) {
+    if (group.length < DUPLICATE_GROUP_THRESHOLD) {
+      out.push(...group);
+      continue;
+    }
+    const rep = pickRepresentative(group, submittedPath);
+    const otherPaths = group
+      .filter((f) => f.id !== rep.id)
+      .map((f) => f.pathRef ?? '/');
+    const existingEvidence = Array.isArray(rep.evidence) ? rep.evidence : [];
+    const augmented = {
+      ...rep,
+      evidence: [...existingEvidence, buildAffectsRow(otherPaths)],
+    } as T;
+    out.push(augmented);
+  }
+  // Preserve a sorted-by-score order so callers that don't re-sort still
+  // get sensible iteration. The cascade re-sorts anyway.
+  out.sort((a, b) => b.priorityScore - a.priorityScore);
+  return out;
 }
 
 /**
