@@ -1,0 +1,363 @@
+/**
+ * Orchestrator for the public-audit before/after fix-preview pipeline.
+ *
+ * Three-tier ladder, per finding. Each tier degrades to the next on
+ * failure so the audit never ships without *some* visual:
+ *
+ *   Tier 1 — deterministic mutation:
+ *     suggestAuditFix() ─► VariantModification[] ─► applyModifications()
+ *     ─► Browserless before+after render. The "after" is a real render of
+ *        a real fix; the rationale is the model's PM-readable one-liner.
+ *
+ *   Tier 2 — vision inpaint:
+ *     The before screenshot is sent to gemini-2.5-flash-image-preview with
+ *     a brand-tokens + finding-prescription prompt; the model edits the
+ *     offending region of the real screenshot. Brand consistency is preserved
+ *     by construction because everything outside the edit is the real site.
+ *
+ *   Tier 3 — annotated-before fallback (already shipped):
+ *     `renderFindingScreenshot` runs in the existing path; the audit shows
+ *     the highlighted "before" only with a "Sign up to see the fix" CTA.
+ *     This module doesn't run Tier 3 itself — it returns `null` and the
+ *     caller leaves the legacy `screenshotUrl` in place.
+ *
+ * Concurrency: the orchestrator processes one finding at a time. Browserless
+ * connections aren't cheap on the cost side and they're rate-limited on the
+ * Browserless side; we stay sequential to avoid surprises.
+ */
+
+import { and, eq } from 'drizzle-orm';
+import { getDb } from '@/lib/db/client';
+import { phase1Sites, zybitFindings } from '@/lib/db/schema';
+import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
+import type { VariantModification } from '@/lib/experiments/types';
+import { suggestAuditFix as defaultSuggestAuditFix } from './auditFixAdvisor';
+import {
+  renderBeforeAfter as defaultRenderBeforeAfter,
+  renderBeforeOnly as defaultRenderBeforeOnly,
+} from './renderBeforeAfter';
+import { inpaintFixAfter as defaultInpaintFixAfter } from './visionInpaint';
+import type { FixPreview, FixPreviewOutcome } from './types';
+
+/** A finding row, narrowed to the fields the orchestrator needs. */
+export interface FindingForFixPreview {
+  id: string;
+  ruleId: string;
+  title: string;
+  pathRef: string | null;
+  prescription: {
+    whyItMatters?: string;
+    whatToChange: string;
+    whyItWorks: string;
+    experimentVariantDescription: string;
+  } | null;
+}
+
+export interface GenerateFixPreviewsArgs {
+  organizationId: string;
+  siteId: string;
+  /** The audit URL — `https://<domain>` or w/ a path; used to construct per-pathRef URLs. */
+  auditUrl: string;
+  findings: FindingForFixPreview[];
+  /** Hard cap. Top findings only — the lead magnet's wow surface is small. */
+  maxFindings?: number;
+}
+
+/**
+ * Injectable dependencies. Production code leaves these undefined and the
+ * orchestrator picks up the real implementations; tests substitute stubs
+ * so the tier-fallback ladder can be exercised without Browserless +
+ * Gemini + Neon.
+ */
+export interface FixPreviewDeps {
+  suggestAuditFix?: typeof import('./auditFixAdvisor').suggestAuditFix;
+  renderBeforeAfter?: typeof import('./renderBeforeAfter').renderBeforeAfter;
+  renderBeforeOnly?: typeof import('./renderBeforeAfter').renderBeforeOnly;
+  inpaintFixAfter?: typeof import('./visionInpaint').inpaintFixAfter;
+  /** Override the domain lookup for tests. */
+  lookupDomain?: (organizationId: string, siteId: string) => Promise<string | null>;
+  /** Override the design-snapshot lookup for tests. */
+  lookupDesign?: (
+    organizationId: string,
+    siteId: string,
+    pathRef: string,
+  ) => Promise<{ designTokens: Record<string, unknown> | null; cssSystem: string | null } | null>;
+  /** Override persistence for tests. Pass `noop` to skip the DB write. */
+  persist?: (
+    organizationId: string,
+    preview: FixPreview,
+  ) => Promise<void>;
+}
+
+const DEFAULT_MAX = 4;
+
+export async function generateFixPreviews(
+  args: GenerateFixPreviewsArgs,
+  deps: FixPreviewDeps = {},
+): Promise<FixPreviewOutcome[]> {
+  if (process.env.AUDIT_FIX_PREVIEW_ENABLED !== '1') {
+    return args.findings.map((f) => ({
+      findingId: f.id,
+      preview: null,
+      reason: 'tier3-fallback',
+    }));
+  }
+
+  const cap = args.maxFindings ?? DEFAULT_MAX;
+  const targets = args.findings.slice(0, cap);
+  if (targets.length === 0) return [];
+
+  const suggest = deps.suggestAuditFix ?? defaultSuggestAuditFix;
+  const renderBA = deps.renderBeforeAfter ?? defaultRenderBeforeAfter;
+  const renderBO = deps.renderBeforeOnly ?? defaultRenderBeforeOnly;
+  const inpaint = deps.inpaintFixAfter ?? defaultInpaintFixAfter;
+  const persist = deps.persist ?? persistFixPreview;
+
+  const lookupDomain = deps.lookupDomain ?? defaultLookupDomain;
+  const lookupDesign = deps.lookupDesign ?? defaultLookupDesign;
+
+  const domain = await lookupDomain(args.organizationId, args.siteId);
+
+  // Re-derive the URL scheme from the original audit URL so the preview
+  // hits the same protocol the prospect typed. Defaults to https.
+  let scheme = 'https';
+  try {
+    scheme = new URL(args.auditUrl).protocol.replace(':', '') || 'https';
+  } catch {
+    /* keep default */
+  }
+
+  const outcomes: FixPreviewOutcome[] = [];
+
+  for (const finding of targets) {
+    if (!finding.pathRef || !finding.prescription || !domain) {
+      outcomes.push({ findingId: finding.id, preview: null, reason: 'no-html' });
+      continue;
+    }
+
+    const originUrl = `${scheme}://${domain}${finding.pathRef}`;
+    const design = await lookupDesign(args.organizationId, args.siteId, finding.pathRef);
+
+    const outcome = await runOneFinding(
+      {
+        finding,
+        originUrl,
+        designTokens: design?.designTokens ?? null,
+        cssSystem: design?.cssSystem ?? null,
+      },
+      { suggest, renderBA, renderBO, inpaint },
+    );
+    outcomes.push(outcome);
+
+    if (outcome.preview) {
+      await persist(args.organizationId, outcome.preview);
+    }
+  }
+
+  return outcomes;
+}
+
+async function defaultLookupDomain(
+  organizationId: string,
+  siteId: string,
+): Promise<string | null> {
+  const db = getDb();
+  const siteRows = await db
+    .select({ domain: phase1Sites.domain })
+    .from(phase1Sites)
+    .where(
+      and(
+        eq(phase1Sites.id, siteId),
+        eq(phase1Sites.organizationId, organizationId),
+      ),
+    )
+    .limit(1);
+  return siteRows[0]?.domain ?? null;
+}
+
+async function defaultLookupDesign(
+  organizationId: string,
+  siteId: string,
+  pathRef: string,
+): Promise<{ designTokens: Record<string, unknown> | null; cssSystem: string | null } | null> {
+  const row = await createDesignSnapshotRepository().findBySitePath(
+    organizationId,
+    siteId,
+    pathRef,
+  );
+  if (!row) return null;
+  return { designTokens: row.designTokens ?? null, cssSystem: row.cssSystem ?? null };
+}
+
+interface RunOneArgs {
+  finding: FindingForFixPreview;
+  originUrl: string;
+  designTokens: Record<string, unknown> | null;
+  cssSystem: string | null;
+}
+
+interface RunOneDeps {
+  suggest: typeof defaultSuggestAuditFix;
+  renderBA: typeof defaultRenderBeforeAfter;
+  renderBO: typeof defaultRenderBeforeOnly;
+  inpaint: typeof defaultInpaintFixAfter;
+}
+
+async function runOneFinding(
+  args: RunOneArgs,
+  deps: RunOneDeps,
+): Promise<FixPreviewOutcome> {
+  const prescription = args.finding.prescription;
+  if (!prescription) {
+    return { findingId: args.finding.id, preview: null, reason: 'no-html' };
+  }
+
+  // Tier 1 — ask the audit advisor for mods, then render before+after.
+  // The vision channel is fed by a fresh before render (also reused for
+  // Tier 2 if Tier 1 declines). We don't currently feed a screenshot into
+  // the *first* advisor call to save one Browserless trip; the model
+  // gets the design tokens + CSS system + finding prescription, which is
+  // the input shape the production advisor uses successfully today.
+  const suggestion = await deps.suggest({
+    finding: {
+      ruleId: args.finding.ruleId,
+      title: args.finding.title,
+      whatToChange: prescription.whatToChange,
+      whyItWorks: prescription.whyItWorks,
+      experimentVariantDescription: prescription.experimentVariantDescription,
+    },
+    designTokens: args.designTokens,
+    cssSystem: args.cssSystem,
+    availableSelectors: [],
+    ctaVocabulary: [],
+    beforeScreenshotBase64: null,
+  });
+
+  if (suggestion && suggestion.modifications.length > 0) {
+    const tier1 = await runTier1(
+      {
+        findingId: args.finding.id,
+        originUrl: args.originUrl,
+        modifications: suggestion.modifications,
+        rationale: suggestion.rationale,
+      },
+      deps.renderBA,
+    );
+    if (tier1) {
+      return { findingId: args.finding.id, preview: tier1, reason: 'ok' };
+    }
+  }
+
+  // Tier 2 — inpaint. We need a before render to feed the image model.
+  const beforeOnly = await deps.renderBO({
+    findingId: args.finding.id,
+    originUrl: args.originUrl,
+  });
+  if (!beforeOnly) {
+    return { findingId: args.finding.id, preview: null, reason: 'no-html' };
+  }
+  const tier2 = await deps.inpaint({
+    findingId: args.finding.id,
+    beforeBuffer: beforeOnly.beforeBuffer,
+    beforeUrl: beforeOnly.beforeUrl,
+    finding: {
+      ruleId: args.finding.ruleId,
+      title: args.finding.title,
+      whatToChange: prescription.whatToChange,
+      whyItWorks: prescription.whyItWorks,
+    },
+    designTokens: args.designTokens,
+  });
+  if (tier2) {
+    return {
+      findingId: args.finding.id,
+      preview: {
+        findingId: args.finding.id,
+        tier: 2,
+        beforeUrl: tier2.beforeUrl,
+        afterUrl: tier2.afterUrl,
+        modifications: null,
+        rationale: tier2.rationale,
+        generatedAt: new Date(),
+      },
+      reason: 'ok',
+    };
+  }
+
+  // Tier 2 inpaint failed; surface the before-only URL as a tier-3 result.
+  // The caller renders it as the legacy annotated-before screenshot.
+  return {
+    findingId: args.finding.id,
+    preview: {
+      findingId: args.finding.id,
+      tier: 3,
+      beforeUrl: beforeOnly.beforeUrl,
+      afterUrl: null,
+      modifications: null,
+      rationale: null,
+      generatedAt: new Date(),
+    },
+    reason: 'inpaint-failed',
+  };
+}
+
+interface Tier1Args {
+  findingId: string;
+  originUrl: string;
+  modifications: VariantModification[];
+  rationale: string | null;
+}
+
+async function runTier1(
+  args: Tier1Args,
+  render: typeof defaultRenderBeforeAfter,
+): Promise<FixPreview | null> {
+  const pair = await render({
+    findingId: args.findingId,
+    originUrl: args.originUrl,
+    modifications: args.modifications,
+  });
+  if (!pair) return null;
+  return {
+    findingId: args.findingId,
+    tier: 1,
+    beforeUrl: pair.beforeUrl,
+    afterUrl: pair.afterUrl,
+    modifications: args.modifications,
+    rationale: args.rationale,
+    generatedAt: new Date(),
+  };
+}
+
+async function persistFixPreview(
+  organizationId: string,
+  preview: FixPreview,
+): Promise<void> {
+  try {
+    const db = getDb();
+    await db
+      .update(zybitFindings)
+      .set({
+        screenshotBeforeUrl: preview.beforeUrl,
+        screenshotAfterUrl: preview.afterUrl,
+        fixPreviewTier: preview.tier,
+        fixModifications: preview.modifications ?? null,
+        fixPreviewGeneratedAt: preview.generatedAt,
+        updatedAt: preview.generatedAt,
+      })
+      .where(
+        and(
+          eq(zybitFindings.id, preview.findingId),
+          eq(zybitFindings.organizationId, organizationId),
+        ),
+      );
+  } catch (err) {
+    // Persistence failure is non-fatal — the URLs are still in the
+    // returned outcome and the caller can inline them on
+    // `public_audits.findings` without the canonical zybitFindings row.
+    console.warn('[generateFixPreviews] persist failed', {
+      findingId: preview.findingId,
+      error: String(err),
+    });
+  }
+}

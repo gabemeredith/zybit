@@ -13,6 +13,7 @@ import { captureAuditScreenshot, runVisionPass } from '@/lib/audit/visionPass';
 import { validatePublicUrl } from '@/lib/audit/urlValidator';
 import { deriveIndustry } from '@/lib/audit/deriveIndustry';
 import { recordAuditUserActivity } from '@/lib/audit/recordAuditUserActivity';
+import { generateFixPreviews } from '@/lib/audit/fixPreview';
 import { runUrlAudit } from '../../../../../../lighthouse/lib/runner/runUrlAudit';
 import { eq, desc } from 'drizzle-orm';
 
@@ -310,20 +311,76 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     .orderBy(desc(zybitFindings.priorityScore))
     .limit(50);
 
-  const topFindings: AuditFindingForEmail[] = dbFindings.slice(0, 4).map((f, i) => ({
-    id: f.id,
-    rank: i + 1,
-    severity: severityFromScore(f.priorityScore),
-    confidence: f.confidence,
-    ruleId: f.ruleId,
-    title: f.title,
-    whyItMatters: f.prescription?.whyItMatters ?? null,
-    evidence: (Array.isArray(f.evidence) ? f.evidence : [])
-      .map((e: { label: string; value: string | number }) => `${e.label}: ${e.value}`)
-      .join(' · '),
-    whatToChange: f.prescription?.whatToChange ?? f.recommendation?.[0] ?? '',
-    estimatedImpactMonthlyUsd: f.impactEstimate?.unit === 'usd' ? Number(f.impactEstimate.value) : null,
-  }));
+  const top4Findings = dbFindings.slice(0, 4);
+
+  // Generate before/after fix previews for the top findings. Fail-soft —
+  // a thrown error or an empty result leaves `topFindings` without the
+  // visual pair and the email card degrades to text-only. The
+  // orchestrator is no-op'd when `AUDIT_FIX_PREVIEW_ENABLED !== '1'`.
+  const fixPreviewsByFindingId = new Map<
+    string,
+    { beforeUrl: string; afterUrl: string | null; tier: 1 | 2 | 3; rationale: string | null }
+  >();
+  try {
+    const outcomes = await generateFixPreviews({
+      organizationId: generateResult.organizationId,
+      siteId,
+      auditUrl: audit.url,
+      findings: top4Findings.map((f) => ({
+        id: f.id,
+        ruleId: f.ruleId,
+        title: f.title,
+        pathRef: f.pathRef,
+        prescription: f.prescription
+          ? {
+              ...(f.prescription.whyItMatters !== undefined
+                ? { whyItMatters: f.prescription.whyItMatters }
+                : {}),
+              whatToChange: f.prescription.whatToChange,
+              whyItWorks: f.prescription.whyItWorks,
+              experimentVariantDescription: f.prescription.experimentVariantDescription,
+            }
+          : null,
+      })),
+    });
+    for (const outcome of outcomes) {
+      if (outcome.preview) {
+        fixPreviewsByFindingId.set(outcome.findingId, {
+          beforeUrl: outcome.preview.beforeUrl,
+          afterUrl: outcome.preview.afterUrl,
+          tier: outcome.preview.tier,
+          rationale: outcome.preview.rationale,
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[audit/run] generateFixPreviews threw', {
+      auditId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  const topFindings: AuditFindingForEmail[] = top4Findings.map((f, i) => {
+    const preview = fixPreviewsByFindingId.get(f.id) ?? null;
+    return {
+      id: f.id,
+      rank: i + 1,
+      severity: severityFromScore(f.priorityScore),
+      confidence: f.confidence,
+      ruleId: f.ruleId,
+      title: f.title,
+      whyItMatters: f.prescription?.whyItMatters ?? null,
+      evidence: (Array.isArray(f.evidence) ? f.evidence : [])
+        .map((e: { label: string; value: string | number }) => `${e.label}: ${e.value}`)
+        .join(' · '),
+      whatToChange: f.prescription?.whatToChange ?? f.recommendation?.[0] ?? '',
+      estimatedImpactMonthlyUsd: f.impactEstimate?.unit === 'usd' ? Number(f.impactEstimate.value) : null,
+      screenshotBeforeUrl: preview?.beforeUrl ?? null,
+      screenshotAfterUrl: preview?.afterUrl ?? null,
+      fixPreviewTier: preview?.tier ?? null,
+      fixRationale: preview?.rationale ?? null,
+    };
+  });
 
   // Vision pass — non-fatal, best-effort
   const screenshot = await captureAuditScreenshot(audit.url);
