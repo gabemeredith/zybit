@@ -36,22 +36,39 @@ function mintSignupLink(email: string, auditId: string): string {
 
 // Mirrors the trimmed finding shape rendered by /audit/[id] — title +
 // severity + the human-readable summary. Anything richer (full evidence,
-// internal scores) stays server-side.
+// internal scores) stays server-side. `screenshotBefore/AfterUrl` and
+// `fixPreviewTier` come from `generateFixPreviews` (lib/audit/fixPreview)
+// and let the audit page render the before/after swipe inline.
 type PublicFinding = {
   title: string;
   severity: string;
   whyItMatters?: string;
+  screenshotBeforeUrl?: string;
+  screenshotAfterUrl?: string;
+  fixPreviewTier?: 1 | 2 | 3;
+  fixRationale?: string;
 };
 
 function pickPublicFindings(raw: unknown): PublicFinding[] {
   if (!Array.isArray(raw)) return [];
   return raw.slice(0, 2).map((f) => {
     const r = (f ?? {}) as Record<string, unknown>;
-    return {
+    const out: PublicFinding = {
       title: typeof r.title === 'string' ? r.title : 'Finding',
       severity: typeof r.severity === 'string' ? r.severity : 'medium',
-      whyItMatters: typeof r.whyItMatters === 'string' ? r.whyItMatters : undefined,
     };
+    if (typeof r.whyItMatters === 'string') out.whyItMatters = r.whyItMatters;
+    if (typeof r.screenshotBeforeUrl === 'string') {
+      out.screenshotBeforeUrl = r.screenshotBeforeUrl;
+    }
+    if (typeof r.screenshotAfterUrl === 'string') {
+      out.screenshotAfterUrl = r.screenshotAfterUrl;
+    }
+    if (r.fixPreviewTier === 1 || r.fixPreviewTier === 2 || r.fixPreviewTier === 3) {
+      out.fixPreviewTier = r.fixPreviewTier;
+    }
+    if (typeof r.fixRationale === 'string') out.fixRationale = r.fixRationale;
+    return out;
   });
 }
 

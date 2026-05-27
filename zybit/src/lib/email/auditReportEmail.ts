@@ -36,6 +36,19 @@ export interface AuditFindingForEmail {
   evidence: string;
   whatToChange: string;
   estimatedImpactMonthlyUsd: number | null;
+  /**
+   * Before/after fix-preview pair populated by `generateFixPreviews`. Both
+   * URLs are public Vercel Blob PNGs. `fixPreviewTier`: 1 = deterministic
+   * variant render, 2 = vision inpaint, 3 = before-only fallback (afterUrl
+   * is null in tier 3, the email card degrades to a single screenshot
+   * with a "sign up to see the fix" CTA underneath). All fields null →
+   * the card renders without any visual at all.
+   */
+  screenshotBeforeUrl?: string | null;
+  screenshotAfterUrl?: string | null;
+  fixPreviewTier?: 1 | 2 | 3 | null;
+  /** Model-emitted one-liner — "Replaced 'Click here' with action-led copy." */
+  fixRationale?: string | null;
 }
 
 /**
@@ -140,6 +153,55 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Inline before/after pair for the email card. Side-by-side images +
+ * model rationale. Email-client safe — table layout, no flexbox, no
+ * srcset, no <picture>. Skipped when no before URL is present.
+ */
+function fixPreviewRow(f: AuditFindingForEmail): string {
+  const beforeUrl = f.screenshotBeforeUrl;
+  const afterUrl = f.screenshotAfterUrl;
+  if (!beforeUrl) return '';
+
+  // Tier 3 (before only) — single screenshot with a "sign up to see the fix"
+  // note underneath the image. The signup CTA at the bottom of the email
+  // is the actual conversion path; this nudges the reader toward it.
+  if (!afterUrl) {
+    return `
+      <tr>
+        <td style="padding: 16px 18px; border-bottom: 1px solid ${HAIRLINE};">
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Current state</div>
+          <img src="${escapeHtml(beforeUrl)}" alt="Current page state" width="540" style="display: block; width: 100%; max-width: 540px; height: auto; border: 1px solid ${HAIRLINE};" />
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${MUTED}; margin-top: 10px;">Sign up to see the proposed fix rendered side-by-side.</div>
+        </td>
+      </tr>`;
+  }
+
+  const rationaleRow = f.fixRationale
+    ? `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${MUTED}; margin-top: 10px; font-style: italic;">${escapeHtml(f.fixRationale)}</div>`
+    : '';
+
+  return `
+    <tr>
+      <td style="padding: 16px 18px; border-bottom: 1px solid ${HAIRLINE};">
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 10px;">Before vs after</div>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+          <tr>
+            <td width="50%" valign="top" style="padding-right: 6px;">
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 6px;">Before</div>
+              <img src="${escapeHtml(beforeUrl)}" alt="Page before fix" width="260" style="display: block; width: 100%; height: auto; border: 1px solid ${HAIRLINE};" />
+            </td>
+            <td width="50%" valign="top" style="padding-left: 6px;">
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${INK}; margin-bottom: 6px;">After</div>
+              <img src="${escapeHtml(afterUrl)}" alt="Page after fix" width="260" style="display: block; width: 100%; height: auto; border: 2px solid ${INK};" />
+            </td>
+          </tr>
+        </table>
+        ${rationaleRow}
+      </td>
+    </tr>`;
+}
+
 function findingCard(f: AuditFindingForEmail): string {
   const impact = fmtDollars(f.estimatedImpactMonthlyUsd);
   // Severity-only badge — the numeric confidence score was dropped because
@@ -177,6 +239,7 @@ function findingCard(f: AuditFindingForEmail): string {
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK};">${escapeHtml(f.whatToChange)}</div>
         </td>
       </tr>
+      ${fixPreviewRow(f)}
       <tr>
         <td style="padding: 16px 18px; background: ${INK}; color: ${CREAM};">
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">

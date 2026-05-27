@@ -6,6 +6,7 @@ import {
   pgTable,
   primaryKey,
   real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -544,6 +545,19 @@ export const zybitFindings = pgTable(
     // Populated lazily by `renderFindingScreenshot` on first preview view.
     screenshotUrl: text('screenshot_url'),
     screenshotCapturedAt: timestamp('screenshot_captured_at', { withTimezone: true }),
+    // Before/after fix-preview pair (Vercel Blob URLs). Written by
+    // `generateFixPreviews` during the public-audit run. `fixPreviewTier`:
+    // 1 = deterministic mutation render, 2 = vision inpaint, 3 = annotated
+    // before only (in which case the new URL columns stay null and the UI
+    // falls back to `screenshotUrl`). `fixModifications` carries the
+    // VariantModification[] from tier 1 so the in-product dashboard can
+    // replay the fix as an experiment.
+    screenshotBeforeUrl: text('screenshot_before_url'),
+    screenshotAfterUrl: text('screenshot_after_url'),
+    fixPreviewTier: smallint('fix_preview_tier'),
+    fixRationale: text('fix_rationale'),
+    fixModifications: jsonb('fix_modifications').$type<unknown | null>(),
+    fixPreviewGeneratedAt: timestamp('fix_preview_generated_at', { withTimezone: true }),
     // Run context (most recent sync that emitted this finding)
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),
     insightWindowStart: timestamp('insight_window_start', { withTimezone: true }),

@@ -3,6 +3,7 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
+import { BeforeAfterSlider } from '@/components/audit/BeforeAfterSlider';
 
 const INK = '#111';
 const CREAM = '#FAFAF8';
@@ -15,6 +16,10 @@ interface InlineFinding {
   title: string;
   severity: string;
   whyItMatters?: string;
+  screenshotBeforeUrl?: string;
+  screenshotAfterUrl?: string;
+  fixPreviewTier?: 1 | 2 | 3;
+  fixRationale?: string;
 }
 
 interface StatusResponse {
@@ -315,6 +320,21 @@ function AuditStatusPageInner() {
                       <p style={{ margin: '8px 0 0', fontSize: 13, lineHeight: 1.5, color: INK }}>
                         {f.whyItMatters}
                       </p>
+                    ) : null}
+                    {f.screenshotBeforeUrl ? (
+                      <BeforeAfterSlider
+                        beforeUrl={f.screenshotBeforeUrl}
+                        afterUrl={f.screenshotAfterUrl ?? null}
+                        rationale={f.fixRationale ?? null}
+                        badge={
+                          f.fixPreviewTier === 2
+                            ? 'AI visual edit'
+                            : f.fixPreviewTier === 1
+                              ? 'Proposed fix'
+                              : undefined
+                        }
+                        alt={`finding ${i + 1}`}
+                      />
                     ) : null}
                   </div>
                 ))}
