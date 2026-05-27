@@ -88,9 +88,9 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
           </div>
 
           {/* Mobile hero — shows the headline stat before the card */}
-          <div className="lg:hidden text-center mb-10">
+          <div className="lg:hidden text-center mb-8">
             <div className="sans-text text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-3">Estimated monthly impact</div>
-            <div className="sans-text text-7xl font-black tracking-tighter text-[#111] leading-none">$3.2k</div>
+            <div className="sans-text text-[3.75rem] sm:text-7xl font-black tracking-tighter text-[#111] leading-none">$3.2k</div>
             <div className="sans-text text-sm text-[#6B6B6B] mt-2">found from a single friction point</div>
           </div>
 
@@ -180,18 +180,23 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
       </section>
 
       {/* Section 6: CTA — primary path is the free audit; Request Access is the
-          secondary path into the full product waitlist. */}
+          secondary path into the full product waitlist. A single solid backdrop
+          (instead of per-element chiclets) so the type breathes against the
+          particle field. */}
       <section className="h-screen w-full flex flex-col items-center justify-center text-center px-6">
-        <div className="sans-text text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-4 bg-[#FAFAF8] px-3 py-1 pointer-events-none">
-          Free · No call required
+        <div className="w-full max-w-2xl bg-[#FAFAF8] px-6 py-8 md:px-8 md:py-10 pointer-events-none">
+          <div className="sans-text text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-5">
+            Free · No call required
+          </div>
+          <h2 className="sans-text text-[2rem] sm:text-5xl md:text-7xl font-bold tracking-tighter mb-5 md:mb-6 leading-[0.95]">
+            See the four highest-impact{" "}
+            <span className="md:block">fixes on your site.</span>
+          </h2>
+          <p className="sans-text mb-0 mx-auto text-sm text-[#6B6B6B] md:text-lg leading-relaxed">
+            Submit your URL and a work email. Zybit crawls the site, runs 13 friction rules, and emails the report &mdash; four ranked findings, evidence trail, estimated revenue impact.
+          </p>
         </div>
-        <h2 className="sans-text text-3xl sm:text-5xl md:text-7xl font-bold tracking-tighter mb-4 md:mb-6 pointer-events-none bg-[#FAFAF8] px-4 py-2 leading-[0.95]">
-          See the four highest-impact<br />fixes on your site.
-        </h2>
-        <div className="sans-text pointer-events-none mb-8 max-w-xl mx-auto space-y-2 text-sm text-[#6B6B6B] md:mb-12 md:text-lg bg-[#FAFAF8] px-4 py-3">
-          <p>Submit your URL and a work email. Zybit crawls the site, runs 13 friction rules, and emails the report &mdash; four ranked findings, evidence trail, estimated revenue impact.</p>
-        </div>
-        <div className="flex flex-col sm:flex-row items-center gap-4 pointer-events-auto">
+        <div className="flex flex-col sm:flex-row items-center gap-4 mt-8 pointer-events-auto">
           <Link href="/audit" className="btn-brutalist">
             Run a free audit
           </Link>
