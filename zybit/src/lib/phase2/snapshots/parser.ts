@@ -267,8 +267,12 @@ function isChromeButton(
     if (CHROME_BUTTON_TEXT.test(text)) return true;
     if (CHROME_BUTTON_TEXT.test(ariaLabel)) return true;
   }
-  // Logos are a navigation affordance even when href="/"; filter on the
-  // alt-text fallback regardless of where the anchor points.
+  // Logos are a navigation affordance even when href="/"; filter regardless
+  // of which accessible-name slot the alt text landed in. Stripe authors
+  // their logo as `<a href="/"><span class="sr-only">Stripe logo</span>
+  // <svg/></a>` so the alt text ends up in `text`, not in `imgAlt` —
+  // checking only the alt-text fallback misses this pattern.
+  if (LOGO_ALT_TEXT.test(text)) return true;
   if (LOGO_ALT_TEXT.test(imgAlt)) return true;
   if (LOGO_ALT_TEXT.test(ariaLabel)) return true;
   return false;

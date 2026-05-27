@@ -120,6 +120,20 @@ describe('parser: brand-logo anchors excluded from CTA inventory', () => {
     expect(texts).toHaveLength(1);
   });
 
+  it('excludes screen-reader-only inline logo text (Stripe pattern)', async () => {
+    // Stripe authors logos as <a href="/"><span class="sr-only">Stripe logo</span><svg/></a>
+    // so the accessibility label ends up in text, not in imgAlt.
+    const html = `<!doctype html><html><body>
+      <header>
+        <a href="/"><span class="sr-only">Stripe logo</span><svg></svg></a>
+      </header>
+      <a href="/x">Real link</a>
+    </body></html>`;
+    const texts = await ctaTexts(html);
+    expect(texts).not.toContain('Stripe logo');
+    expect(texts).toContain('Real link');
+  });
+
   it('KEEPS a real CTA whose alt happens to mention "logo" in different position', async () => {
     // "Choose your logo" / "Logo design tool" — alt text where "logo" is the noun
     // being acted on, not the brand identifier. The regex anchors `logo$` so only

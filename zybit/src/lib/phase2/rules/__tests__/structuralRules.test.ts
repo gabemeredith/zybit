@@ -75,6 +75,45 @@ describe('headingHierarchyJump', () => {
     const findings = headingHierarchyJump.evaluate(makeContext([], [snap]));
     expect(findings).toHaveLength(0);
   });
+
+  it('content-index template (6+ H1s, one per card) → no findings', () => {
+    // Stripe `/guides` has 59 H1s, one per guide card. The rule should
+    // not prescribe "fix your heading hierarchy" on a card-grid template.
+    const headings = Array.from({ length: 8 }, (_, i) => ({
+      level: 1 as const,
+      text: `Card ${i + 1}`,
+    }));
+    const snap = makeSnapshot('/guides', [], headings);
+    const findings = headingHierarchyJump.evaluate(makeContext([], [snap]));
+    expect(findings).toHaveLength(0);
+  });
+
+  it('5 H1s (below threshold) still fires — boundary check', () => {
+    const headings = Array.from({ length: 5 }, (_, i) => ({
+      level: 1 as const,
+      text: `Section ${i + 1}`,
+    }));
+    const snap = makeSnapshot('/', [], headings);
+    const findings = headingHierarchyJump.evaluate(makeContext([], [snap]));
+    expect(findings).toHaveLength(1);
+    expect(findings[0].title).toContain('5 H1');
+  });
+
+  it('content-index template suppresses jumps too, not just multi-H1', () => {
+    // Even if the card grid happens to contain heading-jumps within cards,
+    // suppress the rule — the prescription doesn't apply to a template page.
+    const headings = [
+      { level: 1 as const, text: 'Card 1' },
+      { level: 3 as const, text: 'Sub of card 1' }, // H1→H3 jump
+      { level: 1 as const, text: 'Card 2' },
+      { level: 1 as const, text: 'Card 3' },
+      { level: 1 as const, text: 'Card 4' },
+      { level: 1 as const, text: 'Card 5' },
+      { level: 1 as const, text: 'Card 6' },
+    ];
+    const snap = makeSnapshot('/guides', [], headings);
+    expect(headingHierarchyJump.evaluate(makeContext([], [snap]))).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

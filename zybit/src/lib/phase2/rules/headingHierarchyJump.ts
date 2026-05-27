@@ -28,6 +28,23 @@ function detectJumps(headings: HeadingItem[]): Array<{ from: HeadingItem; to: He
   return jumps;
 }
 
+/**
+ * Pages with 6+ H1s are virtually always content-index card grids — Stripe
+ * `/guides` (59 H1s, one per guide card), `/enterprise` (74 H1s, marketing
+ * tiles), PostHog blog index, Vercel templates, etc. The "broken heading
+ * hierarchy" framing doesn't apply: the page isn't a document, it's a
+ * template that emits one card per item, and the prescription ("fix your
+ * H1 nesting") would force the PM to redesign their CMS template. Real
+ * "two competing H1s" issues (the genuine bug we want to surface) fire
+ * far below this threshold — the doctrinaire-CMS case usually has 1
+ * intended H1 and 1 accidental one, never 6.
+ *
+ * 6 is conservative: it admits patterns like H1-per-section docs templates
+ * (rare and still semantically wrong) while excluding every observed
+ * card-grid case in the 2026-05-27 batch.
+ */
+const CONTENT_INDEX_H1_THRESHOLD = 6;
+
 export const headingHierarchyJump: AuditRule = {
   id: 'heading-hierarchy-jump',
   category: 'seo',
@@ -44,6 +61,8 @@ export const headingHierarchyJump: AuditRule = {
 
       const headings = snapshot.data.headings;
       const h1s = headings.filter((h) => h.level === 1);
+      // Skip card-grid / content-index templates — see CONTENT_INDEX_H1_THRESHOLD doc.
+      if (h1s.length >= CONTENT_INDEX_H1_THRESHOLD) continue;
       const missingH1 = h1s.length === 0;
       const multipleH1 = h1s.length > 1;
       const allJumps = detectJumps(headings);
