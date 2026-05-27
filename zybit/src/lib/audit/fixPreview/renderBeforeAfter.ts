@@ -42,6 +42,10 @@ import { fetchWithSsrfGuard } from '@/lib/phase2/findings/preview';
 const VIEWPORT_W = 1280;
 const VIEWPORT_H = 900;
 const SCREENSHOT_TIMEOUT_MS = 25_000;
+// Cap the WebSocket handshake to Browserless. Without this, a slow/dead
+// endpoint hangs the per-finding render — and the orchestrator's
+// sequential loop hangs the whole audit run for its full `maxDuration`.
+const CDP_CONNECT_TIMEOUT_MS = 15_000;
 // `networkidle` hangs on real marketing pages with persistent analytics /
 // chat sockets. `load` fires after DOMContentLoaded + onload; settle the
 // remaining 1.5s for late-arriving fonts + JS-rendered hero blocks.
@@ -171,7 +175,9 @@ async function screenshotPair(args: {
   try {
     const { chromium } = await import('playwright-core');
     const wssUrl = `wss://chrome.browserless.io?token=${encodeURIComponent(args.browserlessKey)}`;
-    const browser = await chromium.connectOverCDP(wssUrl);
+    const browser = await chromium.connectOverCDP(wssUrl, {
+      timeout: CDP_CONNECT_TIMEOUT_MS,
+    });
     try {
       const context = await browser.newContext({
         viewport: { width: VIEWPORT_W, height: VIEWPORT_H },
@@ -340,7 +346,9 @@ export async function renderBeforeOnly(args: {
   try {
     const { chromium } = await import('playwright-core');
     const wssUrl = `wss://chrome.browserless.io?token=${encodeURIComponent(browserlessKey)}`;
-    const browser = await chromium.connectOverCDP(wssUrl);
+    const browser = await chromium.connectOverCDP(wssUrl, {
+      timeout: CDP_CONNECT_TIMEOUT_MS,
+    });
     try {
       const context = await browser.newContext({
         viewport: { width: VIEWPORT_W, height: VIEWPORT_H },

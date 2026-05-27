@@ -26,10 +26,11 @@
  * Browserless side; we stay sequential to avoid surprises.
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import { phase1Sites, zybitFindings } from '@/lib/db/schema';
 import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
+import type { PageSnapshotData } from '@/lib/phase2/snapshots/types';
 import type { VariantModification } from '@/lib/experiments/types';
 import { suggestAuditFix as defaultSuggestAuditFix } from './auditFixAdvisor';
 import {
@@ -82,6 +83,15 @@ export interface FixPreviewDeps {
     siteId: string,
     pathRef: string,
   ) => Promise<{ designTokens: Record<string, unknown> | null; cssSystem: string | null } | null>;
+  /**
+   * Override the per-pathRef CTA-vocabulary lookup for tests. Returns the
+   * site's conversion copy register (top non-nav/header CTA labels) so the
+   * advisor's COPY REGISTER section is populated with real signal, not `[]`.
+   */
+  lookupCtaVocabulary?: (
+    siteId: string,
+    pathRef: string,
+  ) => Promise<string[]>;
   /** Override persistence for tests. Pass `noop` to skip the DB write. */
   persist?: (
     organizationId: string,
@@ -115,6 +125,7 @@ export async function generateFixPreviews(
 
   const lookupDomain = deps.lookupDomain ?? defaultLookupDomain;
   const lookupDesign = deps.lookupDesign ?? defaultLookupDesign;
+  const lookupCtaVocabulary = deps.lookupCtaVocabulary ?? defaultLookupCtaVocabulary;
 
   const domain = await lookupDomain(args.organizationId, args.siteId);
 
@@ -136,7 +147,10 @@ export async function generateFixPreviews(
     }
 
     const originUrl = `${scheme}://${domain}${finding.pathRef}`;
-    const design = await lookupDesign(args.organizationId, args.siteId, finding.pathRef);
+    const [design, ctaVocabulary] = await Promise.all([
+      lookupDesign(args.organizationId, args.siteId, finding.pathRef),
+      lookupCtaVocabulary(args.siteId, finding.pathRef),
+    ]);
 
     const outcome = await runOneFinding(
       {
@@ -144,6 +158,7 @@ export async function generateFixPreviews(
         originUrl,
         designTokens: design?.designTokens ?? null,
         cssSystem: design?.cssSystem ?? null,
+        ctaVocabulary,
       },
       { suggest, renderBA, renderBO, inpaint },
     );
@@ -189,11 +204,52 @@ async function defaultLookupDesign(
   return { designTokens: row.designTokens ?? null, cssSystem: row.cssSystem ?? null };
 }
 
+/**
+ * Pull the conversion-copy register from the page snapshot the structural
+ * audit already wrote. Mirrors `collectBrandDna`'s filter in the run route:
+ * drop nav/header landmark CTAs (they're IA labels, not conversion copy),
+ * rank by visualWeight so the hero CTA beats footer links, dedupe, cap at
+ * 10 entries. Returns `[]` on any failure — the advisor's COPY REGISTER
+ * section degrades gracefully.
+ */
+async function defaultLookupCtaVocabulary(
+  siteId: string,
+  pathRef: string,
+): Promise<string[]> {
+  try {
+    const db = getDb();
+    const result = await db.execute<{ data: PageSnapshotData }>(sql`
+      SELECT data FROM phase2_page_snapshots
+      WHERE site_id = ${siteId} AND path_ref = ${pathRef}
+      LIMIT 1
+    `);
+    const data = result.rows[0]?.data;
+    if (!data) return [];
+    const candidates = (data.ctas ?? [])
+      .filter((c) => c.landmark !== 'nav' && c.landmark !== 'header')
+      .slice()
+      .sort((a, b) => (b.visualWeight ?? 0) - (a.visualWeight ?? 0));
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const cta of candidates) {
+      const t = (cta.text ?? '').trim();
+      if (!t || t.length >= 40 || seen.has(t)) continue;
+      seen.add(t);
+      out.push(t);
+      if (out.length >= 10) break;
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 interface RunOneArgs {
   finding: FindingForFixPreview;
   originUrl: string;
   designTokens: Record<string, unknown> | null;
   cssSystem: string | null;
+  ctaVocabulary: string[];
 }
 
 interface RunOneDeps {
@@ -243,7 +299,7 @@ async function runOneFinding(
     designTokens: args.designTokens,
     cssSystem: args.cssSystem,
     availableSelectors: [],
-    ctaVocabulary: [],
+    ctaVocabulary: args.ctaVocabulary,
     beforeScreenshotBase64: beforeOnly.beforeBuffer.toString('base64'),
   });
 

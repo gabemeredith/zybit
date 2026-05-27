@@ -44,6 +44,7 @@ function makeDeps(overrides: Partial<FixPreviewDeps> = {}): FixPreviewDeps {
     })),
     lookupDomain: vi.fn(async () => 'example.com'),
     lookupDesign: vi.fn(async () => ({ designTokens: { primaryColor: '#1A73E8' }, cssSystem: 'tailwind' })),
+    lookupCtaVocabulary: vi.fn(async () => ['Get started', 'Book a demo']),
     persist: vi.fn(async () => {}),
     ...overrides,
   };
@@ -105,6 +106,10 @@ describe('generateFixPreviews — tier ladder', () => {
     expect(advisorInput.beforeScreenshotBase64).toBe(
       Buffer.from('before-only-bytes').toString('base64'),
     );
+    // Advisor receives the site's conversion-copy register so the prompt's
+    // COPY REGISTER section is grounded, not literally `[]`.
+    expect(advisorInput.ctaVocabulary).toEqual(['Get started', 'Book a demo']);
+    expect(deps.lookupCtaVocabulary).toHaveBeenCalledWith('site_1', '/');
     // After render skips re-fetching the origin — receives the HTML the
     // before render already pulled.
     const afterInput = vi.mocked(deps.renderBeforeAfter!).mock.calls[0][0];
