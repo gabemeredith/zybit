@@ -63,6 +63,7 @@ export const missingMetaDescription: AuditRule = {
         ],
         evidence,
         prescription: {
+          whyItMatters: `The meta description is the line that shows up under your page title in Google search results — it's the copy that decides whether someone clicks. Without one, Google synthesizes a snippet from whatever HTML it can find, often grabbing your nav copy or a footer disclaimer instead of your value prop. You're handing your search CTR to whatever text Google happens to scrape first.`,
           whatToChange: `Add or expand the <meta name="description"> in the page <head>.`,
           whyItWorks: `Search engines use the description as the default snippet in results pages. A well-written description improves click-through by making the result relevant and compelling before the user even visits the page.`,
           experimentVariantDescription: `Variant adds a 140-character meta description including the primary value proposition. Measure organic CTR in Google Search Console over 30 days.`,

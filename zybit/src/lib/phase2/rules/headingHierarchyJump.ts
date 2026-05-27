@@ -109,6 +109,9 @@ export const headingHierarchyJump: AuditRule = {
         ],
         evidence,
         prescription: {
+          whyItMatters: missingH1
+            ? `Search engines look at the H1 to figure out what your page is fundamentally about. With no H1 (or with multiple competing H1s) Google has to guess, and a guess outranks a confident signal every time. Screen reader users navigating by heading levels also lose their starting point — both are real visitors who can't parse the page the way you intended.`
+            : `Search engines and screen readers both use heading nesting to figure out which section a piece of content belongs to. Jumping levels (H1 → H3, no H2 in between) tells Google the page is structurally malformed, which lowers its confidence in your topic. Visitors using keyboard navigation lose their place between "this is a section" and "this is a subsection."`,
           whatToChange: missingH1
             ? `Add <h1> wrapping the existing primary headline element.`
             : `Correct heading levels so they descend without skipping (H1→H2→H3, not H1→H3).`,

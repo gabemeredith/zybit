@@ -127,6 +127,30 @@ export const linkTextGeneric: AuditRule = {
       const warnThreshold = 0.3 * modulation.floorMultiplier;
       const severity = rate >= warnThreshold ? 'warn' : 'info';
 
+      // Build whyItMatters from the actual evidence so the email reads as a
+      // specific observation about *this* page, not generic anchor-text
+      // hygiene advice the PM has heard before. Mirrors `hero-hierarchy-
+      // inversion`'s pattern of interpolating the rule's own signals.
+      const top = highFrequency.slice(0, 2);
+      const genericContextSnippet = genericLinks.length > 0
+        ? `${genericLinks.length} link${genericLinks.length > 1 ? 's' : ''} say${genericLinks.length === 1 ? 's' : ''} something like "${(genericLinks[0].text || '').trim()}"`
+        : '';
+      const repeatedContextSnippet = top.length === 2
+        ? `${top[0].length} separate links say "${top[0][0].text.trim()}" and ${top[1].length} say "${top[1][0].text.trim()}"`
+        : top.length === 1
+          ? `${top[0].length} separate links all say "${top[0][0].text.trim()}"`
+          : '';
+      const observation = [repeatedContextSnippet, genericContextSnippet]
+        .filter(Boolean)
+        .join('; ');
+      const whyItMatters =
+        `On ${snapshot.pathRef}, ${observation || `${totalFlagged} links share uninformative anchor text`}. ` +
+        `A visitor scanning the page sees a row of identical-looking anchors and has to read each ` +
+        `surrounding sentence to figure out where the link actually goes — that's friction on every ` +
+        `click. Screen reader users hear the same announcement repeated. Search engines treat anchor ` +
+        `text as a relevance signal for the destination page; when the same phrase points at different ` +
+        `pages, that signal scatters and nothing accumulates.`;
+
       findings.push({
         id: `link-text-generic:${snapshot.pathRef}`,
         ruleId: 'link-text-generic',
@@ -143,6 +167,7 @@ export const linkTextGeneric: AuditRule = {
         ],
         evidence,
         prescription: {
+          whyItMatters,
           whatToChange,
           whyItWorks: `Descriptive link text improves keyboard and screen reader navigation. It also acts as anchor text for search engines, improving the destination page's relevance signals for the topic named in the link.`,
           experimentVariantDescription: `Variant replaces generic CTAs with destination-specific text. Measure click-through rate on flagged links and organic ranking of destination pages.`,

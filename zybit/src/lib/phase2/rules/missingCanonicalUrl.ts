@@ -54,6 +54,7 @@ export const missingCanonicalUrl: AuditRule = {
           { label: 'Page path', value: snapshot.pathRef },
         ],
         prescription: {
+          whyItMatters: `Without a canonical tag, every UTM parameter, locale variant, and www-vs-apex URL gets treated as a separate page by search engines — splitting the ranking signal across copies of the same content. The page that should be ranking gets out-competed by its own duplicates, and the inbound links you earned scatter across URLs that don't accumulate authority.`,
           whatToChange: `Add a canonical link tag to the <head> pointing to the preferred URL for this page.`,
           whyItWorks: `Canonical tags consolidate link equity and prevent duplicate-content dilution. Without one, any inbound links to UTM variants or www/apex variants are treated as separate pages.`,
           experimentVariantDescription: `Technical change only — add the canonical tag and monitor Google Search Console for consolidation of impressions to the canonical URL within 2–4 weeks.`,
