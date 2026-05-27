@@ -445,10 +445,18 @@ function ParticleSwarm() {
 
   // Stable vh for offset math. On mobile Safari the canvas `<div class="fixed inset-0">`
   // resizes when the URL bar collapses/expands, which would otherwise teleport every
-  // particle mid-scroll. Snapshot the value once on mount and never update it (a
-  // rotation will fall slightly out of alignment until reload — acceptable trade for
-  // smooth scroll on phones, where rotation mid-read is rare).
-  const [stableVh] = useState(() => viewport.height);
+  // particle mid-scroll. We update it on desktop resize or mobile orientation change,
+  // but ignore mobile URL bar height fluctuations.
+  const [stableVh, setStableVh] = useState(() => viewport.height);
+  const lastWidthRef = useRef(size.width);
+  useEffect(() => {
+    const w = size.width;
+    const isMobileViewport = w < 768;
+    if (!isMobileViewport || Math.abs(w - lastWidthRef.current) > 4) {
+      setStableVh(viewport.height);
+      lastWidthRef.current = w;
+    }
+  }, [size.width, size.height, viewport.height]);
 
   // Section anchors: scroll-Y position at which each of the 6 shapes is fully formed.
   // Computed from the actual DOM section centers — robust to any section being taller
