@@ -162,7 +162,15 @@ export const navDispersion: AuditRule = {
         severity: giniValue < 0.2 ? "warn" : "info",
         confidence: clamp(0.4 + Math.log10(Math.max(navClicks, 1)) * 0.2, 0, 0.95),
         priorityScore: clamp(1 - giniValue, 0, 1),
-        pathRef: null,
+        // Nav is conceptually site-wide; anchor the finding to `/` so the
+        // email's diversity cascade can apply the homepage boost, the
+        // dashboard's per-page detail view has a real target, and the
+        // rule's own evidence ("your homepage") stops contradicting a
+        // null path (§16.5 row 3). Always `/` — not whichever page
+        // happened to be `pageSnapshots[0]`, which would mislead the PM
+        // into thinking nav is wrong on a specific subpage (saw this fire
+        // as `/docs` on PostHog when the crawl skipped `/`).
+        pathRef: '/',
         title: "Top-level navigation is unfocused",
         summary,
         prescription,
