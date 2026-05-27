@@ -278,6 +278,14 @@ function isChromeButton(
   return false;
 }
 
+// Collapse internal whitespace (newlines, tabs, multiple spaces) into single
+// spaces so multi-line link text reads as a normal sentence in rule output.
+// Without this, a `<a>Product roadmap\n  See what's ahead</a>` (Stripe's
+// `/atlas` nav pattern) would surface in the email as a multi-line blob.
+function normalizeCtaText(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim();
+}
+
 function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
   const elements = root.querySelectorAll('a, button');
   const candidates: HTMLElement[] = [];
@@ -285,8 +293,8 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     if (candidates.length >= MAX_CTAS) break;
     const tag = getTag(el);
     if (tag !== 'a' && tag !== 'button') continue;
-    const text = (el.text ?? '').trim();
-    const ariaLabel = (el.getAttribute('aria-label') ?? '').trim();
+    const text = normalizeCtaText(el.text ?? '');
+    const ariaLabel = normalizeCtaText(el.getAttribute('aria-label') ?? '');
     // Graphical buttons / logo links often have no text or aria-label and
     // rely on a child <img alt="..."> for their accessible name. Treat that
     // alt text as a label so we don't drop them from the inventory.
@@ -306,12 +314,12 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     const el = candidates[i];
     const tag = getTag(el) as 'a' | 'button';
     const className = el.getAttribute('class') ?? null;
-    const directText = (el.text ?? '').trim();
+    const directText = normalizeCtaText(el.text ?? '');
     // For graphical CTAs, fall back to the first child img's alt as the
     // visible label so downstream rules can reason about them.
     const text = (directText || firstImgAlt(el)).slice(0, TEXT_CAP);
     const href = tag === 'a' ? (el.getAttribute('href') ?? null) : null;
-    const ariaLabel = (el.getAttribute('aria-label') ?? '').trim() || null;
+    const ariaLabel = normalizeCtaText(el.getAttribute('aria-label') ?? '') || null;
     const landmark = computeLandmark(el);
     const { bodyChildIndex, totalBodyChildren } = computeBodyChildIndex(el, body);
     const primary = isPrimaryCandidate(className, el);

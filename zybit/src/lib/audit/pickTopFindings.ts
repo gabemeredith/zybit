@@ -58,6 +58,43 @@ export function isOffConversionPath(
 }
 
 /**
+ * Locale-segment matcher. Catches:
+ *   `/en`, `/fr`, `/de`, `/es`, `/gb`, `/jp` — 2-letter language/region
+ *   `/en-us`, `/fr-ca`, `/zh-cn`, `/pt-br` — language-region pair
+ *   `/en-at`, `/fr-lu` (Stripe's exact patterns)
+ *   `/global`, `/intl`, `/world`, `/regions` — locale-picker stems
+ * Capture group 1 is the locale segment itself (used for stripping).
+ */
+const LOCALE_SEGMENT_RE =
+  /^\/(([a-z]{2,3})(-[a-z]{2,4})?|global|intl|world|regions)(?=\/|$)/i;
+
+/**
+ * Normalize a path so locale variants collapse to the same key for the
+ * diversity cascade's `usedPaths` set. Examples:
+ *   `/`             → `/`
+ *   `/en-us`        → `/`
+ *   `/gb`           → `/`
+ *   `/global`       → `/`
+ *   `/fr-ca/pricing`→ `/pricing`
+ *   `/pricing`      → `/pricing`
+ *
+ * Without this, the cascade treats Stripe's `/`, `/gb`, `/es`, `/fr-ca`,
+ * `/en-at`, `/global` as 6 different pages and fills the top-4 with
+ * locale duplicates of the same homepage finding. The handover §16.3
+ * called locale duplication "pervasive on Stripe (~14 duplicates)".
+ *
+ * Conservative — false-positive cost is one less diverse row in the
+ * email when a 2-letter path happens to be a real page (rare on B2B
+ * SaaS marketing sites). True-positive benefit is correctly recognizing
+ * that `/en-us` and `/` ship the same template.
+ */
+export function localeNormalizedPath(pathRef: string | null | undefined): string {
+  if (!pathRef) return '/';
+  const stripped = pathRef.replace(LOCALE_SEGMENT_RE, '');
+  return stripped === '' ? '/' : stripped;
+}
+
+/**
  * Pick the top N (default 4) findings for the prospect's email using a
  * 4-pass diversity cascade:
  *   Pass 1 — page-unique AND rule-unique (ideal: 4 different pages, 4
@@ -87,7 +124,11 @@ export function pickTopFindings<T extends FindingForRanking>(
   const pickedIds = new Set<string>();
   const usedRules = new Set<string>();
   const usedPaths = new Set<string>();
-  const pathOf = (f: T): string => f.pathRef ?? '/';
+  // Normalize for diversity: `/`, `/en-us`, `/gb`, `/fr-ca` collapse to
+  // the same key so the cascade doesn't pad top-4 with locale duplicates
+  // of the same homepage finding. Raw pathRef is still on the finding
+  // itself for evidence rendering.
+  const pathOf = (f: T): string => localeNormalizedPath(f.pathRef);
 
   const skip = (f: T): boolean =>
     pickedIds.has(f.id) || isOffConversionPath(f.pathRef, submittedPath);

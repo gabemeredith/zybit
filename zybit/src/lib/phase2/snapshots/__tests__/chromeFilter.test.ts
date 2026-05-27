@@ -91,6 +91,31 @@ describe('parser: browser-default chrome buttons excluded from CTA inventory', (
   });
 });
 
+describe('parser: CTA text whitespace normalization', () => {
+  it('collapses multi-line link text to a single line', async () => {
+    // Stripe's `/atlas` ships nav cards as `<a>Product roadmap\n  See what's
+    // ahead</a>` — multi-line text that surfaced in the email as a mangled
+    // multi-line blob before normalization.
+    const html = `<!doctype html><html><body>
+      <a href="/atlas">Product roadmap
+
+
+      See what's ahead</a>
+    </body></html>`;
+    const texts = await ctaTexts(html);
+    expect(texts).toContain('Product roadmap See what\'s ahead');
+    expect(texts.some((t) => t.includes('\n'))).toBe(false);
+  });
+
+  it('collapses tabs and multiple spaces', async () => {
+    const html = `<!doctype html><html><body>
+      <a href="/x">Hello\tworld   with    spaces</a>
+    </body></html>`;
+    const texts = await ctaTexts(html);
+    expect(texts).toContain('Hello world with spaces');
+  });
+});
+
 describe('parser: brand-logo anchors excluded from CTA inventory', () => {
   it.each([
     'Stripe logo',

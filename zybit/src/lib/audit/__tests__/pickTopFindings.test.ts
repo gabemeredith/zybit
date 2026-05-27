@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isOffConversionPath, pickTopFindings } from '../pickTopFindings';
+import { isOffConversionPath, localeNormalizedPath, pickTopFindings } from '../pickTopFindings';
 
 function f(
   id: string,
@@ -148,5 +148,74 @@ describe('pickTopFindings', () => {
     const { ranked } = pickTopFindings(findings, '/');
     // 0.4 × 1.5 = 0.6 beats 0.5
     expect(ranked[0]?.id).toBe('b');
+  });
+
+  it('treats locale variants as the same logical page', () => {
+    // Stripe ships the same homepage at /, /gb, /es, /fr-ca, /en-at — the
+    // cascade should pick at most one of these for any given (rule) slot.
+    const findings = [
+      f('home', 'rule-1', '/', 0.5),
+      f('gb', 'rule-1', '/gb', 0.5),
+      f('frca', 'rule-1', '/fr-ca', 0.5),
+      f('enat', 'rule-1', '/en-at', 0.5),
+      f('global', 'rule-1', '/global', 0.5),
+      f('pricing', 'rule-2', '/pricing', 0.4),
+      f('about', 'rule-3', '/about', 0.3),
+      f('blog', 'rule-4', '/blog', 0.2),
+    ];
+    const { top } = pickTopFindings(findings, '/');
+    // Only one homepage-locale finding should win the first slot; the
+    // remaining 3 should come from genuinely different pages.
+    const homepagePicks = top.filter((x) =>
+      ['/', '/gb', '/fr-ca', '/en-at', '/global'].includes(x.pathRef ?? ''),
+    );
+    expect(homepagePicks).toHaveLength(1);
+    expect(top.map((x) => x.pathRef)).toEqual(['/', '/pricing', '/about', '/blog']);
+  });
+
+  it('still picks a locale variant when no canonical homepage finding exists', () => {
+    // If only /gb has a finding (no / finding), /gb still wins position 1.
+    const findings = [
+      f('gb', 'rule-1', '/gb', 0.5),
+      f('pricing', 'rule-2', '/pricing', 0.4),
+    ];
+    const { top } = pickTopFindings(findings, '/');
+    expect(top.map((x) => x.id)).toEqual(['gb', 'pricing']);
+  });
+});
+
+describe('localeNormalizedPath', () => {
+  it.each([
+    ['/', '/'],
+    ['/en-us', '/'],
+    ['/gb', '/'],
+    ['/fr-ca', '/'],
+    ['/en-at', '/'],
+    ['/global', '/'],
+    ['/intl', '/'],
+    ['/world', '/'],
+    ['/zh-cn', '/'],
+    ['/pt-br', '/'],
+    ['/en-us/pricing', '/pricing'],
+    ['/fr-ca/about', '/about'],
+    ['/global/products', '/products'],
+  ])('%s → %s', (input, expected) => {
+    expect(localeNormalizedPath(input)).toBe(expected);
+  });
+
+  it.each([
+    '/pricing',
+    '/about',
+    '/blog',
+    '/blog/some-post',
+    '/contact',
+    '/products/payments',
+  ])('non-locale path %s stays unchanged', (path) => {
+    expect(localeNormalizedPath(path)).toBe(path);
+  });
+
+  it('null/undefined → /', () => {
+    expect(localeNormalizedPath(null)).toBe('/');
+    expect(localeNormalizedPath(undefined)).toBe('/');
   });
 });
