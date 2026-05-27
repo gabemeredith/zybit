@@ -31,9 +31,9 @@ import type {
   VisualSignals,
 } from '@/lib/phase2/snapshots/types';
 
-export const VISION_MODEL = 'gemini-2.0-flash';
+export const VISION_MODEL = 'gemini-3.5-flash';
 const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
 
 const VALID_PAGE_TYPES: ReadonlySet<PageType> = new Set([
   'home',

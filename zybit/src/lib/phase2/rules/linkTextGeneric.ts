@@ -13,6 +13,7 @@
 
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
 import type { CtaCandidate } from '../snapshots/types';
+import { pageTypeFromSnapshot, pageTypeModulation } from './pageTypeModulation';
 
 // Always-generic anchor text — fires on any occurrence. These phrases are
 // context-free and never describe a destination, so a single instance is
@@ -53,6 +54,15 @@ export const linkTextGeneric: AuditRule = {
     const findings: AuditFinding[] = [];
 
     for (const snapshot of ctx.pageSnapshots) {
+      // PageType modulation — Privacy Policy / ToS pages list dozens of
+      // "Learn more" footer links that are universally generic but not
+      // actionable as a finding. Suppress on `legal`. On `docs`, deep
+      // "see also" linking is part of the IA — raise the threshold via
+      // floorMultiplier so we don't fire on every cross-link.
+      const pageType = pageTypeFromSnapshot(snapshot.data.visualSignals);
+      const modulation = pageTypeModulation('link-text-generic', pageType);
+      if (modulation.suppress) continue;
+
       const links = snapshot.data.ctas.filter((c) => c.tag === 'a');
       if (links.length === 0) continue;
 
@@ -100,7 +110,11 @@ export const linkTextGeneric: AuditRule = {
 
       const totalFlagged = genericLinks.length + highFrequency.reduce((s, g) => s + g.length, 0);
       const rate = totalFlagged / Math.max(links.length, 1);
-      const severity = rate >= 0.3 ? 'warn' : 'info';
+      // floorMultiplier > 1 (docs pages) means the rule needs a higher
+      // flagged-ratio before it bumps to `warn` — the base 0.3 becomes
+      // 0.3 × 1.3 = 0.39 on docs sites.
+      const warnThreshold = 0.3 * modulation.floorMultiplier;
+      const severity = rate >= warnThreshold ? 'warn' : 'info';
 
       findings.push({
         id: `link-text-generic:${snapshot.pathRef}`,

@@ -204,6 +204,16 @@ export interface PageSnapshotData {
    * `GEMINI_API_KEY` set. Consumers must null-check before reading.
    */
   visualSignals?: VisualSignals;
+  /**
+   * Structured copy critique from `captureCopyCritique` — Layer F input.
+   * Populated at capture time when (a) the vision pass extracted a hero
+   * block and (b) `GEMINI_API_KEY` is set. Three Layer F rules
+   * (`vague-claim-detected`, `proof-missing`, `cta-verb-mismatch`) read
+   * this through `snapshot.data.copyCritique?.…` and emit nothing when
+   * it is absent. Optional by design — the audit gracefully degrades to
+   * Layer C-E rules when copy critique is unavailable.
+   */
+  copyCritique?: import('@/lib/audit/captureCopyCritique').CopyCritique;
 }
 
 export interface PageSnapshot {

@@ -13,6 +13,7 @@
  */
 
 import type { AuditFinding, AuditRule, AuditRuleContext } from './types';
+import { pageTypeFromSnapshot, pageTypeModulation } from './pageTypeModulation';
 
 export const missingCanonicalUrl: AuditRule = {
   id: 'missing-canonical-url',
@@ -27,13 +28,20 @@ export const missingCanonicalUrl: AuditRule = {
       const canonical = snapshot.data.meta.canonical;
       if (canonical && canonical.trim().length > 0) continue;
 
+      const pageType = pageTypeFromSnapshot(snapshot.data.visualSignals);
+      const modulation = pageTypeModulation('missing-canonical-url', pageType);
+      if (modulation.suppress) continue;
+
       findings.push({
         id: `missing-canonical-url:${snapshot.pathRef}`,
         ruleId: 'missing-canonical-url',
         category: 'seo',
+        // Base severity for this rule is already 'info' — the downgrade
+        // path drops priorityScore so low-priority surfaces still emit
+        // but slip further down the ranking.
         severity: 'info',
         confidence: 0.9,
-        priorityScore: 0.25,
+        priorityScore: modulation.severityDowngrade ? 0.15 : 0.25,
         pathRef: snapshot.pathRef,
         title: `No canonical URL on ${snapshot.pathRef}`,
         summary: `${snapshot.pathRef} has no <link rel="canonical"> tag. When the same content is accessible via multiple URLs (www vs apex, UTM params, trailing slashes), search engines consolidate ranking signals at whichever URL they choose — not necessarily your preferred one.`,
