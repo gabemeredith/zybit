@@ -1189,3 +1189,141 @@ In priority order:
    capture layer already produces every input these need (snapshot +
    capture + vision + critique); the rules just have to read across
    pages.
+
+---
+
+## 16. Batch audit quality pass — 8-site real-world triage (2026-05-27)
+
+**Branch:** `fix/audit-pipeline-regressions`
+
+### 16.1 The batch harness — `scripts/audit-batch.mjs`
+
+New script. Drives `runUrlAudit` directly (bypasses HTTP/submit/confirm/budget
+ceremony so the rate-limit tables aren't involved) against a curated mix of
+sites and renders the email each prospect would receive via
+`renderAuditReportEmailHtml`. Skips fix-preview, vision-obs caption, and the
+Resend send — those are orthogonal to finding-quality assessment and burn
+Browserless quota.
+
+Per-site artifacts land in `/tmp/audit-batch/`:
+- `<domain>.email.html` — what the prospect literally sees
+- `<domain>.findings.json` — `{ counts, siteId, top4, top50 }`
+- `<domain>.summary.txt` — quick-scan digest
+
+Plus `batch-summary.csv` (1 row per top-4 finding across the batch) and
+`batch-index.json`.
+
+Run with:
+```
+npx tsx --env-file=.env scripts/audit-batch.mjs
+```
+
+Custom targets:
+```
+npx tsx --env-file=.env scripts/audit-batch.mjs https://foo.com https://bar.com
+```
+
+### 16.2 Per-site results (2026-05-27 run)
+
+| Site | Pages | Findings | top-4 unique paths | top-4 unique rules | Notable |
+|------|-------|----------|----|----|----|
+| stripe.com | 19 | 45 | 4 (`/`, `/impressum`, `/enterprise`, `/guides`) | 4 | `/impressum` ranks #2 despite homepage boost; `/enterprise` hero-rule names browser **Back** button as "most emphasized CTA" |
+| linear.app | 8 | 24 | 4 (none on `/`) | 3 | Homepage never makes top-4. 100% of 24 findings are 3 rules × 8 pages (site-template duplication) |
+| vercel.com | 19 | 29 | 4 | 4 | `/d` (short-link prefix) ranked #4 |
+| posthog.com | 12 | 24 | 4 (one `pathRef: null`) | 4 | nav-dispersion #1 prescribes removing PostHog's deliberate OS-metaphor joke items (`home.mdx`, `Trash`, `demo.mov`) |
+| github.com | 19 | 87 | **0** | **0** | DB-read returned 0 rows despite pipeline-counted 87 — see §16.5 |
+| notion.so | 1 | 1 | 1 | 1 | Sandbox-blocked beyond homepage |
+| calendly.com | 20 | 46 | 4 (incl. `/`) | 4 | `/legal` ranks #3; otherwise the strongest signal-quality of the batch |
+| framer.com | 1 | 3 | 1 (`/login`) | 3 | Marketing site login-walled; all findings on `/login` |
+
+### 16.3 Failure-mode histogram (across 28 top-4 findings, 7 usable sites)
+
+| Rank | Category | Top-4 hits |
+|------|----------|-----------|
+| 1 | **`whyItMatters: null` → email renders "Why: (none)"** | 19 / 28 |
+| 2 | **PageType modulation missed** (legal / compliance / utility subpages ranking above homepage) | 7 / 28 — `stripe /impressum`, `linear /compliance`, `posthog /baa`, `calendly /legal`, `vercel /d`, etc. |
+| 3 | **Path mis-selection** (top-4 lands off the homepage) | 6 / 7 sites |
+| 4 | **Layer F (Gemini copy critique) zero-fire** | 0 / ~250 findings — `vague-claim-detected`, `proof-missing`, `cta-verb-mismatch` never fired on any site |
+| 5 | **Structural rule on content-index page** (e.g. `/guides` with 59 H1s, one per guide card) | 3 / 28 |
+| 6 | **CTA / nav inventory bloat** (logo, lang picker, browser back button, PostHog OS joke items treated as CTAs) | 2 / 28 + more in top-50 |
+| 7 | **Misleading evidence wording** (`link-text-generic` title says "21 instances", evidence says "Generic link texts: 2" — different metrics presented as same) | 3 / 28 (every `link-text-generic`) |
+| 8 | **`pathRef: null`** on nav-dispersion | 1 finding |
+| 9 | **Prescription doesn't match evidence** (e.g. "copy the styling Back has today" — Back is a browser back button) | 2 / 28 |
+| 10 | **Single rule monopolizes top-50** | 3 / 7 sites (Linear: 100%, Framer: 100%, Stripe: 14× same rule across locale URLs) |
+| 11 | **Locale duplication** (`/en-at`, `/en-be`, `/fr-ca`… same finding) | Pervasive on Stripe (~14 duplicates) |
+
+### 16.4 The 2–3 fixes to attack first
+
+Selected on the criteria "lands on every email + cheap at the framing layer":
+
+**Priority 1 — Backfill `whyItMatters` on Layer E rules.**
+Affects 19 of 28 top-4 findings. `heading-hierarchy-jump`,
+`missing-meta-description`, `missing-canonical-url`, `link-text-generic`
+all currently emit `prescription.whyItMatters: null`. The email renders the
+field literally as `"Why: (none)"`. Pure content work — write 4 strings,
+each explaining why a PM should care about that structural issue in
+conversion-terms. **No code changes needed beyond the rule files
+themselves.**
+
+**Priority 2 — PageType suppression for legal / compliance / utility
+subpages in the top-4 cascade.** The +1.5× homepage boost is being eaten
+by the +0.5 base score on Layer E findings across dozens of subpages.
+Either the pageType classifier is misclassifying `/impressum`, `/baa`,
+`/compliance`, `/newsroom`, `/d` as `marketing`, or `pageTypeModulation`
+doesn't suppress these categories. Verify both. Add a hard filter to
+`pickTop4` in `src/app/api/audit/public/run/route.ts` to drop these
+pageTypes entirely. **Fixes 5 of 7 sites.**
+
+**Priority 3 — Diagnose Layer F (Gemini copy critique) zero-fire.**
+0 fires across 7 sites, 250+ findings. Layer F is the *only* rule family
+producing homepage-focused, conversion-grade output
+(`vague-claim-detected`, `proof-missing`, `cta-verb-mismatch`). Without
+it, the audit looks like an a11y/SEO linter, not a conversion intelligence
+tool — opposite of the doctrine. Likely causes to check first:
+(a) `GEMINI_API_KEY` not present in the runtime env actually used by the
+audit route (vs the lighthouse/.env we test with); (b) `AUDIT_FIX_PREVIEW_ENABLED`
+or similar gate inadvertently gating capture-time Gemini; (c) the strict
+validator on `captureCopyCritique` rejecting all output silently. Verify
+with structured logging on `service: 'copy-critique'`.
+
+Close 4th — **fix the `link-text-generic` title/evidence label contradiction.**
+Either rename the evidence row from `"Generic link texts: 2"` to
+`"Distinct generic phrases: 2"`, or change the title to count distinct
+phrases not total occurrences. ~5 min change; affects every site where
+the rule fires (≥3 of 7).
+
+### 16.5 Open bugs found during the batch (NOT yet investigated)
+
+- **GitHub: 87 findings counted by pipeline, 0 returned by DB read.**
+  `result.counts.findings = 87` from `runUrlAudit` but `db.select() WHERE
+  siteId = 'lighthouse_site_urlaudit-github-com'` returned `[]`. If this
+  is reproducible in production, GitHub prospects receive empty emails
+  despite the engine finding 87 issues. Worth a separate session.
+
+- **Site-template duplication (Linear case).** The `findingPk(siteId,
+  ruleId, pathRef)` schema explicitly allows one row per (rule, path)
+  tuple. On a site where 8 pages share a template missing the same 3
+  HTML elements, the engine emits 24 distinct findings — the prospect
+  experiences this as "the tool keeps repeating itself." Real fix is
+  a redesign: when ≥3 paths share an identical evidence shape under one
+  ruleId, collapse to one finding tagged "affects N pages: /a, /b, /c…"
+  No dedup logic exists anywhere in `lighthouse/` or the rule pipeline
+  today (only events + snapshots dedupe; never findings).
+
+- **`pathRef: null` on `nav-dispersion`.** Rule emits with literal null
+  path even though the evidence references "your homepage." Should be
+  `/`.
+
+- **Brand-DNA capture `__name is not defined` noise.** Every snapshot
+  logs a `page.evaluate: ReferenceError: __name is not defined` from
+  `extractMeasurements` in `src/lib/phase2/capture/styles.ts:50`. Fails
+  soft (the brand-DNA section is omitted) but floods stderr. Likely a
+  Playwright + tsx ESM-interop issue — `__name` is a helper TypeScript
+  emits for `class.name` preservation, evidently lost when the function
+  is serialized into `page.evaluate`.
+
+- **Framer / Notion / similar login-walled or anti-bot sites** ship
+  top-4 that's entirely irrelevant (login-page hygiene). The audit
+  needs a "marketing surface not reached" guard with a degraded email
+  template (or no email at all).
+
