@@ -1,12 +1,12 @@
 # Zybit — Audit Fix-Preview Handover
 
-**Branch:** `claude/audit-fix-preview-handover-N2TVH`
-**Last updated:** 2026-05-27 (Step 1 shipped + live-verified)
-**Purpose:** Engineering handover for the public-audit before/after fix-preview pipeline. Covers architecture, what shipped, live verification results, and the prioritised next steps — including a concrete implementation sketch for Step 2 so the next session can start coding immediately.
+**Branch:** `claude/ecstatic-knuth-JPuBz` (continued from `claude/audit-fix-preview-handover-N2TVH`)
+**Last updated:** 2026-05-27 (Step 2 shipped — perceptual pixel-diff gates Tier 1)
+**Purpose:** Engineering handover for the public-audit before/after fix-preview pipeline. Covers architecture, what shipped, live verification results, and the prioritised next steps.
 
 > **Start here if you're cold:** Read §9 (branch state + quick commands), then §6 (next steps), then §2 (what's already built). Everything else is reference.
 
-> **Canonical one-liner:** `AGENTS.md` → `Public URL-audit lead magnet` row — "Step 1 shipped 2026-05-27" paragraph.
+> **Canonical one-liner:** `AGENTS.md` → `Public URL-audit lead magnet` row — "Step 2 shipped 2026-05-27" paragraph.
 
 ---
 
@@ -64,7 +64,10 @@ Two exports:
 - If `prefetchedHtml` provided, skips SSRF fetch (reuses HTML from the before render).
 - Applies mods, bails if byte-identical no-op.
 - One Browserless connection, two parallel `page.route()` + `page.goto()` renders at 1280×900.
+- **As of Step 2:** runs `isVisiblyChanged(before, after)` (`pixelmatch` + `pngjs`, threshold 0.1, > 100 changed pixels). If the pair is perceptually indistinguishable the function returns `null` and the orchestrator falls to Tier 2 (silent-no-op gate).
 - Uploads both PNGs to Vercel Blob, returns `{ beforeUrl, afterUrl, beforeBuffer }`.
+
+**`isVisiblyChanged(before: Buffer, after: Buffer): boolean`** — exported helper. Safe defaults: PNG parse error → `true`; different dimensions → `true`. Used by the renderer and by the live harness so the two surfaces stay in lockstep.
 
 **`renderBeforeOnly({findingId, originUrl})`**
 - Runs one `page.route()` + `page.goto()` render of the live page.
@@ -186,8 +189,8 @@ This is the exact Tier 1 miss pattern Step 1 was designed to fix. The vision cha
 
 | # | Gap | Status |
 |---|---|---|
-| 1 | **Migration 0023 not on Neon** | ⬛ Required before flipping flag in prod. Step 3. |
-| 2 | **No pixel-diff "did this resolve?" check** | ⬛ Top of list. Step 2. With route() interception, silent no-ops no longer produce unstyled screenshots — we need a perceptual diff to catch them. |
+| 1 | **Migration 0023 not on Neon** | ⬛ Required before flipping flag in prod. Step 3 (now the top blocker). |
+| 2 | ~~No pixel-diff "did this resolve?" check~~ | ✅ Shipped Step 2 (2026-05-27) — `isVisiblyChanged` gates the Tier 1 return. 5 unit tests. |
 | 3 | **No cost guard on fix-preview** | ⬛ Step 5. 4-finding audit ≈ 4 advisor + 4 inpaint + 8 Browserless renders ≈ $0.02–0.05/audit extra. |
 | 4 | **No per-finding timeout in orchestrator** | ⬛ Step 5. A wedged Browserless call can hold the pipeline open for the full Vercel `maxDuration: 300`. |
 | 5 | **`AnnotatedFindingPreview` (dashboard) not wired to new columns** | ⬛ Step 4. Only the public `/audit/[id]` uses the slider; the signed-in findings view still shows the old screenshot. |
@@ -198,69 +201,21 @@ This is the exact Tier 1 miss pattern Step 1 was designed to fix. The vision cha
 
 ## 6. Next steps — prioritised
 
-### Step 2 — Perceptual pixel-diff after Tier 1 render ← START HERE
+### Step 2 — Perceptual pixel-diff after Tier 1 render ✅ Shipped 2026-05-27
 
-**Why this is #1:** With `page.route()` interception, a mod that targets the wrong selector still produces a real styled render — the "before" and "after" screenshots will look nearly identical, but there's no longer the "wall of unstyled text" tell that gave away a broken render before. The current bail condition (`mutated === fetched.html`) catches HTML-level no-ops but not render-level ones. We need to close that loop.
+`isVisiblyChanged(before, after)` (exported from `renderBeforeAfter.ts`) runs after `screenshotPair` and bails to `null` when the after PNG is perceptually indistinguishable from the before. Uses `pixelmatch` v7 + `pngjs` v7; threshold `0.1` (default sensitivity, ignores JPEG/AA noise); `> 100 changed pixels` filters sub-pixel render jitter. Safe defaults: PNG parse error → `true`, dimension mismatch → `true` (surface the case rather than silently bail).
 
-**What to build:** After `screenshotPair` returns in `renderBeforeAfter.ts`, compare the two PNGs perceptually. If they're within a threshold, return `null` (Tier 1 declined → fall to Tier 2).
+The live harness (`scripts/live-fix-preview.ts`) now uses the same helper instead of byte-equality, so the harness and the production renderer agree on what "visibly changed" means.
 
-**Implementation sketch (~60 lines):**
+5 unit tests in `__tests__/renderBeforeAfter.test.ts`: identical PNGs, > 100 px diff, < 100 px jitter, dimension mismatch, invalid PNG.
 
-1. **Install `pixelmatch`** — it's tiny (2 KB), has no native deps, already used across the JS ecosystem:
-   ```bash
-   npm install pixelmatch pngjs
-   ```
+The orchestrator side is unchanged — `renderBeforeAfter` returning `null` already falls through to Tier 2, so the existing "tier-1 render declines (no-op apply)" test covers the orchestrator behaviour. The pixel-diff is purely an additional bail condition inside the renderer.
 
-2. **Add `isVisiblyChanged(before: Buffer, after: Buffer): boolean`** to `renderBeforeAfter.ts`:
-   ```ts
-   import pixelmatch from 'pixelmatch';
-   import { PNG } from 'pngjs';
-
-   function isVisiblyChanged(before: Buffer, after: Buffer): boolean {
-     try {
-       const img1 = PNG.sync.read(before);
-       const img2 = PNG.sync.read(after);
-       if (img1.width !== img2.width || img1.height !== img2.height) return true;
-       const diff = new Uint8Array(img1.width * img1.height * 4);
-       const changed = pixelmatch(img1.data, img2.data, diff, img1.width, img1.height, {
-         threshold: 0.05, // 5% colour-distance tolerance — enough to ignore JPEG artefacts
-       });
-       // Require at least 100 changed pixels — avoids triggering on anti-aliasing
-       return changed > 100;
-     } catch {
-       // If pixelmatch throws (e.g. corrupt PNG), assume changed to be safe
-       return true;
-     }
-   }
-   ```
-
-3. **Add the check in `renderBeforeAfter`** after `screenshotPair` succeeds:
-   ```ts
-   const pair = await screenshotPair(...);
-   if (!pair) return null;
-
-   if (!isVisiblyChanged(pair.beforeBuffer, pair.afterBuffer)) {
-     console.warn('[renderBeforeAfter] Tier 1 render looks identical — mods did not visibly resolve', {
-       findingId: args.findingId,
-     });
-     return null;  // orchestrator falls to Tier 2
-   }
-   ```
-
-4. **Update the harness** (`scripts/live-fix-preview.ts`) to use the same `isVisiblyChanged` helper instead of the current byte-equality check. The harness already does:
-   ```ts
-   const visiblyChanged = !beforeBuf.equals(afterBuf);  // ← replace with isVisiblyChanged()
-   ```
-
-5. **Add a test** in `__tests__/generateFixPreviews.test.ts` that stubs `renderBeforeAfter` to return a pair where before + after look identical (same bytes). Assert that the outcome falls back to Tier 2. This is already partially covered by the "tier-1 render declines (no-op apply)" test — just add a variant for the pixel-diff case.
-
-**Acceptance:** CSS-inject mod targeting a fake selector → `renderBeforeAfter` returns null → orchestrator produces a Tier 2 outcome. Verify by running the harness against a page where you know a given CSS selector doesn't exist.
-
-**Alternative if you don't want `pixelmatch`:** Compute SHA256 over a 64×64 downsampled grayscale version of each PNG. If hashes match, treat as identical. No extra deps (use `node:crypto` + a simple nearest-neighbour downsample). Less accurate on subtle changes but fine for the "CSS rule targeting a non-existent selector" case.
+**Acceptance:** CSS-inject mod targeting a non-existent selector → `renderBeforeAfter` returns `null` → orchestrator emits a Tier 2 outcome. Verify next time the harness runs against a real site with the new check in place.
 
 ---
 
-### Step 3 — Apply migration 0023 + flip the flag in Vercel
+### Step 3 — Apply migration 0023 + flip the flag in Vercel ← START HERE
 
 1. Apply `drizzle/0023_finding_fix_preview.sql` to Neon
 2. Vercel env: `AUDIT_FIX_PREVIEW_ENABLED=1`
@@ -271,7 +226,7 @@ This is the exact Tier 1 miss pattern Step 1 was designed to fix. The vision cha
    - Report email renders side-by-side images per finding
    - `/audit/[id]` renders the drag-slider
 
-Do Step 2 before Step 3 — otherwise silent Tier 1 no-ops will appear in the first real audits.
+Step 2 is in, so silent Tier 1 no-ops will now degrade to Tier 2 instead of shipping an identical-looking pair.
 
 ---
 
@@ -307,7 +262,8 @@ For the first ~100 audits, gate email delivery on a manual approve in `/admin/op
 | File | What | Notes |
 |---|---|---|
 | `src/lib/audit/fixPreview/auditFixAdvisor.ts` | Tier 1 advisor — `suggestAuditFix`, `buildAuditFixPrompt` | Screenshot-grounded prompt as of Step 1 |
-| `src/lib/audit/fixPreview/renderBeforeAfter.ts` | Before+after Browserless render | route() interception as of Step 1; add `isVisiblyChanged` here for Step 2 |
+| `src/lib/audit/fixPreview/renderBeforeAfter.ts` | Before+after Browserless render | route() interception (Step 1); `isVisiblyChanged` pixel-diff gate (Step 2) |
+| `src/lib/audit/fixPreview/__tests__/renderBeforeAfter.test.ts` | 5 tests — pixel-diff helper | New in Step 2 |
 | `src/lib/audit/fixPreview/visionInpaint.ts` | Tier 2 Nano Banana 2 | See §2C gotchas — do not remove the protocol workarounds |
 | `src/lib/audit/fixPreview/generateFixPreviews.ts` | Orchestrator | Tier ladder, DI, feature flag |
 | `src/lib/audit/fixPreview/types.ts` | `FixPreview`, `FixPreviewTier`, `FixPreviewOutcome` | — |
@@ -349,7 +305,7 @@ export INPAINT_MODEL=gemini-3-pro-image-preview
 
 ## 9. Branch state
 
-**Branch:** `claude/audit-fix-preview-handover-N2TVH`
+**Branch:** `claude/ecstatic-knuth-JPuBz` (continued from `claude/audit-fix-preview-handover-N2TVH`)
 **Commits ahead of `main`:**
 
 | Commit | What |
@@ -360,10 +316,12 @@ export INPAINT_MODEL=gemini-3-pro-image-preview
 | `8ef5fa0` | First version of this handover doc |
 | `d415cb6` | **Step 1** — screenshot-into-advisor + renderer route() port + prompt tightening |
 | `af9468a` | AGENTS.md updated with Step 1 live-verified status |
+| `8f70531` | Handover doc rewrite — accurate, cold-start-ready, Step 2 implementation sketch |
+| _(this session)_ | **Step 2** — perceptual pixel-diff gate (`isVisiblyChanged`) + 5 unit tests + harness alignment |
 
-**Test counts (current):** 21 fix-preview tests (12 advisor + 9 orchestrator), 1100 full suite.
+**Test counts (current):** 26 fix-preview tests (12 advisor + 9 orchestrator + 5 renderer pixel-diff), 1107 full suite.
 
-**Pick up at: §6 Step 2 (perceptual pixel-diff).** Implementation sketch is above — it's ~60 lines and a new test.
+**Pick up at: §6 Step 3 (apply migration 0023 + flip the Vercel flag).** Step 2 is the last code-only blocker; from here on it's environment work.
 
 ---
 

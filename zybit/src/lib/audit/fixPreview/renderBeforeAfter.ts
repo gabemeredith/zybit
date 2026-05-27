@@ -33,6 +33,8 @@
  */
 
 import { put } from '@vercel/blob';
+import pixelmatch from 'pixelmatch';
+import { PNG } from 'pngjs';
 import { applyModifications, stripScripts } from '@/lib/experiments/htmlModifier';
 import type { VariantModification } from '@/lib/experiments/types';
 import { fetchWithSsrfGuard } from '@/lib/phase2/findings/preview';
@@ -113,6 +115,19 @@ export async function renderBeforeAfter(args: {
   });
   if (!pair) return null;
 
+  // Route() interception produces a real styled render on both legs, so a
+  // mod that targets a non-existent selector no longer betrays itself as a
+  // wall of unstyled HTML — it renders identically to the before. Bail to
+  // Tier 2 when the after PNG is perceptually indistinguishable from the
+  // before; the orchestrator's vision inpaint always produces *something*
+  // visibly different.
+  if (!isVisiblyChanged(pair.beforeBuffer, pair.afterBuffer)) {
+    console.warn('[renderBeforeAfter] tier 1 render looks identical — mods did not visibly resolve', {
+      findingId: args.findingId,
+    });
+    return null;
+  }
+
   let beforeUrl: string;
   let afterUrl: string;
   try {
@@ -189,6 +204,38 @@ async function screenshotPair(args: {
 
 const DESKTOP_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+/**
+ * Perceptual diff between the before and after PNGs. Returns `true` when
+ * the two screenshots are visibly different — the mod actually moved
+ * pixels. Returns `false` when they look the same (e.g. an `attribute-set`
+ * mod targeting a selector that doesn't exist; an `element-insert` whose
+ * anchor resolves but whose payload is hidden by existing CSS).
+ *
+ * - `threshold: 0.1` ignores JPEG-style colour noise and anti-aliasing.
+ * - `> 100 changed pixels` filters sub-pixel render jitter from font
+ *   hinting / Browserless connection variance.
+ * - Different dimensions → treat as changed (rare, but safer to surface
+ *   than to swallow).
+ * - PNG parse errors → treat as changed (don't let Tier 1 silently bail
+ *   on corrupt input we still uploaded successfully).
+ */
+export function isVisiblyChanged(before: Buffer, after: Buffer): boolean {
+  let img1: PNG;
+  let img2: PNG;
+  try {
+    img1 = PNG.sync.read(before);
+    img2 = PNG.sync.read(after);
+  } catch {
+    return true;
+  }
+  if (img1.width !== img2.width || img1.height !== img2.height) return true;
+  const diff = new Uint8Array(img1.width * img1.height * 4);
+  const changed = pixelmatch(img1.data, img2.data, diff, img1.width, img1.height, {
+    threshold: 0.1,
+  });
+  return changed > 100;
+}
 
 /**
  * Navigate to the live URL, but swap the main-document response with our

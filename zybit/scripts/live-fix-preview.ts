@@ -35,6 +35,7 @@ import {
   callInpaint,
   buildInpaintPrompt,
 } from '../src/lib/audit/fixPreview/visionInpaint';
+import { isVisiblyChanged } from '../src/lib/audit/fixPreview/renderBeforeAfter';
 import { applyModifications } from '../src/lib/experiments/htmlModifier';
 import type { VariantModification } from '../src/lib/experiments/types';
 
@@ -305,15 +306,17 @@ async function processOneSite(url: string): Promise<void> {
       if (mutated !== fetched.html) {
         const afterPath = path.join(outDir, `${slot}-after.png`);
         await renderLiveToPng(ctx, fetched.finalUrl, afterPath, mutated);
-        // Compare PNG bytes against the before — an HTML mutation that
-        // adds a no-op <style> for a selector that doesn't match would
-        // pass `mutated !== html` but render identically. Be honest about
-        // it in the index so a viewer can tell visible from invisible.
+        // Perceptual diff against the before — route() interception
+        // produces a real styled render on both legs, so a mod targeting
+        // a selector that doesn't resolve no longer betrays itself as
+        // unstyled HTML. Byte-equality (the previous check) misses cases
+        // where rendering jitter shifts a few pixels but the page looks
+        // identical. The renderer uses this same helper to bail to Tier 2.
         const [beforeBuf, afterBuf] = await Promise.all([
           fs.readFile(beforePath),
           fs.readFile(afterPath),
         ]);
-        const visiblyChanged = !beforeBuf.equals(afterBuf);
+        const visiblyChanged = isVisiblyChanged(beforeBuf, afterBuf);
         tier1.rendered = visiblyChanged;
         tier1.afterPath = visiblyChanged ? afterPath : null;
         console.log(
