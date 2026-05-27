@@ -42,7 +42,38 @@ export async function upsertFindings(
   const db = getDb();
   const now = new Date();
 
-  const values = auditFindings.map((f) => ({
+  // Dedupe by computed PK before the insert. Postgres rejects
+  // `INSERT … ON CONFLICT DO UPDATE` when two rows in the same statement
+  // share the conflict target ("command cannot affect row a second
+  // time"); the whole batch then fails and *nothing* persists. Observed
+  // on github.com: 83 in-memory findings → persist threw → 0 rows in
+  // DB → empty prospect email (handover §16.5). When two findings
+  // collapse to the same PK we keep the higher-scoring one — typically
+  // a near-tie because PK collision means the upstream rule emitted on
+  // (siteId, ruleId, pathRef) we already saw.
+  const byPk = new Map<string, AuditFinding>();
+  let duplicateCount = 0;
+  for (const f of auditFindings) {
+    const pk = findingPk(siteId, f.ruleId, f.pathRef);
+    const existing = byPk.get(pk);
+    if (!existing) {
+      byPk.set(pk, f);
+      continue;
+    }
+    duplicateCount += 1;
+    if (f.priorityScore > existing.priorityScore) byPk.set(pk, f);
+  }
+  if (duplicateCount > 0) {
+    console.warn('[upsertFindings] dropped duplicate PKs before insert', {
+      siteId,
+      duplicateCount,
+      uniqueAfterDedup: byPk.size,
+      receivedFromPipeline: auditFindings.length,
+    });
+  }
+  const dedupedFindings = [...byPk.values()];
+
+  const values = dedupedFindings.map((f) => ({
     id: findingPk(siteId, f.ruleId, f.pathRef),
     organizationId,
     siteId,
@@ -105,7 +136,7 @@ export async function upsertFindings(
       },
     });
 
-  return auditFindings.length;
+  return dedupedFindings.length;
 }
 
 export interface InsightsTriggerResult {
