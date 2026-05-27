@@ -41,38 +41,56 @@ between the LLM and the persisted finding.**
 
 ### Layer A — decision (refactored, stays deterministic)
 
-Each rule body becomes a pure function returning `{ ruleId, severity,
-factsJson }` and nothing else. No `summary`, no `recommendation`, no
-`evidence` strings, no `humanizePath`, no `describeVisualTreatment`. Helpers
-that only feed prose move out of `rules/`; helpers that feed the firing
-condition stay.
+The actual `AuditFinding` shape (see `src/lib/phase2/rules/types.ts`) is
+richer than the critique implied. Some fields are *structured / numeric*
+(part of the defensible wedge); some are *narrative prose*. The split is:
 
-Target shape: ~50–100 LOC per rule for the body, plus whatever shared
-helpers a rule's signal extraction genuinely needs.
+| Field | Owner | Notes |
+|---|---|---|
+| `ruleId`, `severity`, `confidence`, `priorityScore`, `pathRef`, `category`, `refs`, `learnAdjustment`, `calibration` | Layer A | Already deterministic; unchanged |
+| `title` | Layer A | Templated from facts; stays deterministic so PMs always see a stable label |
+| `evidence[]` (structured `{label, value, context?}` rows) | Layer A | Numbers + labels feed the "Why we said this" tooltip — must be defensible |
+| `impactEstimate.{value, unit, period, basis}` | Layer A | The numbers themselves — the wedge |
+| `impactEstimate.formatted` | Layer A | Built from value + unit by a tiny shared formatter; stays deterministic |
+| `summary` | **Layer B** | One paragraph, PM-readable diagnosis |
+| `recommendation[]` | **Layer B** | Array of designer-/researcher-voiced paragraphs |
+| `prescription.{whyItMatters, whatToChange, whyItWorks, experimentVariantDescription}` | **Layer B** | All four sub-fields are prose explaining the brief |
+
+So the Layer A rule body returns the full `AuditFinding` minus the seven
+narrative fields, plus a `factsJson` blob that Layer B will use as input.
+Helpers that only feed prose (`describeVisualTreatment`, `humanizePath`,
+`describeLandmark` and friends) get moved into each rule's templating
+fallback function so they survive PR 1 (see Failure mode below) and can be
+deleted in PR 2 if the template fallback is retired.
+
+Target shape: ~80–150 LOC per rule body (slightly larger than the
+critique's "50 lines" because structured evidence rows still belong to the
+rule), plus an old-templating fallback function until PR 2.
 
 ### Layer B — expression (new, LLM, top-4 only)
 
-A single orchestration call per finding generates `summary`, `recommendation`,
-`evidence[]`, writes them once into the existing finding columns, never
+A single orchestration call per finding generates the seven narrative
+fields, writes them once into the existing finding columns, never
 regenerates.
 
 | Concern | Decision |
 |---|---|
-| Model | Gemini 2.0 Flash via REST (consistent with `aiAdvisor.ts`, `captureCopyCritique.ts`) |
+| Model | Gemini 2.0 Flash via REST (mirrors `auditFixAdvisor.ts` — fail-soft `null` return, caller degrades) |
 | Inputs | `factsJson` + `pageType` + design tokens from `extractDesignTokens` |
 | Scope | Top 4 findings per audit only (matches what the report email already trims to) |
-| Failure mode | **TBD before PR 1 ships** — see Open Question below |
-| Persistence | Persist once at generation into `findings.summary`/`recommendation`/`evidence`. Never regenerate. Re-audit creates a new finding with fresh prose; old findings stay frozen |
-| Output schema | Strict JSON validated like `aiAdvisor.ts` — reject on validation failure, fall back per the failure-mode decision |
-| Discriminator | New column `findings.prose_source` (`'template' | 'llm-v1' | 'stub'`) so history and LEARNED timelines stay interpretable across the pilot |
+| Failure mode | **Fall back to the rule's existing templating** (option a). Persist with `prose_source = 'template'` when the fallback fires. PR 2's deletion-of-templates step becomes conditional on a measured Layer B failure rate — if templates haven't been needed in a sprint of real audits we retire them; otherwise they stay |
+| Persistence | Persist once at generation into the seven narrative columns. Never regenerate. Re-audit creates a new finding with fresh prose; old findings stay frozen |
+| Output schema | Strict JSON: `{ summary: string, recommendation: string[], prescription: { whyItMatters?: string, whatToChange: string, whyItWorks: string, experimentVariantDescription: string } }`. Validation failure = fallback fires |
+| Discriminator | New column `findings.prose_source` (`'template' | 'llm-v1'`). No `'stub'` value because we don't ship stubs — templates are the fallback |
 
-**Open question carried into PR 1:** when Layer B fails for a finding, do we
-(a) fall back to a deterministic stub of the form `"<RuleName> fired on
-<selector>. fact1; fact2."`, (b) fall back to the rule's old templating
-function (means PR 2 cannot delete the templates, they become the fallback),
-or (c) drop the finding entirely. Stub is the consistent fail-soft choice
-but is worse than today's templates. To be decided after the first pilot
-audits return real data.
+**Two pipelines, two wiring sites.** The product pipeline lives in
+`src/lib/phase2/runInsightsPipeline.ts` — natural insertion point is right
+after `applyLearnRerank` (around line 129) on the *top-4 by `priorityScore`
+descending*, before the response returns. The public lead-magnet pipeline
+runs in the separate Lighthouse package (`runUrlAudit`); Layer B has to be
+wired in there too, and the `LLM_REFACTOR_ENABLED` flag honored in both. PR
+1's pilot includes both wirings so the flag-on flow is exercised on real
+public audits.
 
 ### Layer C — detection (new, additive, closed registry)
 
@@ -115,8 +133,9 @@ rewrite.
 - Layer C runs *after* deterministic rules so Layer A findings always win
   when they overlap on the same selector.
 - Layer C findings respect `pageTypeModulation` the same way rules do.
-- Layer C output is persisted with `prose_source = 'llm-v1'` and gets a
-  Layer B prose pass like any other finding (if it ranks in the top 4).
+- Layer C output gets a Layer B prose pass like any other finding (if it
+  ranks in the top 4). Layer C category verifiers each ship with a small
+  templating fallback function for the prose, mirroring Layer A's pattern.
 
 ---
 
@@ -147,10 +166,10 @@ rewrite.
 
 ### PR 1 — pilot (this branch, first cut)
 
-1. Add the Layer A/B contract — `LayerAResult` type (`{ ruleId, severity,
-   factsJson }`), `runLayerB(facts, pageType, designTokens) →
-   {summary, recommendation, evidence[]}` orchestrator, strict-JSON validator,
-   fail-soft path per Open Question above.
+1. Add the Layer A/B contract — `LayerAFinding` type (the full `AuditFinding`
+   minus the seven narrative fields, plus `factsJson`), `runLayerB(facts,
+   pageType, designTokens) → { summary, recommendation[], prescription }`
+   orchestrator, strict-JSON validator, template-fallback path.
 2. Convert **three rules** to Layer A/B alongside the existing templating —
    both paths live in the file, both are reachable. The env var
    `LLM_REFACTOR_ENABLED=1` controls which path persists prose for a given
