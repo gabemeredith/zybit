@@ -21,9 +21,16 @@
 
 import { put } from '@vercel/blob';
 
-const INPAINT_MODEL_NAME = 'gemini-2.5-flash-image-preview';
-const INPAINT_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent';
+// Nano Banana 2 — Gemini 3.1 Flash Image Preview, released Feb 2026. 4K
+// output, faster than Nano Banana Pro, image-in / image-out via the
+// standard generateContent endpoint. The earlier 2.5 model still works
+// but produces softer edges and lower fidelity on logo / typography
+// preservation. Override at runtime by exporting `INPAINT_MODEL` to
+// e.g. `gemini-3-pro-image-preview` (Nano Banana Pro) for higher-budget
+// runs.
+const INPAINT_MODEL_NAME =
+  process.env.INPAINT_MODEL || 'gemini-3.1-flash-image-preview';
+const INPAINT_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${INPAINT_MODEL_NAME}:generateContent`;
 
 export interface VisionInpaintInput {
   findingId: string;
@@ -84,9 +91,18 @@ export function buildInpaintPrompt(args: {
   ].join('\n');
 }
 
+// Nano Banana responses are camelCase (`inlineData`, `mimeType`) while
+// requests accept snake_case. Cover both shapes so a future API tweak
+// can't silently break extraction.
 interface InpaintPart {
   text?: string;
-  inline_data?: { mime_type: string; data: string };
+  inline_data?: { mime_type?: string; mimeType?: string; data: string };
+  inlineData?: { mime_type?: string; mimeType?: string; data: string };
+}
+
+export interface InpaintOutput {
+  buffer: Buffer;
+  mimeType: string;
 }
 
 export async function callInpaint(args: {
@@ -94,7 +110,7 @@ export async function callInpaint(args: {
   prompt: string;
   beforeBuffer: Buffer;
   fetcher?: InpaintFetcher;
-}): Promise<Buffer | null> {
+}): Promise<InpaintOutput | null> {
   const fetcher = args.fetcher ?? defaultFetcher;
   const response = await fetcher(INPAINT_ENDPOINT, {
     method: 'POST',
@@ -116,9 +132,11 @@ export async function callInpaint(args: {
           ],
         },
       ],
-      // The image API doesn't accept the same generationConfig shape as the
-      // text endpoint — leave it implicit. Specifying responseMimeType
-      // produces a 400 from the preview endpoint.
+      // Nano Banana family REQUIRES `responseModalities: ['TEXT', 'IMAGE']`
+      // or the endpoint returns a 400 (the default modality is TEXT only).
+      // Don't set responseMimeType — that's a text-endpoint shape and
+      // produces 400 here.
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
     }),
   });
   if (!response.ok) {
@@ -129,8 +147,10 @@ export async function callInpaint(args: {
   };
   const parts = body.candidates?.[0]?.content?.parts ?? [];
   for (const part of parts) {
-    if (part.inline_data?.data) {
-      return Buffer.from(part.inline_data.data, 'base64');
+    const inline = part.inline_data ?? part.inlineData;
+    if (inline?.data) {
+      const mimeType = inline.mime_type ?? inline.mimeType ?? 'image/png';
+      return { buffer: Buffer.from(inline.data, 'base64'), mimeType };
     }
   }
   return null;
@@ -148,7 +168,7 @@ export async function inpaintFixAfter(
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
   if (!apiKey || !blobToken) return null;
 
-  let edited: Buffer | null = null;
+  let edited: InpaintOutput | null = null;
   try {
     edited = await callInpaint({
       apiKey,
@@ -175,9 +195,17 @@ export async function inpaintFixAfter(
     return null;
   }
 
+  // Nano Banana sometimes returns JPEG even when given a PNG input — honor
+  // the response's mime type when uploading so the blob extension matches
+  // (otherwise a `.png` URL serves bytes that begin with `\xFF\xD8`).
+  const ext = edited.mimeType.endsWith('jpeg') ? 'jpg' : 'png';
   try {
-    const filename = `fix-preview/${input.findingId}/${Date.now()}-after.png`;
-    const result = await put(filename, edited, { access: 'public', token: blobToken });
+    const filename = `fix-preview/${input.findingId}/${Date.now()}-after.${ext}`;
+    const result = await put(filename, edited.buffer, {
+      access: 'public',
+      token: blobToken,
+      contentType: edited.mimeType,
+    });
     return {
       beforeUrl: input.beforeUrl,
       afterUrl: result.url,
