@@ -81,6 +81,32 @@ const RECOMMENDATION_PARA_MAX = 600;
 const RECOMMENDATION_COUNT_MAX = 3;
 const PRESCRIPTION_FIELD_MAX = 500;
 
+// Low temperature — Layer B writes prose grounded in FACTS, not creative
+// design work. Anything above ~0.3 widens the hallucination surface.
+const LAYER_B_TEMPERATURE = 0.2;
+
+// JSON Schema-shaped responseSchema passed in generationConfig — Gemini
+// enforces the shape at decode time, eliminating a class of "wrong-shape
+// JSON" failures we'd otherwise catch in parseLayerBResponse.
+const LAYER_B_RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    recommendation: { type: 'array', items: { type: 'string' } },
+    prescription: {
+      type: 'object',
+      properties: {
+        whyItMatters: { type: 'string' },
+        whatToChange: { type: 'string' },
+        whyItWorks: { type: 'string' },
+        experimentVariantDescription: { type: 'string' },
+      },
+      required: ['whatToChange', 'whyItWorks', 'experimentVariantDescription'],
+    },
+  },
+  required: ['summary', 'recommendation', 'prescription'],
+} as const;
+
 // ---------------------------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------------------------
@@ -210,6 +236,147 @@ export function parseLayerBResponse(raw: string): LayerBOutput | null {
 }
 
 // ---------------------------------------------------------------------------
+// Numeric grounding — output numbers must be present in / derivable from FACTS
+// ---------------------------------------------------------------------------
+//
+// The wedge guarantee is "PMs can defend every number." Telling the LLM
+// "don't invent numbers" is not the same as checking. This verifier scans
+// the persisted prose for material claims (percent values, multi-digit
+// counts) and confirms each one matches a number in `factsJson` (with
+// rounding tolerance and rate-to-percent derivation). Mismatches reject
+// the LLM result; caller falls back to template.
+//
+// Deliberately permissive on small ordinals (1, 2, 3) because they appear
+// naturally as counts of paragraphs / steps / items and aren't material
+// quantitative claims a PM would interrogate.
+
+const SMALL_NUMBER_THRESHOLD = 4;
+const COUNT_TOLERANCE = 1;
+
+/** Walk a factsJson tree and collect every number (plus common derivations). */
+export function collectFactNumbers(facts: Record<string, unknown>): {
+  counts: Set<number>;
+  percents: Set<number>;
+} {
+  const counts = new Set<number>();
+  const percents = new Set<number>();
+  const walk = (v: unknown): void => {
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      counts.add(v);
+      counts.add(Math.round(v));
+      // Treat any 0..1 value as a rate that could be expressed as a
+      // percent in prose ("12% of sessions" derived from 0.12).
+      if (v >= 0 && v <= 1) {
+        const asPercent = v * 100;
+        percents.add(asPercent);
+        percents.add(Math.round(asPercent));
+        percents.add(Math.round(asPercent * 10) / 10);
+      }
+      // A whole-number percent is also a fact-shaped number.
+      if (v >= 0 && v <= 100) percents.add(v);
+    } else if (Array.isArray(v)) {
+      v.forEach(walk);
+    } else if (v && typeof v === 'object') {
+      Object.values(v as Record<string, unknown>).forEach(walk);
+    }
+  };
+  walk(facts);
+  return { counts, percents };
+}
+
+interface NumericClaim {
+  value: number;
+  kind: 'percent' | 'count';
+  raw: string;
+}
+
+const PERCENT_RE = /(\d+(?:\.\d+)?)\s*%/g;
+const NUMBER_RE = /(?<![\w/.-])(\d+(?:\.\d+)?)(?![\w/.-])/g;
+
+/** Pull material numeric claims out of one prose string. */
+export function extractClaims(text: string): NumericClaim[] {
+  const claims: NumericClaim[] = [];
+  const percentRanges: Array<[number, number]> = [];
+  for (const m of text.matchAll(PERCENT_RE)) {
+    const start = m.index ?? 0;
+    percentRanges.push([start, start + m[0].length]);
+    claims.push({ value: Number(m[1]), kind: 'percent', raw: m[0] });
+  }
+  for (const m of text.matchAll(NUMBER_RE)) {
+    const start = m.index ?? 0;
+    // Skip a number that's the body of a `\d+%` we already captured.
+    if (percentRanges.some(([s, e]) => start >= s && start < e)) continue;
+    const value = Number(m[1]);
+    if (!Number.isFinite(value)) continue;
+    // Small ordinals aren't material claims — "1 to 3 paragraphs", "first",
+    // "second" written numerically are not what we're defending against.
+    if (value < SMALL_NUMBER_THRESHOLD && Number.isInteger(value)) continue;
+    claims.push({ value, kind: 'count', raw: m[0] });
+  }
+  return claims;
+}
+
+function percentMatches(value: number, allowed: Set<number>): boolean {
+  if (allowed.has(value)) return true;
+  // Tolerate one-decimal rounding (e.g. fact 12.34 → prose 12.3 or 12).
+  if (allowed.has(Math.round(value))) return true;
+  if (allowed.has(Math.round(value * 10) / 10)) return true;
+  return false;
+}
+
+function countMatches(value: number, allowed: Set<number>): boolean {
+  if (allowed.has(value)) return true;
+  if (allowed.has(Math.round(value))) return true;
+  // Tolerate a one-unit difference (fact 234 → prose 235) — uncommon but
+  // can happen when the LLM re-derives a sum.
+  for (let delta = 1; delta <= COUNT_TOLERANCE; delta += 1) {
+    if (allowed.has(value + delta) || allowed.has(value - delta)) return true;
+  }
+  return false;
+}
+
+export interface VerificationResult {
+  ok: boolean;
+  /** Claims that did not match any fact — populated only when `ok === false`. */
+  failures: NumericClaim[];
+}
+
+/**
+ * Verify that every material numeric claim in the LLM output corresponds
+ * to a number in factsJson (allowing percent derivation + rounding). The
+ * orchestrator rejects the output and falls back to template when this
+ * returns `ok === false`.
+ */
+export function verifyOutputAgainstFacts(
+  output: LayerBOutput,
+  facts: Record<string, unknown>,
+): VerificationResult {
+  const { counts, percents } = collectFactNumbers(facts);
+  const fields: string[] = [
+    output.summary,
+    ...output.recommendation,
+    output.prescription.whyItMatters ?? '',
+    output.prescription.whatToChange,
+    output.prescription.whyItWorks,
+    output.prescription.experimentVariantDescription,
+  ];
+
+  const failures: NumericClaim[] = [];
+  for (const field of fields) {
+    if (!field) continue;
+    for (const claim of extractClaims(field)) {
+      const matches =
+        claim.kind === 'percent'
+          ? percentMatches(claim.value, percents)
+          : countMatches(claim.value, counts);
+      if (!matches) failures.push(claim);
+    }
+  }
+
+  return failures.length === 0 ? { ok: true, failures: [] } : { ok: false, failures };
+}
+
+// ---------------------------------------------------------------------------
 // Gemini REST client — text only (no vision channel)
 // ---------------------------------------------------------------------------
 
@@ -241,7 +408,11 @@ export async function callLayerB(args: {
     },
     body: JSON.stringify({
       contents: [{ parts: [{ text: args.prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.4 },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: LAYER_B_RESPONSE_SCHEMA,
+        temperature: LAYER_B_TEMPERATURE,
+      },
     }),
   });
   if (!response.ok) {
@@ -263,6 +434,9 @@ export async function callLayerB(args: {
  *   - `GEMINI_API_KEY` is unset
  *   - the Gemini call throws
  *   - the response fails strict-JSON validation
+ *   - the response contains a numeric claim not present in / derivable
+ *     from `factsJson` (preserves the wedge: every number a PM might
+ *     interrogate is grounded in the rule's structured output)
  *
  * The caller treats `null` as "fall back to the rule's templating function"
  * and persists with `prose_source = 'template'`. A non-null result is
@@ -280,7 +454,17 @@ export async function runLayerB(
       apiKey,
       ...(opts?.fetcher ? { fetcher: opts.fetcher } : {}),
     });
-    return parseLayerBResponse(text);
+    const parsed = parseLayerBResponse(text);
+    if (!parsed) return null;
+    const verification = verifyOutputAgainstFacts(parsed, input.factsJson);
+    if (!verification.ok) {
+      console.warn('[layer-b] numeric grounding failed — falling back to template', {
+        ruleId: input.ruleId,
+        failures: verification.failures.map((f) => f.raw),
+      });
+      return null;
+    }
+    return parsed;
   } catch (err) {
     console.error('[layer-b] call failed', { ruleId: input.ruleId, err });
     return null;

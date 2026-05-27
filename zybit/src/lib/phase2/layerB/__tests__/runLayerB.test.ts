@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildLayerBPrompt,
+  collectFactNumbers,
+  extractClaims,
   parseLayerBResponse,
   runLayerB,
+  verifyOutputAgainstFacts,
   type LayerBFetcher,
   type LayerBInput,
+  type LayerBOutput,
 } from '../runLayerB';
 
 const BASE_INPUT: LayerBInput = {
@@ -177,6 +181,114 @@ describe('parseLayerBResponse', () => {
   });
 });
 
+describe('collectFactNumbers', () => {
+  it('walks nested objects and arrays', () => {
+    const { counts, percents } = collectFactNumbers({
+      thrashSessions: 234,
+      thrashRate: 0.12,
+      nested: { totalSessions: 1950 },
+      array: [{ count: 7 }, { count: 12 }],
+    });
+    expect(counts.has(234)).toBe(true);
+    expect(counts.has(1950)).toBe(true);
+    expect(counts.has(7)).toBe(true);
+    expect(counts.has(12)).toBe(true);
+    // 0.12 → 12% derivation
+    expect(percents.has(12)).toBe(true);
+  });
+
+  it('derives both whole and one-decimal percents from a rate', () => {
+    const { percents } = collectFactNumbers({ rate: 0.1234 });
+    expect(percents.has(12)).toBe(true); // rounded
+    expect(percents.has(12.3)).toBe(true); // one-decimal
+  });
+});
+
+describe('extractClaims', () => {
+  it('captures percents and material counts but skips small ordinals', () => {
+    const claims = extractClaims('234 sessions visit /pricing 3+ times — 12% loop.');
+    expect(claims).toContainEqual({ value: 234, kind: 'count', raw: '234' });
+    expect(claims).toContainEqual({ value: 12, kind: 'percent', raw: '12%' });
+    // "3" is below the small-ordinal threshold (< 4) — not a claim
+    expect(claims.find((c) => c.value === 3)).toBeUndefined();
+  });
+
+  it('does not double-count a percent value as both percent and count', () => {
+    const claims = extractClaims('12% of sessions');
+    const twelves = claims.filter((c) => c.value === 12);
+    expect(twelves).toHaveLength(1);
+    expect(twelves[0].kind).toBe('percent');
+  });
+
+  it('skips numbers embedded in paths and identifiers', () => {
+    const claims = extractClaims('See /v1/api or item-42 above /pricing.');
+    expect(claims.find((c) => c.raw === '1')).toBeUndefined();
+    expect(claims.find((c) => c.raw === '42')).toBeUndefined();
+  });
+});
+
+describe('verifyOutputAgainstFacts', () => {
+  const facts = {
+    thrashSessions: 234,
+    totalSessions: 1950,
+    thrashRate: 0.12,
+  };
+
+  function makeOutput(summary: string): LayerBOutput {
+    return {
+      summary,
+      recommendation: ['ok'],
+      prescription: {
+        whatToChange: 'do x',
+        whyItWorks: 'because',
+        experimentVariantDescription: 'variant',
+      },
+    };
+  }
+
+  it('passes when every number is grounded', () => {
+    const out = makeOutput('234 sessions visit /pricing — 12% loop.');
+    expect(verifyOutputAgainstFacts(out, facts).ok).toBe(true);
+  });
+
+  it('passes percent derived from a rate fact', () => {
+    const out = makeOutput('12% of sessions get stuck.');
+    expect(verifyOutputAgainstFacts(out, facts).ok).toBe(true);
+  });
+
+  it('rejects a fabricated count', () => {
+    const out = makeOutput('589 sessions visit /pricing.');
+    const result = verifyOutputAgainstFacts(out, facts);
+    expect(result.ok).toBe(false);
+    expect(result.failures.map((f) => f.value)).toContain(589);
+  });
+
+  it('rejects a fabricated percent', () => {
+    const out = makeOutput('87% of sessions are stuck.');
+    const result = verifyOutputAgainstFacts(out, facts);
+    expect(result.ok).toBe(false);
+    expect(result.failures.map((f) => f.value)).toContain(87);
+  });
+
+  it('scans every narrative field, not just summary', () => {
+    const out: LayerBOutput = {
+      summary: 'ok',
+      recommendation: ['Affects 999 visitors.'],
+      prescription: {
+        whatToChange: 'do x',
+        whyItWorks: 'because',
+        experimentVariantDescription: 'variant',
+      },
+    };
+    expect(verifyOutputAgainstFacts(out, facts).ok).toBe(false);
+  });
+
+  it('tolerates ±1 rounding on counts', () => {
+    const out = makeOutput('1951 sessions touched the page.');
+    expect(verifyOutputAgainstFacts(out, facts).ok).toBe(true);
+  });
+});
+
 describe('runLayerB', () => {
   it('returns null when no API key is set', async () => {
     const result = await runLayerB(BASE_INPUT, { apiKey: '' });
@@ -195,6 +307,54 @@ describe('runLayerB', () => {
     const result = await runLayerB(BASE_INPUT, { apiKey: 'test-key', fetcher });
     expect(result).not.toBeNull();
     expect(result?.summary).toMatch(/^234 sessions/);
+  });
+
+  it('sends responseSchema and temperature 0.2 in the request body', async () => {
+    let capturedBody: unknown = null;
+    const fetcher: LayerBFetcher = async (_url, init) => {
+      capturedBody = JSON.parse(init.body);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: VALID_RESPONSE }] } }],
+        }),
+      };
+    };
+    await runLayerB(BASE_INPUT, { apiKey: 'test-key', fetcher });
+    const body = capturedBody as {
+      generationConfig: {
+        temperature: number;
+        responseSchema: { required: string[] };
+      };
+    };
+    expect(body.generationConfig.temperature).toBe(0.2);
+    expect(body.generationConfig.responseSchema.required).toEqual([
+      'summary',
+      'recommendation',
+      'prescription',
+    ]);
+  });
+
+  it('falls back to null when the LLM invents a number', async () => {
+    const fabricated = JSON.stringify({
+      summary: '999 sessions visit /pricing — 87% loop.',
+      recommendation: ['ok'],
+      prescription: {
+        whatToChange: 'do x',
+        whyItWorks: 'because',
+        experimentVariantDescription: 'variant',
+      },
+    });
+    const fetcher: LayerBFetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: fabricated }] } }],
+      }),
+    });
+    const result = await runLayerB(BASE_INPUT, { apiKey: 'test-key', fetcher });
+    expect(result).toBeNull();
   });
 
   it('returns null when the HTTP call throws', async () => {
