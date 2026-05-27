@@ -119,6 +119,11 @@ export async function mapSite(
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
     if (parsed.host !== root.host) continue;
     if (NON_HTML_EXT.test(parsed.pathname)) continue;
+    // Firecrawl's /map can return glob URLs like `https://example.com/*` to
+    // signal "any path under this prefix". They are not real pages — fetching
+    // them on a SPA returns a fallback view that emits bogus findings under
+    // pathRef=/*, while the real homepage gets crawled separately as `/`.
+    if (/[*?[\]{}]/.test(parsed.pathname)) continue;
     const pathRef = normalizePathRef(parsed.pathname);
     if (byPath.has(pathRef)) continue;
     // Drop query + fragment — the snapshot pipeline keys on pathRef.

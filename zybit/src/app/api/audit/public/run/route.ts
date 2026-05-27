@@ -297,7 +297,65 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     .orderBy(desc(zybitFindings.priorityScore))
     .limit(50);
 
-  const top4Findings = dbFindings.slice(0, 4);
+  // Boost findings on the page the PM actually submitted. Without this,
+  // template-driven utility subpages (e.g. /impressum, /cookie-settings)
+  // emit many flat-score structural findings that drown out the polished
+  // homepage's fewer but more meaningful findings — Stripe audits were
+  // surfacing the German legal page instead of stripe.com.
+  const submittedPath = (() => {
+    try { return new URL(audit.url).pathname || '/'; }
+    catch { return '/'; }
+  })();
+  const SUBMITTED_PAGE_BOOST = 1.5;
+  const effectiveScore = (f: typeof dbFindings[number]) =>
+    f.priorityScore * (f.pathRef === submittedPath ? SUBMITTED_PAGE_BOOST : 1);
+  const sortedFindings = [...dbFindings].sort(
+    (a, b) => effectiveScore(b) - effectiveScore(a),
+  );
+  // Cascade picks for diversity. PM-facing top-4 should ideally cover 4
+  // different pages AND 4 different rules. Page-diversity ranks higher than
+  // rule-diversity because "what's wrong across my site" beats "deep dive
+  // on one page" — Linear's per-page audit was burying every other page
+  // under 3 stacked findings on /compliance.
+  //   Pass 1: page + rule both unique  (ideal)
+  //   Pass 2: page unique, rule may repeat  (different pages, same problem)
+  //   Pass 3: rule unique, page may repeat  (same page, different problems)
+  //   Pass 4: anything to reach 4
+  const top4Findings: typeof sortedFindings = [];
+  const pickedIds = new Set<string>();
+  const usedRules = new Set<string>();
+  const usedPaths = new Set<string>();
+  const pathOf = (f: typeof sortedFindings[number]) => f.pathRef ?? '/';
+  for (const f of sortedFindings) {
+    if (top4Findings.length === 4) break;
+    if (usedPaths.has(pathOf(f)) || usedRules.has(f.ruleId)) continue;
+    top4Findings.push(f);
+    pickedIds.add(f.id);
+    usedPaths.add(pathOf(f));
+    usedRules.add(f.ruleId);
+  }
+  for (const f of sortedFindings) {
+    if (top4Findings.length === 4) break;
+    if (pickedIds.has(f.id) || usedPaths.has(pathOf(f))) continue;
+    top4Findings.push(f);
+    pickedIds.add(f.id);
+    usedPaths.add(pathOf(f));
+    usedRules.add(f.ruleId);
+  }
+  for (const f of sortedFindings) {
+    if (top4Findings.length === 4) break;
+    if (pickedIds.has(f.id) || usedRules.has(f.ruleId)) continue;
+    top4Findings.push(f);
+    pickedIds.add(f.id);
+    usedPaths.add(pathOf(f));
+    usedRules.add(f.ruleId);
+  }
+  for (const f of sortedFindings) {
+    if (top4Findings.length === 4) break;
+    if (pickedIds.has(f.id)) continue;
+    top4Findings.push(f);
+    pickedIds.add(f.id);
+  }
 
   // Generate before/after fix previews for the top findings. Fail-soft —
   // a thrown error or an empty result leaves `topFindings` without the
