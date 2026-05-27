@@ -249,10 +249,14 @@ async function processOneSite(url: string): Promise<void> {
   });
 
   // Pre-render the "before" once — live navigation so styles + fonts
-  // hydrate the same way the prospect sees the page.
+  // hydrate the same way the prospect sees the page. The bytes are also
+  // handed to the Tier 1 advisor (vision channel) so the model can see
+  // what it's editing.
   const beforePath = path.join(outDir, 'before.png');
   await renderLiveToPng(ctx, fetched.finalUrl, beforePath, null);
-  console.log(`  before.png saved (${(await fs.stat(beforePath)).size} bytes)`);
+  const beforeBytes = await fs.readFile(beforePath);
+  const beforeBase64 = beforeBytes.toString('base64');
+  console.log(`  before.png saved (${beforeBytes.length} bytes, base64 ${beforeBase64.length} chars)`);
 
   const results: FindingResult[] = [];
 
@@ -279,7 +283,7 @@ async function processOneSite(url: string): Promise<void> {
         .map((c) => c.text ?? '')
         .filter((t) => t.length > 0 && t.length < 40)
         .slice(0, 10),
-      beforeScreenshotBase64: null,
+      beforeScreenshotBase64: beforeBase64,
     };
 
     const suggestion = await suggestAuditFix(input);

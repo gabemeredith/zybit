@@ -1,9 +1,11 @@
 # Zybit — Audit Fix-Preview Handover
 
-**Branch:** `claude/trusting-goldberg-EkWRE`
+**Branch:** `claude/audit-fix-preview-handover-N2TVH` (was `claude/trusting-goldberg-EkWRE`)
 **Prepared:** 2026-05-27
-**Commits this session:** `bd516c3`, `29f5084`, `764a405`
-**Purpose:** Engineering handover for whoever picks up the public-audit before/after fix-preview pipeline. Covers what shipped, why the architecture looks the way it does, what the live runs proved, and the prioritized next steps — starting with the screenshot-into-advisor change that will materially lift Tier 1's hit rate.
+**Last updated:** 2026-05-27 — Step 1 + renderer route-interception port shipped
+**Purpose:** Engineering handover for whoever picks up the public-audit before/after fix-preview pipeline. Covers what shipped, why the architecture looks the way it does, what the live runs proved, and the prioritized next steps.
+
+> **2026-05-27 update — Step 1 done.** Tier 1 advisor now receives the live before screenshot as a vision input, and the production renderer was ported from `setContent` to `page.route()` + `page.goto(originUrl)` interception (the same model the harness uses). See §6 step 1 (now ~~struck through~~) and §10 for the diff details. Step 2 (perceptual pixel-diff "did this resolve?" check after Tier 1 render) is now top of the list.
 
 > **Read first:** `AGENTS.md` — `Public URL-audit lead magnet` row in the
 > status table for the canonical state. The `Before/after fix-preview
@@ -219,28 +221,9 @@ That gap is exactly what the §6 next-step fixes.
 
 > **Top of the list:** the screenshot-into-advisor change. This is the single biggest lift to Tier 1's hit rate, and once Tier 1 fires reliably the Tier 2 fallback becomes a true fallback rather than the primary surface.
 
-### Step 1 — Pass the rendered before screenshot into the Tier 1 advisor
+### ~~Step 1~~ — ~~Pass the rendered before screenshot into the Tier 1 advisor~~ ✅ Shipped 2026-05-27
 
-**Why:** Today the advisor sees structured snapshot data (selectors, design tokens, CTA vocabulary) but not the rendered page. On hash-class CSS frameworks (Tailwind/Emotion/CSS-Modules — the majority of modern marketing sites) it invents selectors that look plausible against the snapshot but don't resolve against the live HTML. Giving it the screenshot lets it cross-check: it can SEE the hero button, the nav, the copy, and pick selectors that map to elements actually present in the page it just looked at.
-
-`auditFixAdvisor.ts` already accepts a `beforeScreenshotBase64` field in `AuditFixAdvisorInput` and threads it through the multimodal `callAuditAdvisor`. Today the orchestrator passes `null`. The change is plumbing.
-
-**Implementation:**
-
-1. **Reorder the orchestrator so the before render runs first** (`src/lib/audit/fixPreview/generateFixPreviews.ts`, `runOneFinding`):
-   - Call `renderBeforeOnly` BEFORE `suggestAuditFix`
-   - Pass `before.beforeBuffer.toString('base64')` as `beforeScreenshotBase64`
-   - Reuse the before buffer for Tier 2 (don't render twice)
-   - If `renderBeforeOnly` fails → bail to no-preview outcome (we have no before either way)
-2. **Update Tier 1 path** to call `renderBeforeAfter` with the already-fetched HTML rather than re-fetching. This is a small `renderBeforeAfter` API change: take an optional pre-fetched HTML so the second call doesn't re-hit the origin.
-3. **Tighten the advisor prompt** in `auditFixAdvisor.ts` (`buildAuditFixPrompt`):
-   - Add a line that explicitly tells the model "the screenshot below shows the live page — use selectors that target elements you can SEE in the screenshot"
-   - Remove or de-emphasize the `availableSelectors` hint list — let the screenshot be the ground truth
-4. **Update the orchestrator's `suggestAuditFix` call** to pass the rendered base64.
-
-Estimated diff: ~80 lines + 1–2 test updates. Per-finding cost goes up by 1 Browserless screenshot (already happening for Tier 2; just moves earlier).
-
-**Acceptance:** Re-run `scripts/live-fix-preview.ts` against the same browserless.io URL the harness flagged today. Tier 1 should produce visible-change `after.png` for both findings (it produced zero today).
+See §10 for the actual diff that landed. TL;DR: orchestrator reordered, base64 screenshot fed to advisor, prompt tightened with screenshot-grounded language, and the renderer was additionally ported from `setContent` to `page.route()` interception so the screenshot the advisor sees is itself a real styled render (not unstyled raw HTML). Unit tests pass (21 fix-preview tests, was 19); harness acceptance pending an env with `GEMINI_API_KEY` + `BROWSERLESS_KEY`.
 
 ### Step 2 — Add a "did this resolve?" verification call after Tier 1 render
 
@@ -328,11 +311,72 @@ export INPAINT_MODEL=gemini-3-pro-image-preview
 
 ## 9. Branch state
 
-- Branch: `claude/trusting-goldberg-EkWRE` (pushed)
-- Three commits ahead of `main`:
+- Branch: `claude/audit-fix-preview-handover-N2TVH` (pushed; fast-forwarded from `claude/trusting-goldberg-EkWRE`)
+- Commits ahead of `main`:
   - `bd516c3` — initial pipeline (modules, slider, email, migration, tests)
   - `29f5084` — Nano Banana 2 swap + first cut of live harness
   - `764a405` — harness reliability fixes (live navigation, route interception, base href, UA spoof, timeout widening)
-- `AGENTS.md` Public URL-audit lead-magnet row has the canonical one-paragraph summary as of 2026-05-27
+  - `8ef5fa0` — handover doc (this file's first version)
+  - **2026-05-27 commit** — Step 1 + renderer route-interception port (§10)
+- `AGENTS.md` Public URL-audit lead-magnet row has the canonical one-paragraph summary
 
-Pick up at §6 step 1. The orchestrator refactor is the single highest-leverage change.
+Pick up at §6 step 2 (perceptual pixel-diff). Step 1 is now closed.
+
+---
+
+## 10. Step 1 — what actually shipped 2026-05-27
+
+### Diff summary
+
+**`src/lib/audit/fixPreview/renderBeforeAfter.ts`** — production renderer ported from `setContent` to `page.route()` + `page.goto(originUrl)` interception, mirroring the harness. This is the same fix the harness §3 calls out for itself: `setContent` doesn't navigate, so relative `<link href="/styles.css">` 404s and the screenshot is unstyled raw HTML. With route interception the page navigates to the real URL while a `route()` handler swaps ONLY the main-document response body for the mutated/raw HTML — every other request (CSS, fonts, images, third-party) passes through to the origin so the variant hydrates with the real styles. Other changes in the same file:
+- `renderBeforeOnly` now returns `fetchedHtml` (the SSRF-guarded fetch result) alongside the screenshot buffer + URL, so the orchestrator can hand the same HTML to `renderBeforeAfter` and avoid a second origin hit.
+- `renderBeforeAfter` accepts an optional `prefetchedHtml` — when present, skips its own SSRF fetch.
+- Screenshot timeout widened from 15s → 25s (`load` + 1.5s settle is generous, the wider budget is for chunked responses on real marketing CDNs).
+- UA spoof + `ignoreHTTPSErrors` added (anti-bot middleware + sandbox cert quirks; same defaults the harness ended up at).
+
+**`src/lib/audit/fixPreview/generateFixPreviews.ts`** — orchestrator reordered:
+1. `renderBeforeOnly` runs FIRST (was: after the advisor declined).
+2. The base64-encoded before-screenshot bytes are passed into `suggestAuditFix` via the `beforeScreenshotBase64` input.
+3. The fetched HTML from the before render is passed to `renderBeforeAfter` so the after pass skips the second SSRF fetch.
+4. If `renderBeforeOnly` fails, the orchestrator bails to `{ preview: null, reason: 'no-html' }` for that finding — no before image means no vision channel, no tier-2 input image, and no tier-3 fallback either.
+
+**`src/lib/audit/fixPreview/auditFixAdvisor.ts`** — `buildAuditFixPrompt` tightened:
+- "GROUND TRUTH" header that branches on whether a screenshot is attached. When attached: "every selector you emit MUST target an element you can SEE". Explicit hash-class warning ("Hashed Tailwind/CSS-module class names — `.css-12abc`, `.jsx-abc123` — are unstable across builds and almost never resolve").
+- `availableSelectors` hint list dropped from the prompt entirely. The previous "these are hints, the screenshot is ground truth" framing was conflicted; we now let the screenshot do the work.
+- When no screenshot is provided, the constraints text falls back to "every selector must be a stable, semantic selector" — same advisor surface, different ground-truth source.
+
+**`scripts/live-fix-preview.ts`** — harness updated to pass the rendered before-screenshot base64 into `suggestAuditFix`. The harness already produced a good before.png via local route interception; it just wasn't feeding it to the advisor. Now the acceptance test in §6 step 1 is actually runnable end-to-end.
+
+**Tests:**
+- `__tests__/generateFixPreviews.test.ts` — 9 tests still pass, content updated to reflect the new ordering (e.g. the tier-1 happy path now asserts `renderBeforeOnly` IS called and that the base64 string is threaded through to `suggestAuditFix`; the `no-html` test now exercises "before render fails" as the bail point).
+- `__tests__/auditFixAdvisor.test.ts` — 2 new tests for the screenshot-grounded prompt language (one for the screenshot-attached path, one for the no-screenshot fallback). 11 tests total (was 9).
+- All 21 fix-preview tests pass. Full suite still at 1100 passing, no regressions.
+
+### What this changes about the system
+
+Before this change:
+1. Orchestrator called the advisor with structural data only (no vision).
+2. Advisor returned mods that referenced hashed Tailwind classes.
+3. Renderer fetched HTML, applied mods, `setContent`'d, screenshotted.
+4. Screenshot rendered as raw unstyled HTML because `setContent` doesn't navigate.
+5. Even when selectors DID resolve, the after PNG was useless because it had no styles.
+
+After this change:
+1. Renderer goto's the real URL with a route handler that returns mutated HTML for the main doc — assets load from the live origin, real styles hydrate.
+2. Before render runs first; its base64-encoded screenshot is fed into the advisor.
+3. Advisor sees the live styled page and picks selectors that target visible elements.
+4. After render reuses the already-fetched HTML, applies mods, route-intercepts, screenshots — styled.
+
+### Verification gates run in this session
+
+- `npx vitest run src/lib/audit/fixPreview` — 21/21 pass.
+- `npx vitest run` — 1100/1100 pass (no regressions; +2 from the 1100 baseline noted at session start because of 2 new prompt tests, offset by replacing one orchestrator test with a slightly tighter equivalent).
+- `npx tsc --noEmit` — clean.
+- `npx eslint src/lib/audit/fixPreview scripts/live-fix-preview.ts` — clean.
+- **Live harness acceptance NOT run** — `GEMINI_API_KEY` was not present in this sandbox. The change is unit-test-covered but the §6 step-1 acceptance (re-running the harness on browserless.io) is the real proof. Run it from an env where `GEMINI_API_KEY` is set.
+
+### Known follow-ups that opened up after this change
+
+1. **Step 2 (perceptual pixel-diff) is now the top blocker for prod confidence.** With route interception, an after PNG that has the right styles but the wrong mod will look almost identical to the before — there's no longer the "unstyled wall of text" tell that the render is broken. We need a perceptual diff to catch silent no-ops. The harness already does naive byte equality; pixelmatch or a downsampled-grayscale SHA256 is the small upgrade.
+2. **Browserless concurrency cost.** Tier 1 now opens one Browserless connection per finding for the before render, plus another for the pair render. That's 2 connections per finding vs. 1 in the old design. Could re-collapse to one connection by moving the orchestrator's render-before-then-after dance into a single `screenshotPair` call that returns the before before the after finishes (`Promise.all` already runs them in parallel; we'd need to surface the before mid-flight). Not urgent — Browserless is billed by connection time and each render is short — but worth flagging.
+3. **Cost guard still ungated.** Step 5 still applies — set the per-org daily cap before flipping the flag in prod.

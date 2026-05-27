@@ -34,7 +34,8 @@ function makeDeps(overrides: Partial<FixPreviewDeps> = {}): FixPreviewDeps {
     })),
     renderBeforeOnly: vi.fn(async () => ({
       beforeUrl: 'https://blob/before-only.png',
-      beforeBuffer: Buffer.from('before-only'),
+      beforeBuffer: Buffer.from('before-only-bytes'),
+      fetchedHtml: '<html><body>live</body></html>',
     })),
     inpaintFixAfter: vi.fn(async () => ({
       beforeUrl: 'https://blob/before-only.png',
@@ -78,7 +79,7 @@ describe('generateFixPreviews — feature flag', () => {
 });
 
 describe('generateFixPreviews — tier ladder', () => {
-  it('tier 1: advisor returns mods + render succeeds → tier-1 preview', async () => {
+  it('tier 1: before-render succeeds → screenshot fed to advisor + HTML reused for after render', async () => {
     const deps = makeDeps();
     const [outcome] = await generateFixPreviews(
       {
@@ -90,19 +91,29 @@ describe('generateFixPreviews — tier ladder', () => {
       deps,
     );
     expect(outcome.reason).toBe('ok');
-    expect(outcome.preview).not.toBeNull();
     expect(outcome.preview?.tier).toBe(1);
     expect(outcome.preview?.beforeUrl).toBe('https://blob/before.png');
     expect(outcome.preview?.afterUrl).toBe('https://blob/after.png');
     expect(outcome.preview?.rationale).toBe('Replaced generic copy.');
     expect(outcome.preview?.modifications).toEqual(STUB_MODS);
-    // Persist was called with the tier-1 preview.
     expect(deps.persist).toHaveBeenCalledTimes(1);
-    expect(deps.renderBeforeOnly).not.toHaveBeenCalled();
+
+    // Before render runs FIRST so its screenshot can ground the advisor.
+    expect(deps.renderBeforeOnly).toHaveBeenCalledTimes(1);
+    // Advisor receives the base64-encoded before-screenshot bytes.
+    const advisorInput = vi.mocked(deps.suggestAuditFix!).mock.calls[0][0];
+    expect(advisorInput.beforeScreenshotBase64).toBe(
+      Buffer.from('before-only-bytes').toString('base64'),
+    );
+    // After render skips re-fetching the origin — receives the HTML the
+    // before render already pulled.
+    const afterInput = vi.mocked(deps.renderBeforeAfter!).mock.calls[0][0];
+    expect(afterInput.prefetchedHtml).toBe('<html><body>live</body></html>');
+
     expect(deps.inpaintFixAfter).not.toHaveBeenCalled();
   });
 
-  it('tier 2: tier-1 render declines (no-op apply) → falls back to inpaint', async () => {
+  it('tier 2: tier-1 render declines (no-op apply) → falls back to inpaint with the same before buffer', async () => {
     const deps = makeDeps({
       // renderBeforeAfter returns null = "no-op apply, no after worth showing"
       renderBeforeAfter: vi.fn(async () => null),
@@ -118,8 +129,11 @@ describe('generateFixPreviews — tier ladder', () => {
     );
     expect(outcome.preview?.tier).toBe(2);
     expect(outcome.preview?.afterUrl).toBe('https://blob/after-inpaint.png');
+    // Before render still runs once — Tier 2 reuses its buffer.
     expect(deps.renderBeforeOnly).toHaveBeenCalledTimes(1);
     expect(deps.inpaintFixAfter).toHaveBeenCalledTimes(1);
+    const inpaintArgs = vi.mocked(deps.inpaintFixAfter!).mock.calls[0][0];
+    expect(inpaintArgs.beforeBuffer.toString()).toBe('before-only-bytes');
   });
 
   it('tier 2: advisor returns zero mods → still attempts inpaint', async () => {
@@ -140,7 +154,7 @@ describe('generateFixPreviews — tier ladder', () => {
       deps,
     );
     expect(outcome.preview?.tier).toBe(2);
-    // Tier 1 render never ran — no mods to apply.
+    // Tier 1 after render never ran — no mods to apply.
     expect(deps.renderBeforeAfter).not.toHaveBeenCalled();
     expect(deps.inpaintFixAfter).toHaveBeenCalledTimes(1);
   });
@@ -179,11 +193,12 @@ describe('generateFixPreviews — tier ladder', () => {
     expect(outcome.preview).toBeNull();
     expect(outcome.reason).toBe('no-html');
     expect(deps.suggestAuditFix).not.toHaveBeenCalled();
+    // Without a domain we can't even attempt the before render.
+    expect(deps.renderBeforeOnly).not.toHaveBeenCalled();
   });
 
-  it('no-html: total Browserless wipeout → outcome without preview', async () => {
+  it('no-html: before render fails → bail without calling advisor or inpaint', async () => {
     const deps = makeDeps({
-      renderBeforeAfter: vi.fn(async () => null),
       renderBeforeOnly: vi.fn(async () => null),
     });
     const [outcome] = await generateFixPreviews(
@@ -197,6 +212,9 @@ describe('generateFixPreviews — tier ladder', () => {
     );
     expect(outcome.preview).toBeNull();
     expect(outcome.reason).toBe('no-html');
+    // The whole tier ladder is gated on having a before screenshot now.
+    expect(deps.suggestAuditFix).not.toHaveBeenCalled();
+    expect(deps.renderBeforeAfter).not.toHaveBeenCalled();
     expect(deps.inpaintFixAfter).not.toHaveBeenCalled();
   });
 
@@ -235,5 +253,6 @@ describe('generateFixPreviews — tier ladder', () => {
     expect(outcome.preview).toBeNull();
     expect(outcome.reason).toBe('no-html');
     expect(deps.suggestAuditFix).not.toHaveBeenCalled();
+    expect(deps.renderBeforeOnly).not.toHaveBeenCalled();
   });
 });

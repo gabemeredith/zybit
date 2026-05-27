@@ -212,12 +212,26 @@ async function runOneFinding(
     return { findingId: args.finding.id, preview: null, reason: 'no-html' };
   }
 
-  // Tier 1 — ask the audit advisor for mods, then render before+after.
-  // The vision channel is fed by a fresh before render (also reused for
-  // Tier 2 if Tier 1 declines). We don't currently feed a screenshot into
-  // the *first* advisor call to save one Browserless trip; the model
-  // gets the design tokens + CSS system + finding prescription, which is
-  // the input shape the production advisor uses successfully today.
+  // Render the BEFORE first. It serves three purposes:
+  //   1. Vision channel for the Tier 1 advisor — the model can see the
+  //      live page when picking selectors (the biggest lift to Tier 1's
+  //      hit rate on hash-class CSS frameworks).
+  //   2. Tier 2 inpaint input if Tier 1 declines (vision inpaint edits
+  //      this exact image).
+  //   3. Tier 3 fallback screenshot if Tier 2 also declines.
+  // We also keep the fetched HTML so Tier 1's after render can skip a
+  // second SSRF fetch.
+  const beforeOnly = await deps.renderBO({
+    findingId: args.finding.id,
+    originUrl: args.originUrl,
+  });
+  if (!beforeOnly) {
+    return { findingId: args.finding.id, preview: null, reason: 'no-html' };
+  }
+
+  // Tier 1 — ask the audit advisor for mods, with the before screenshot
+  // as ground truth. The advisor sees what it's editing, which materially
+  // lifts selector accuracy on real marketing sites.
   const suggestion = await deps.suggest({
     finding: {
       ruleId: args.finding.ruleId,
@@ -230,7 +244,7 @@ async function runOneFinding(
     cssSystem: args.cssSystem,
     availableSelectors: [],
     ctaVocabulary: [],
-    beforeScreenshotBase64: null,
+    beforeScreenshotBase64: beforeOnly.beforeBuffer.toString('base64'),
   });
 
   if (suggestion && suggestion.modifications.length > 0) {
@@ -240,6 +254,7 @@ async function runOneFinding(
         originUrl: args.originUrl,
         modifications: suggestion.modifications,
         rationale: suggestion.rationale,
+        prefetchedHtml: beforeOnly.fetchedHtml,
       },
       deps.renderBA,
     );
@@ -248,14 +263,7 @@ async function runOneFinding(
     }
   }
 
-  // Tier 2 — inpaint. We need a before render to feed the image model.
-  const beforeOnly = await deps.renderBO({
-    findingId: args.finding.id,
-    originUrl: args.originUrl,
-  });
-  if (!beforeOnly) {
-    return { findingId: args.finding.id, preview: null, reason: 'no-html' };
-  }
+  // Tier 2 — inpaint. Re-use the before image already rendered above.
   const tier2 = await deps.inpaint({
     findingId: args.finding.id,
     beforeBuffer: beforeOnly.beforeBuffer,
@@ -306,6 +314,7 @@ interface Tier1Args {
   originUrl: string;
   modifications: VariantModification[];
   rationale: string | null;
+  prefetchedHtml: string;
 }
 
 async function runTier1(
@@ -316,6 +325,7 @@ async function runTier1(
     findingId: args.findingId,
     originUrl: args.originUrl,
     modifications: args.modifications,
+    prefetchedHtml: args.prefetchedHtml,
   });
   if (!pair) return null;
   return {

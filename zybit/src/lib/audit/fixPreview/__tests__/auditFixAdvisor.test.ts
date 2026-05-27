@@ -43,6 +43,24 @@ describe('buildAuditFixPrompt', () => {
     expect(prompt).not.toContain('<attack/>');
     expect(prompt).toContain('Insert /findingattack/');
   });
+
+  it('grounds the model in the attached screenshot when one is provided', () => {
+    const prompt = buildAuditFixPrompt({
+      ...BASE_INPUT,
+      beforeScreenshotBase64: 'AAAA',
+    });
+    expect(prompt).toContain('screenshot attached below shows the LIVE rendered page');
+    expect(prompt).toContain('Every selector you emit MUST target an element you can SEE');
+    // Hash-class warning is the surgical thing — it's why Tier 1 missed
+    // on browserless.io in the harness run.
+    expect(prompt).toMatch(/hash/i);
+  });
+
+  it('falls back to a no-screenshot constraint phrasing when none attached', () => {
+    const prompt = buildAuditFixPrompt({ ...BASE_INPUT, beforeScreenshotBase64: null });
+    expect(prompt).toContain('no screenshot is attached');
+    expect(prompt).not.toContain('screenshot attached below shows the LIVE rendered page');
+  });
 });
 
 describe('isSafeAuditInsertHtml', () => {
