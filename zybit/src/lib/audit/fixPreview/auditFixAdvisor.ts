@@ -319,7 +319,14 @@ export async function callAuditAdvisor(args: {
       contents: [{ parts }],
       // Slightly cooler than the production advisor — we want a single
       // best fix, not three exploratory options.
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.5 },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.5,
+        // See note in `captureVisualSignals.ts`: thinking-mode budget eats
+        // into output tokens and causes empty `content: {}` returns on
+        // structured-output calls. Disable for the audit fix advisor.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
   });
   if (!response.ok) {

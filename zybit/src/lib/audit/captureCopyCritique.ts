@@ -167,6 +167,12 @@ export async function captureCopyCritique(
           responseMimeType: 'application/json',
           maxOutputTokens: 1024,
           temperature: 0.2,
+          // See note in `captureVisualSignals.ts`: gemini-3.5-flash spends
+          // its `maxOutputTokens` budget on thinking-mode reasoning before
+          // emitting any text, so structured-output calls return empty
+          // content. Disable thinking — this rule family is entirely
+          // schema-bound; reasoning adds no quality.
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
       signal: AbortSignal.timeout(30_000),

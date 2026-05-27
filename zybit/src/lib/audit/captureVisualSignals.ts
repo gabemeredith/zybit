@@ -126,6 +126,14 @@ export async function captureVisualSignals(
           responseMimeType: 'application/json',
           maxOutputTokens: 1024,
           temperature: 0.2,
+          // gemini-3.5-flash defaults to thinking-mode on, and the reasoning
+          // tokens get counted against `maxOutputTokens` — the model will
+          // burn the entire budget on internal thinking and return
+          // `content: {}` with `finishReason: MAX_TOKENS`. For structured-
+          // output capture work the reasoning adds no quality, so disable
+          // the thinking budget entirely. Without this, every vision call
+          // returns null and downstream rules degrade to structural-only.
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
       signal: AbortSignal.timeout(30_000),
