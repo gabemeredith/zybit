@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { PNG } from 'pngjs';
-import { isVisiblyChanged } from '../renderBeforeAfter';
+import { isVisiblyChanged, PIXEL_DIFF_THRESHOLD } from '../renderBeforeAfter';
 
 function solidPng(width: number, height: number, rgba: [number, number, number, number]): Buffer {
   const png = new PNG({ width, height });
@@ -42,15 +42,18 @@ describe('isVisiblyChanged', () => {
     expect(isVisiblyChanged(a, b)).toBe(false);
   });
 
-  it('returns true when more than 100 pixels differ', () => {
+  it('returns true when more than PIXEL_DIFF_THRESHOLD pixels differ', () => {
     const a = solidPng(64, 64, [255, 255, 255, 255]);
-    const b = patchPixels(a, 200, [0, 0, 0]);
+    // Patch more than threshold pixels (PIXEL_DIFF_THRESHOLD + 100) to ensure we're above
+    const b = patchPixels(a, PIXEL_DIFF_THRESHOLD + 100, [0, 0, 0]);
     expect(isVisiblyChanged(a, b)).toBe(true);
   });
 
-  it('returns false when fewer than 100 pixels differ (sub-pixel jitter)', () => {
+  it('returns false when fewer than PIXEL_DIFF_THRESHOLD pixels differ (sub-pixel / ghost change)', () => {
     const a = solidPng(64, 64, [255, 255, 255, 255]);
-    const b = patchPixels(a, 50, [0, 0, 0]);
+    // 172 px is the "Vercel ghost" case — host CSS overrides the injection,
+    // render jitter produces tiny diff that isn't visible to a human.
+    const b = patchPixels(a, 172, [0, 0, 0]);
     expect(isVisiblyChanged(a, b)).toBe(false);
   });
 

@@ -201,17 +201,31 @@ This is the exact Tier 1 miss pattern Step 1 was designed to fix. The vision cha
 
 ## 6. Next steps — prioritised
 
-### Step 2 — Perceptual pixel-diff after Tier 1 render ✅ Shipped 2026-05-27
+### Step 2 — Perceptual pixel-diff after Tier 1 render ✅ Shipped + hardened 2026-05-27
 
-`isVisiblyChanged(before, after)` (exported from `renderBeforeAfter.ts`) runs after `screenshotPair` and bails to `null` when the after PNG is perceptually indistinguishable from the before. Uses `pixelmatch` v7 + `pngjs` v7; threshold `0.1` (default sensitivity, ignores JPEG/AA noise); `> 100 changed pixels` filters sub-pixel render jitter. Safe defaults: PNG parse error → `true`, dimension mismatch → `true` (surface the case rather than silently bail).
+`isVisiblyChanged(before, after)` (exported from `renderBeforeAfter.ts`) runs after `screenshotPair` and bails to `null` when the after PNG is perceptually indistinguishable from the before. Uses `pixelmatch` v7 + `pngjs` v7.
 
-The live harness (`scripts/live-fix-preview.ts`) now uses the same helper instead of byte-equality, so the harness and the production renderer agree on what "visibly changed" means.
+**Threshold `PIXEL_DIFF_THRESHOLD = 1 000` (≈ 0.09 % of 1280×900 frame)** — raised from the initial 100 after live-verification showed a "ghost case": Vercel's heavily-specific CSS overrides a css-inject mod that has no `!important`, leaving only 172 px of render jitter. 172 > 100 was passing the old check but is invisible to humans. Real visible changes produce ≥ 8 000 px (button re-style) to ≥ 70 000 px (hero card insert). 1 000 cleanly separates noise from signal with a 8× margin.
 
-5 unit tests in `__tests__/renderBeforeAfter.test.ts`: identical PNGs, > 100 px diff, < 100 px jitter, dimension mismatch, invalid PNG.
+Live-verification diff counts per before/after pair (post-hardening):
 
-The orchestrator side is unchanged — `renderBeforeAfter` returning `null` already falls through to Tier 2, so the existing "tier-1 render declines (no-op apply)" test covers the orchestrator behaviour. The pixel-diff is purely an additional bail condition inside the renderer.
+| Site | Finding | px changed | % of frame | Verdict |
+|------|---------|-----------|------------|---------|
+| stripe.com | link-text-generic | 28 249 | 2.45 % | ✅ VISIBLE |
+| stripe.com | hero-hierarchy-inversion | 8 962 | 0.78 % | ✅ VISIBLE |
+| iana.org | hero-hierarchy-inversion | 40 696 | 3.53 % | ✅ VISIBLE |
+| iana.org | missing-meta-description | 70 144 | 6.09 % | ✅ VISIBLE |
 
-**Acceptance:** CSS-inject mod targeting a non-existent selector → `renderBeforeAfter` returns `null` → orchestrator emits a Tier 2 outcome. Verify next time the harness runs against a real site with the new check in place.
+Safe defaults: PNG parse error → `true`, dimension mismatch → `true`.
+
+The live harness uses the same helper instead of byte-equality, so both surfaces agree.
+
+5 unit tests in `__tests__/renderBeforeAfter.test.ts`: identical PNGs, > threshold diff, < threshold ghost (172 px Vercel case), dimension mismatch, invalid PNG. Tests import `PIXEL_DIFF_THRESHOLD` so they track the constant automatically.
+
+**Advisor prompt hardening (same session):**
+- `element-insert` mods must give the top-level element a unique `id` (e.g. `id="zb-fix-hero"`) and pair it with companion `css-inject` mods targeting that id for all visual styling — because `sanitizeInsertHtml` strips inline `style` attributes, framework utility classes are useless unless the host site's build includes them.
+- All `css-inject` declarations must end with `!important` — without it the host's more-specific selectors win and the change is invisible.
+- Stripe hero-hierarchy-inversion run with new prompt: advisor emitted `element-insert` + 5 `css-inject` mods all with `!important`, 8 962 px diff, fully styled brand-tinted quick-answer card visible above hero CTAs.
 
 ---
 
@@ -318,6 +332,7 @@ export INPAINT_MODEL=gemini-3-pro-image-preview
 | `af9468a` | AGENTS.md updated with Step 1 live-verified status |
 | `8f70531` | Handover doc rewrite — accurate, cold-start-ready, Step 2 implementation sketch |
 | _(this session)_ | **Step 2** — perceptual pixel-diff gate (`isVisiblyChanged`) + 5 unit tests + harness alignment |
+| _(this session)_ | **Step 2 hardening** — threshold 100→1000 (`PIXEL_DIFF_THRESHOLD`); advisor prompt: `element-insert` id+companion css-inject pattern + mandatory `!important`; live-verified Stripe/IANA |
 
 **Test counts (current):** 26 fix-preview tests (12 advisor + 9 orchestrator + 5 renderer pixel-diff), 1107 full suite.
 

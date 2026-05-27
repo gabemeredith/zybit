@@ -213,13 +213,20 @@ const DESKTOP_UA =
  * anchor resolves but whose payload is hidden by existing CSS).
  *
  * - `threshold: 0.1` ignores JPEG-style colour noise and anti-aliasing.
- * - `> 100 changed pixels` filters sub-pixel render jitter from font
- *   hinting / Browserless connection variance.
+ * - `> 1 000 changed pixels` (≈ 0.09 % of a 1280×900 frame) filters
+ *   sub-pixel render jitter from font hinting / Browserless connection
+ *   variance AND the "172 px ghost" case where a CSS injection wins the
+ *   DOM but the host's more-specific rules immediately override it in the
+ *   live stylesheet (so the render looks identical to a human, but a
+ *   handful of antialiasing pixels differ). Real visible changes — even
+ *   a single small button restyled — produce ≥ 5 000 px of diff.
  * - Different dimensions → treat as changed (rare, but safer to surface
  *   than to swallow).
  * - PNG parse errors → treat as changed (don't let Tier 1 silently bail
  *   on corrupt input we still uploaded successfully).
  */
+export const PIXEL_DIFF_THRESHOLD = 1_000;
+
 export function isVisiblyChanged(before: Buffer, after: Buffer): boolean {
   let img1: PNG;
   let img2: PNG;
@@ -234,7 +241,7 @@ export function isVisiblyChanged(before: Buffer, after: Buffer): boolean {
   const changed = pixelmatch(img1.data, img2.data, diff, img1.width, img1.height, {
     threshold: 0.1,
   });
-  return changed > 100;
+  return changed > PIXEL_DIFF_THRESHOLD;
 }
 
 /**
