@@ -37,6 +37,7 @@ import { runUrlAudit } from '../lighthouse/lib/runner/runUrlAudit.ts';
 import { getDb } from '../src/lib/db/client.ts';
 import { zybitFindings } from '../src/lib/db/schema.ts';
 import { renderAuditReportEmailHtml } from '../src/lib/email/auditReportEmail.ts';
+import { pickTopFindings } from '../src/lib/audit/pickTopFindings.ts';
 
 // Curated mix: well-designed SaaS (Stripe), product-led SaaS that has
 // historically tripped CTA bloat (Linear), developer platform (Vercel),
@@ -82,43 +83,9 @@ function safeFilename(domain) {
   return domain.replace(/[^a-z0-9.-]+/gi, '_');
 }
 
-// Mirrors src/app/api/audit/public/run/route.ts top-4 cascade. Kept as a
-// verbatim copy so a route-side bug is reproduced here too (the harness
-// would lie about the prospect experience otherwise).
-function pickTop4(sortedFindings, submittedPath) {
-  const SUBMITTED_PAGE_BOOST = 1.5;
-  const effectiveScore = (f) =>
-    f.priorityScore * (f.pathRef === submittedPath ? SUBMITTED_PAGE_BOOST : 1);
-  const ranked = [...sortedFindings].sort(
-    (a, b) => effectiveScore(b) - effectiveScore(a),
-  );
-  const top4 = [];
-  const pickedIds = new Set();
-  const usedRules = new Set();
-  const usedPaths = new Set();
-  const pathOf = (f) => f.pathRef ?? '/';
-  for (const f of ranked) {
-    if (top4.length === 4) break;
-    if (usedPaths.has(pathOf(f)) || usedRules.has(f.ruleId)) continue;
-    top4.push(f); pickedIds.add(f.id); usedPaths.add(pathOf(f)); usedRules.add(f.ruleId);
-  }
-  for (const f of ranked) {
-    if (top4.length === 4) break;
-    if (pickedIds.has(f.id) || usedPaths.has(pathOf(f))) continue;
-    top4.push(f); pickedIds.add(f.id); usedPaths.add(pathOf(f)); usedRules.add(f.ruleId);
-  }
-  for (const f of ranked) {
-    if (top4.length === 4) break;
-    if (pickedIds.has(f.id) || usedRules.has(f.ruleId)) continue;
-    top4.push(f); pickedIds.add(f.id); usedPaths.add(pathOf(f)); usedRules.add(f.ruleId);
-  }
-  for (const f of ranked) {
-    if (top4.length === 4) break;
-    if (pickedIds.has(f.id)) continue;
-    top4.push(f); pickedIds.add(f.id);
-  }
-  return { top4, ranked };
-}
+// Top-4 selection lives in `src/lib/audit/pickTopFindings.ts` so the
+// harness and the route can't drift. The harness imports the same module
+// the route uses.
 
 function toEmailFinding(f, rank) {
   return {
@@ -162,7 +129,7 @@ async function auditOne(url) {
     return { url, domain, error: msg };
   }
 
-  const { siteId, counts } = result;
+  const { siteId, organizationId, counts } = result;
   ok(`pipeline produced ${counts.snapshots} snapshot(s), ${counts.findings} finding(s)`);
 
   if (counts.snapshots === 0) {
@@ -182,7 +149,7 @@ async function auditOne(url) {
     try { return new URL(url).pathname || '/'; }
     catch { return '/'; }
   })();
-  const { top4, ranked } = pickTop4(dbFindings, submittedPath);
+  const { top: top4, ranked } = pickTopFindings(dbFindings, submittedPath);
 
   // Diversity diagnostic — surfaces issue #1 (page selection) at-a-glance.
   const top4Paths = [...new Set(top4.map((f) => f.pathRef))];
@@ -210,7 +177,7 @@ async function auditOne(url) {
   await writeFile(`${OUT_DIR}/${fname}.email.html`, html, 'utf8');
   await writeFile(
     `${OUT_DIR}/${fname}.findings.json`,
-    JSON.stringify({ url, domain, siteId, counts, top4, top50: ranked }, null, 2),
+    JSON.stringify({ url, domain, siteId, organizationId, counts, top4, top50: ranked }, null, 2),
     'utf8',
   );
 

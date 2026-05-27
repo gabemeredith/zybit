@@ -129,26 +129,32 @@ const MODULATION: Record<string, Partial<Record<PageType, PageTypeModulation>>> 
   },
 
   // Heading hierarchy — docs sites legitimately ship H1→H3 jumps when
-  // their renderer groups sections under a parent. Loosen the rule
-  // there. On legal/about, the rule still applies but downgrades from
-  // warn → info severity (low-priority surface).
+  // their renderer groups sections under a parent. Loosen the rule there.
+  // Legal pages: suppress — boilerplate ToS / privacy / impressum pages
+  // routinely ship terrible heading structure (one H1 per section, no
+  // sub-levels) and the prescription "fix your H1→H3 jump on /impressum"
+  // is not a credible lead-magnet finding. On about, the rule still
+  // applies but downgrades from warn → info severity.
   'heading-hierarchy-jump': {
     docs: { suppress: false, floorMultiplier: 1.4, capMultiplier: 1 },
-    legal: { suppress: false, floorMultiplier: 1, capMultiplier: 1, severityDowngrade: true },
+    legal: { suppress: true, floorMultiplier: 1, capMultiplier: 1 },
     about: { suppress: false, floorMultiplier: 1, capMultiplier: 1, severityDowngrade: true },
   },
 
-  // SEO rules on legal/about pages are low-priority — the page itself is
-  // not a ranking target. Keep the rule firing (for completeness) but
-  // downshift severity.
+  // SEO rules on legal pages are noise — the page itself is not a ranking
+  // target and the prospect will not care that /impressum lacks a meta
+  // description. Suppress entirely on legal. On about, the page may rank
+  // for the company name so keep the rule firing but downshift severity.
+  // Signup/checkout: keep at low severity (low-priority but the rule is
+  // still a real signal there).
   'missing-meta-description': {
-    legal: { suppress: false, floorMultiplier: 1, capMultiplier: 1, severityDowngrade: true },
+    legal: { suppress: true, floorMultiplier: 1, capMultiplier: 1 },
     about: { suppress: false, floorMultiplier: 1, capMultiplier: 1, severityDowngrade: true },
     checkout: { suppress: false, floorMultiplier: 1, capMultiplier: 1, severityDowngrade: true },
     signup: { suppress: false, floorMultiplier: 1, capMultiplier: 1, severityDowngrade: true },
   },
   'missing-canonical-url': {
-    legal: { suppress: false, floorMultiplier: 1, capMultiplier: 1, severityDowngrade: true },
+    legal: { suppress: true, floorMultiplier: 1, capMultiplier: 1 },
     about: { suppress: false, floorMultiplier: 1, capMultiplier: 1, severityDowngrade: true },
     checkout: { suppress: false, floorMultiplier: 1, capMultiplier: 1, severityDowngrade: true },
     signup: { suppress: false, floorMultiplier: 1, capMultiplier: 1, severityDowngrade: true },
