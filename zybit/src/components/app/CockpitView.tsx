@@ -1,8 +1,11 @@
 import Link from "next/link";
 import type { CockpitData } from "@/lib/dashboard/cockpit";
 import { SESSION_DISPLAY_THRESHOLD, deriveIntegrationHealth } from "@/lib/dashboard/cockpit";
+import { DEMO_ORG_ID } from "@/lib/demo/constants";
 import WelcomeState from "@/components/dashboard/WelcomeState";
 import EmptyFindings from "@/components/dashboard/EmptyFindings";
+import PostHogStream from "@/components/demo/PostHogStream";
+import HowTrackingWorks from "@/components/demo/HowTrackingWorks";
 import RunInsightsButton from "./RunInsightsButton";
 
 interface CockpitViewProps {
@@ -219,6 +222,16 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
         </div>
         <RunInsightsButton siteId={site.id} orgId={orgId} />
       </div>
+
+      {orgId === DEMO_ORG_ID && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+          <PostHogStream
+            eventCount7d={pipeline.eventCount7d}
+            bridgeLabel={bridge.label}
+          />
+          <HowTrackingWorks />
+        </div>
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-3 gap-4 mb-8">

@@ -46,8 +46,19 @@ export async function handleProxyRequest(
   if (!visitorId) visitorId = generateVisitorId();
 
   const existingBucket = req.cookies.get(bucketCookieName(experiment.id))?.value;
-  const bucket: Bucket =
-    existingBucket === 'control' || existingBucket === 'variant'
+  // `?_zb_force=control|variant` is the demo-mode bucket override —
+  // honored only for the synthetic commitmint demo site so the side-by-side
+  // preview can render both buckets without re-rolling visitor cookies.
+  // Never trusted for real customer traffic.
+  const forceParam = req.nextUrl.searchParams.get('_zb_force');
+  const isDemoSite = site.id === 'lighthouse_site_urlaudit-commitmint-app';
+  const forcedBucket: Bucket | null =
+    isDemoSite && (forceParam === 'control' || forceParam === 'variant')
+      ? forceParam
+      : null;
+  const bucket: Bucket = forcedBucket
+    ? forcedBucket
+    : existingBucket === 'control' || existingBucket === 'variant'
       ? existingBucket
       : await assignBucket(visitorId, experiment.id, experiment.controlPct);
 
@@ -60,7 +71,7 @@ export async function handleProxyRequest(
       path: '/',
     });
   }
-  if (!existingBucket) {
+  if (!existingBucket && !forcedBucket) {
     response.cookies.set(bucketCookieName(experiment.id), bucket, {
       maxAge: bucketCookieMaxAge(experiment.durationDays),
       sameSite: 'lax',
