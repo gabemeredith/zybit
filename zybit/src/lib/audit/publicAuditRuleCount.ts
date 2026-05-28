@@ -19,7 +19,10 @@ export const PUBLIC_AUDIT_RULE_COUNT = 13;
  * Rules that stay dark in public-audit mode (`publicAuditBehavior: 'empty'`)
  * — behavioral rules that need PostHog session data to fire. Surfaced in
  * the report email's empty-state intro + PostHog caveat ("the other N rules
- * light up once you connect PostHog"). The same drift-catching test pins
+ * light up once you connect analytics"). The same drift-catching test pins
  * this to the runtime count.
  */
 export const PUBLIC_AUDIT_DEFERRED_RULE_COUNT = 10;
+
+/** Total rules in the system — used in marketing copy. */
+export const TOTAL_AUDIT_RULE_COUNT = PUBLIC_AUDIT_RULE_COUNT + PUBLIC_AUDIT_DEFERRED_RULE_COUNT;
