@@ -267,11 +267,11 @@ function findingCard(f: AuditFindingForEmail): string {
  * section entirely instead of rendering an empty card.
  */
 function hasBrandDna(brandDna: AuditBrandDna | null | undefined): brandDna is AuditBrandDna {
-  if (!brandDna) return false;
   return Boolean(
-    brandDna.primaryColor ||
-      brandDna.secondaryColor ||
-      (brandDna.typeScale && brandDna.typeScale.length > 0),
+    brandDna &&
+      (brandDna.primaryColor ||
+        brandDna.secondaryColor ||
+        (brandDna.typeScale && brandDna.typeScale.length > 0)),
   );
 }
 

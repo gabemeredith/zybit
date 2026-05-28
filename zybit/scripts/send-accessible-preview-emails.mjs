@@ -27,7 +27,12 @@ import { severityFromScore } from '../src/lib/audit/auditReportFormatting.ts';
 import { generateFixPreviews } from '../src/lib/audit/fixPreview/index.ts';
 import { Resend } from 'resend';
 
-const TO = process.argv[2] || 'gabriel.b.meredith@gmail.com';
+const TO = process.argv[2];
+if (!TO) {
+  console.error('Error: pass the recipient email as an argument.');
+  console.error('Usage: npx tsx --env-file=<.env> scripts/send-accessible-preview-emails.mjs <to-email>');
+  process.exit(2);
+}
 const CANDIDATE_URLS = ['https://github.com', 'https://news.ycombinator.com', 'https://example.com'];
 
 function makeContext(data, finalUrl, mode) {
