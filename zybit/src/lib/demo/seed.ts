@@ -227,7 +227,10 @@ export async function seedDemo(opts: { force?: boolean } = {}): Promise<void> {
       STATUS.finishedAt = new Date().toISOString();
     } catch (err) {
       STATUS.stage = 'failed';
-      STATUS.error = err instanceof Error ? err.message : String(err);
+      // `/api/demo/status` is public — surface a generic message and keep the
+      // raw error (DB strings, stack detail) in server logs only.
+      console.error('[demo/seed] seed failed', err);
+      STATUS.error = 'the demo pipeline failed';
       STATUS.finishedAt = new Date().toISOString();
       throw err;
     } finally {

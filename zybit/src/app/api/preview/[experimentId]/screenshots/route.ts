@@ -56,7 +56,13 @@ export async function GET(
   const experiment = rows[0];
   if (!experiment) return new NextResponse('Not Found', { status: 404 });
 
-  const notes: ExperimentNotes = experiment.notes ? JSON.parse(experiment.notes) : {};
+  let notes: ExperimentNotes = {};
+  try {
+    notes = experiment.notes ? (JSON.parse(experiment.notes) as ExperimentNotes) : {};
+  } catch {
+    // Malformed notes (truncated write / manual DB edit) — treat as empty and
+    // render fresh screenshots rather than throwing an unhandled 500.
+  }
 
   // Cache hit — return the already-rendered pair.
   if (notes.screenshotBeforeUrl && notes.screenshotAfterUrl) {

@@ -298,8 +298,18 @@ export default async function ExperimentDetailPage({
 
               {/* Before/after screenshots rendered via Browserless (scripts
                   stripped, so the variant survives on SPA pages — unlike the
-                  old live-iframe preview). */}
-              <ExperimentScreenshotPreview experimentId={id} />
+                  old live-iframe preview). When the proxy slug is wired, the
+                  "Open live" links point at the real proxied page
+                  (`<slug>.zybit.run/...?_zb_force=<bucket>`) — the fully-styled
+                  actual site — instead of the local /api/preview fallback. */}
+              <ExperimentScreenshotPreview
+                experimentId={id}
+                proxyBaseUrl={
+                  siteProxySlug
+                    ? `https://${siteProxySlug}.zybit.run${exp.targetPath ?? "/"}`
+                    : null
+                }
+              />
             </div>
           )}
         </div>

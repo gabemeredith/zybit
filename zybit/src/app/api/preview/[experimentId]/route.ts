@@ -30,6 +30,7 @@ import { getServerAuth } from '@/lib/auth/serverAuth';
 import { getDb } from '@/lib/db/client';
 import { zybitExperiments, phase1Sites } from '@/lib/db/schema';
 import { applyModifications, stripScripts } from '@/lib/experiments/htmlModifier';
+import { fetchWithSsrfGuard } from '@/lib/phase2/findings/preview';
 import type { VariantModification } from '@/lib/experiments/types';
 
 /**
@@ -112,22 +113,16 @@ export async function GET(
     ? `http://${domain}/fake-sites/${lighthouseSlug}${targetPath}`
     : `https://${domain}${targetPath}`;
 
-  // TODO: fetch origin HTML with timeout
-  let html: string;
-  try {
-    const originRes = await fetch(originUrl, {
-      headers: { 'User-Agent': 'Zybit-Preview/1.0' },
-      signal: AbortSignal.timeout(8_000),
-      redirect: 'follow',
-    });
-    if (!originRes.ok) {
-      return new NextResponse(`Origin returned ${originRes.status}`, { status: 502 });
-    }
-    html = await originRes.text();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Fetch failed';
-    return new NextResponse(`Could not reach origin: ${message}`, { status: 504 });
+  // Fetch the origin HTML with the SSRF guard on for real-domain sites
+  // (`domain` comes from the tenant-controlled `phase1Sites` row, so an
+  // unguarded `redirect: 'follow'` fetch could be pointed at 127.0.0.1 or
+  // cloud metadata). The lighthouse-slug path legitimately needs localhost,
+  // so the guard is skipped there — mirrors the `screenshots` sub-route.
+  const fetched = await fetchWithSsrfGuard(originUrl, lighthouseSlug === null);
+  if (!fetched.ok) {
+    return new NextResponse(fetched.message, { status: fetched.status });
   }
+  const html = fetched.html;
 
   // Apply modifications only for variant bucket; control gets unmodified HTML.
   let outputHtml = html;
