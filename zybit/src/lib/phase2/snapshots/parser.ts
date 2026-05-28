@@ -235,6 +235,57 @@ function isSkipLink(el: HTMLElement, text: string, ariaLabel: string): boolean {
   return false;
 }
 
+// Browser-default chrome affordances. These are *always* navigation /
+// dismiss controls — never conversion CTAs anywhere. Without this filter
+// `hero-hierarchy-inversion` on Stripe `/enterprise` named the responsive
+// nav's "Back" button as the "most visually emphasized CTA" and prescribed
+// copying its styling — incoherent on a marketing page. Exact-match only:
+// "Back" → chrome; "Back to overview" → real CTA. Plain "×"/"✕" close
+// glyphs included; multi-letter labels like "Close panel" don't match.
+const CHROME_BUTTON_TEXT = /^(back|close|dismiss|cancel|menu|search|open menu|open navigation|toggle menu|toggle navigation|×|✕|✖|\+|−|‒)$/i;
+
+// Site brand logos are commonly authored as `<a href="/"><img alt="Stripe
+// logo"></a>` — a navigation affordance to the homepage, not a conversion
+// CTA. Without this filter `hero-hierarchy-inversion` on Stripe
+// `/enterprise` named the Stripe logo as the most emphasized CTA after
+// the Back-button filter cleared it from the inventory. Same shape:
+// always brand chrome, never a conversion target. Matches plain `logo`
+// or `<word> logo` (e.g. "Stripe logo", "Acme Inc logo").
+const LOGO_ALT_TEXT = /^([a-z0-9][\w&.\- ]{0,40}\s)?logo$/i;
+
+function isChromeButton(
+  tag: string,
+  text: string,
+  ariaLabel: string,
+  imgAlt: string,
+  href: string | null,
+): boolean {
+  // Anchors with a real destination (not a fragment) are real links — never
+  // chrome. Buttons + fragment-only anchors are candidates.
+  const anchorIsReal = tag === 'a' && !!href && !href.startsWith('#');
+  if (!anchorIsReal) {
+    if (CHROME_BUTTON_TEXT.test(text)) return true;
+    if (CHROME_BUTTON_TEXT.test(ariaLabel)) return true;
+  }
+  // Logos are a navigation affordance even when href="/"; filter regardless
+  // of which accessible-name slot the alt text landed in. Stripe authors
+  // their logo as `<a href="/"><span class="sr-only">Stripe logo</span>
+  // <svg/></a>` so the alt text ends up in `text`, not in `imgAlt` —
+  // checking only the alt-text fallback misses this pattern.
+  if (LOGO_ALT_TEXT.test(text)) return true;
+  if (LOGO_ALT_TEXT.test(imgAlt)) return true;
+  if (LOGO_ALT_TEXT.test(ariaLabel)) return true;
+  return false;
+}
+
+// Collapse internal whitespace (newlines, tabs, multiple spaces) into single
+// spaces so multi-line link text reads as a normal sentence in rule output.
+// Without this, a `<a>Product roadmap\n  See what's ahead</a>` (Stripe's
+// `/atlas` nav pattern) would surface in the email as a multi-line blob.
+function normalizeCtaText(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim();
+}
+
 function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
   const elements = root.querySelectorAll('a, button');
   const candidates: HTMLElement[] = [];
@@ -242,8 +293,8 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     if (candidates.length >= MAX_CTAS) break;
     const tag = getTag(el);
     if (tag !== 'a' && tag !== 'button') continue;
-    const text = (el.text ?? '').trim();
-    const ariaLabel = (el.getAttribute('aria-label') ?? '').trim();
+    const text = normalizeCtaText(el.text ?? '');
+    const ariaLabel = normalizeCtaText(el.getAttribute('aria-label') ?? '');
     // Graphical buttons / logo links often have no text or aria-label and
     // rely on a child <img alt="..."> for their accessible name. Treat that
     // alt text as a label so we don't drop them from the inventory.
@@ -251,6 +302,10 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     if (!text && !ariaLabel && !imgAlt) continue;
     // Skip links are accessibility affordances, not CTAs — see isSkipLink doc.
     if (isSkipLink(el, text, ariaLabel)) continue;
+    // Browser-default chrome buttons (Back / Close / Menu / × close glyphs)
+    // and brand logo anchors are never conversion CTAs — see isChromeButton.
+    const hrefForChromeCheck = tag === 'a' ? (el.getAttribute('href') ?? null) : null;
+    if (isChromeButton(tag, text, ariaLabel, imgAlt, hrefForChromeCheck)) continue;
     candidates.push(el);
   }
 
@@ -259,12 +314,12 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     const el = candidates[i];
     const tag = getTag(el) as 'a' | 'button';
     const className = el.getAttribute('class') ?? null;
-    const directText = (el.text ?? '').trim();
+    const directText = normalizeCtaText(el.text ?? '');
     // For graphical CTAs, fall back to the first child img's alt as the
     // visible label so downstream rules can reason about them.
     const text = (directText || firstImgAlt(el)).slice(0, TEXT_CAP);
     const href = tag === 'a' ? (el.getAttribute('href') ?? null) : null;
-    const ariaLabel = (el.getAttribute('aria-label') ?? '').trim() || null;
+    const ariaLabel = normalizeCtaText(el.getAttribute('aria-label') ?? '') || null;
     const landmark = computeLandmark(el);
     const { bodyChildIndex, totalBodyChildren } = computeBodyChildIndex(el, body);
     const primary = isPrimaryCandidate(className, el);

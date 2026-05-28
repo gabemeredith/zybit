@@ -383,7 +383,14 @@ export async function callGeminiFlash(args: {
     },
     body: JSON.stringify({
       contents: [{ parts: [{ text: args.prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.7 },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.7,
+        // See note in `captureVisualSignals.ts`: thinking-mode budget eats
+        // into output tokens and causes empty `content: {}` returns on
+        // structured-output calls. Disable for the variant advisor.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
   });
   if (!response.ok) {

@@ -315,15 +315,22 @@ const SAFE_HEX_RE = /^#[0-9a-fA-F]{3,8}$/;
 function colorSwatch(hex: string, label: string): string {
   if (!SAFE_HEX_RE.test(hex)) return '';
   const safe = escapeHtml(hex);
+  // Use table layout (not flex/gap) so Outlook 2016 renders correctly.
   return `
     <td style="vertical-align: top; padding-right: 18px;">
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="display: inline-block; width: 22px; height: 22px; background: ${safe}; border: 1px solid ${HAIRLINE}; vertical-align: middle;"></span>
-        <span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK}; vertical-align: middle;">
-          <span style="display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 2px;">${escapeHtml(label)}</span>
-          ${safe}
-        </span>
-      </div>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="vertical-align: middle; padding-right: 8px;">
+            <span style="display: block; width: 22px; height: 22px; background: ${safe}; border: 1px solid ${HAIRLINE};"></span>
+          </td>
+          <td style="vertical-align: middle;">
+            <span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK};">
+              <span style="display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 2px;">${escapeHtml(label)}</span>
+              ${safe}
+            </span>
+          </td>
+        </tr>
+      </table>
     </td>
   `;
 }
@@ -605,6 +612,9 @@ export function sampleAuditReport(): AuditReport {
     rulesEvaluated: 13,
     totalFindings: 11,
     bookCallUrl: 'https://calendly.com/asad-getzybit/30min',
+    screenshotUrl: 'https://fakeimg.pl/544x300/EFEEE9/111?text=acme.com+homepage',
+    visionObs:
+      'The hero section leads with a "Book a demo" CTA in a heavy filled button, but the scroll depth and CTA click data both point to trial-intent visitors. The above-fold layout dedicates roughly 60% of its visual weight to a product illustration — the CTA competes with it rather than anchoring it.',
     brandDna: {
       primaryColor: '#1A73E8',
       secondaryColor: '#0F2540',
@@ -626,6 +636,10 @@ export function sampleAuditReport(): AuditReport {
         whatToChange:
           'Collapse the promo-code input behind a "Have a code?" toggle below the primary CTA. Keeps the field reachable for the 4% who need it without making the other 96% pause on it.',
         estimatedImpactMonthlyUsd: 3200,
+        screenshotBeforeUrl: 'https://fakeimg.pl/540x340/EFEEE9/111?text=Before+(promo+field+visible)',
+        screenshotAfterUrl: 'https://fakeimg.pl/540x340/E8F5E9/111?text=After+(collapsed+behind+toggle)',
+        fixPreviewTier: 2,
+        fixRationale: 'AI-generated visual edit: collapsed the promo-code input behind a "Have a code?" toggle, reducing above-the-fold friction on the checkout flow.',
       },
       {
         id: 'f2',

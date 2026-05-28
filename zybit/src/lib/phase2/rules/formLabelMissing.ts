@@ -79,6 +79,7 @@ export const formLabelMissing: AuditRule = {
           ],
           evidence,
           prescription: {
+            whyItMatters: `Unlabelled form fields are one of the largest single causes of form abandonment. Placeholder-only fields force visitors to remember what each box wanted *after* they clicked into it (because the placeholder disappears on focus), and that hesitation often becomes a back-button. Visible labels also let browsers autofill the field — labelled fields complete in a fraction of the time a manual fill takes.`,
             whatToChange: `Wrap each unlabelled input in a <label> or add a <label for="fieldId"> pointing to the input's id.`,
             whyItWorks: `Visible labels reduce form abandonment by making field purpose unambiguous at all times. They also unlock browser autofill for labelled fields, cutting time-to-complete.`,
             experimentVariantDescription: `Variant adds visible labels above each unlabelled field. Measure form completion rate and time-on-form.`,

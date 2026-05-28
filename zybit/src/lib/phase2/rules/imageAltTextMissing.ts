@@ -75,6 +75,7 @@ export const imageAltTextMissing: AuditRule = {
         ],
         evidence,
         prescription: {
+          whyItMatters: `Alt text is what screen reader users hear when an image loads — without it, they hear "image" or the raw filename. It's also the only signal Google Images has about what's actually in the picture, so a missing alt on your product screenshot means the image can't show up for any relevant search query. Both your accessibility scores and your image-search traffic are leaving signal on the table.`,
           whatToChange: `Add alt="[description]" to each missing image. If the image is decorative, use alt="".`,
           whyItWorks: `Alt text makes images accessible to screen reader users and provides Google Image Search with content signals. Pages with complete alt text often see a lift in organic image traffic and improved accessibility scores.`,
           experimentVariantDescription: `Variant adds descriptive alt text to all flagged images. Measure Lighthouse accessibility score and Google Image Search impressions over 30 days.`,

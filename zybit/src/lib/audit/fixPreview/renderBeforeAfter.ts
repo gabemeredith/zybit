@@ -47,9 +47,14 @@ const SCREENSHOT_TIMEOUT_MS = 25_000;
 // sequential loop hangs the whole audit run for its full `maxDuration`.
 const CDP_CONNECT_TIMEOUT_MS = 15_000;
 // `networkidle` hangs on real marketing pages with persistent analytics /
-// chat sockets. `load` fires after DOMContentLoaded + onload; settle the
-// remaining 1.5s for late-arriving fonts + JS-rendered hero blocks.
-const POST_LOAD_SETTLE_MS = 1500;
+// chat sockets. `load` fires after DOMContentLoaded + onload; settle for
+// late-arriving fonts + JS-rendered hero blocks. 3.5 s catches the
+// React-hydrated marketing pages whose hero paints 2–4 s after onload —
+// shorter waits produced fully-white "below the fold" screenshots on
+// real sites.
+const POST_LOAD_SETTLE_MS = 3500;
+// On blank-frame detection retry once with a longer settle before giving up.
+const POST_LOAD_SETTLE_RETRY_MS = 6000;
 
 export interface BeforeAfterRenderResult {
   beforeUrl: string;
@@ -118,6 +123,16 @@ export async function renderBeforeAfter(args: {
     originUrl: args.originUrl,
   });
   if (!pair) return null;
+
+  // Defence in depth — if both the long retry inside renderOne and the
+  // page settled, but the screenshot is still blank, refuse the pair so
+  // we don't email a white image. Caller falls to Tier 2 / Tier 3.
+  if (isLikelyBlankFrame(pair.beforeBuffer) || isLikelyBlankFrame(pair.afterBuffer)) {
+    console.warn('[renderBeforeAfter] blank frame after retry — declining tier 1', {
+      findingId: args.findingId,
+    });
+    return null;
+  }
 
   // Route() interception produces a real styled render on both legs, so a
   // mod that targets a non-existent selector no longer betrays itself as a
@@ -233,6 +248,47 @@ const DESKTOP_UA =
  */
 export const PIXEL_DIFF_THRESHOLD = 1_000;
 
+/**
+ * Cheap blank-frame check. Samples every Nth pixel of a decoded PNG and
+ * returns true when ≥ 99.5% of samples are near-white. Catches the
+ * "Browserless screenshot fired before the hero painted" case where
+ * the user sees a fully blank Before image in the email.
+ *
+ * Sampling stride keeps the cost low (~12 KB of work on a 1280×900 frame).
+ */
+export function isLikelyBlankFrame(buffer: Buffer): boolean {
+  // JPEG: detect by magic bytes (FF D8) and use a minimum-size heuristic.
+  // A real 1280×900 screenshot JPEG is always well above 10 KB; anything
+  // smaller is a broken/empty response from the model.
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+    return buffer.length < 10_000;
+  }
+  // PNG: pixel-level white-ratio check via pngjs.
+  let img: PNG;
+  try {
+    img = PNG.sync.read(buffer);
+  } catch {
+    return false;
+  }
+  const data = img.data;
+  const totalPixels = img.width * img.height;
+  const stride = Math.max(1, Math.floor(totalPixels / 4000));
+  let sampled = 0;
+  let nearWhite = 0;
+  for (let i = 0; i < totalPixels; i += stride) {
+    const idx = i * 4;
+    const r = data[idx];
+    const g = data[idx + 1];
+    const b = data[idx + 2];
+    // ≥ 245 on all channels = "white-ish" (catches anti-aliased page bg
+    // and very light gray Tailwind backgrounds).
+    if (r >= 245 && g >= 245 && b >= 245) nearWhite += 1;
+    sampled += 1;
+  }
+  if (sampled === 0) return false;
+  return nearWhite / sampled >= 0.995;
+}
+
 export function isVisiblyChanged(before: Buffer, after: Buffer): boolean {
   let img1: PNG;
   let img2: PNG;
@@ -299,10 +355,21 @@ async function renderOne(
       timeout: SCREENSHOT_TIMEOUT_MS,
     });
     await page.waitForTimeout(POST_LOAD_SETTLE_MS);
-    return await page.screenshot({
+    let shot = await page.screenshot({
       type: 'png',
       clip: { x: 0, y: 0, width: VIEWPORT_W, height: VIEWPORT_H },
     });
+    if (isLikelyBlankFrame(Buffer.from(shot))) {
+      // Hero hasn't painted yet — wait longer and re-shoot once. If still
+      // blank we surface the blank frame and let upstream callers decide
+      // whether to skip the preview.
+      await page.waitForTimeout(POST_LOAD_SETTLE_RETRY_MS);
+      shot = await page.screenshot({
+        type: 'png',
+        clip: { x: 0, y: 0, width: VIEWPORT_W, height: VIEWPORT_H },
+      });
+    }
+    return shot;
   } finally {
     await page.close().catch(() => {});
   }
@@ -369,6 +436,12 @@ export async function renderBeforeOnly(args: {
     return null;
   }
   if (!buffer) return null;
+  if (isLikelyBlankFrame(buffer)) {
+    console.warn('[renderBeforeOnly] blank frame after retry — declining', {
+      findingId: args.findingId,
+    });
+    return null;
+  }
 
   try {
     const filename = `fix-preview/${args.findingId}/${Date.now()}-before.png`;

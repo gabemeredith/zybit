@@ -162,6 +162,21 @@ export function buildAuditFixPrompt(input: AuditFixAdvisorInput): string {
     'If the finding is about generic link text, consider a text-replace AND a CSS',
     'restyle for visual weight. Use 1-5 modifications that work together.',
     '',
+    'REPLACEMENT vs ADDITION (critical):',
+    '  When the fix is conceptually a REPLACEMENT of an existing element',
+    '  (a new headline taking the place of the old one, a new CTA replacing',
+    '  the old one, a new hero block replacing the old hero), you have two',
+    '  valid patterns:',
+    '    (a) `text-replace` on the existing element — preferred when only',
+    '        copy changes. The old text disappears automatically.',
+    '    (b) `element-insert` of the new block AND a paired `element-hide`',
+    '        (or `css-inject` with `display: none !important;`) on the',
+    '        ORIGINAL element — required so the original stays hidden.',
+    '  NEVER emit an `element-insert` for replacement copy without also',
+    '  hiding the original — the screenshot will show both the old and the',
+    '  new content overlapping or stacked, which is a broken render. If you',
+    '  use the prescription verb "Replace", you MUST hide what was there.',
+    '',
     'ELEMENT-INSERT STYLING (critical — read carefully):',
     '  The host page\'s stylesheet does NOT include your utility classes.',
     '  An inserted <div class="bg-white rounded-xl p-6"> renders as a raw',
@@ -319,7 +334,14 @@ export async function callAuditAdvisor(args: {
       contents: [{ parts }],
       // Slightly cooler than the production advisor — we want a single
       // best fix, not three exploratory options.
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.5 },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.5,
+        // See note in `captureVisualSignals.ts`: thinking-mode budget eats
+        // into output tokens and causes empty `content: {}` returns on
+        // structured-output calls. Disable for the audit fix advisor.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
   });
   if (!response.ok) {

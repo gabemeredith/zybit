@@ -186,29 +186,28 @@ describe('heading-hierarchy-jump × pageType', () => {
     expect(headingHierarchyJump.evaluate(ctx).length).toBe(1);
   });
 
-  it('legal page downgrades warn → info on missing-H1', () => {
-    // Missing H1 normally emits 'warn'. On legal, severityDowngrade applies.
+  it('legal page suppresses the rule entirely', () => {
+    // Legal pages have notoriously messy heading structure (one H1 per section,
+    // no subnesting); the prescription is not credibility-building in a
+    // prospect email. Modulation suppresses outright.
     const snap = makeSnapshot('/privacy', [], [
       { level: 2, text: 'Privacy Policy' },
       { level: 2, text: 'Data we collect' },
     ]);
     snap.data.visualSignals = makeVisionSignals('legal');
     const ctx = makeContext([], [snap]);
-    const findings = headingHierarchyJump.evaluate(ctx);
-    expect(findings.length).toBe(1);
-    expect(findings[0].severity).toBe('info');
+    expect(headingHierarchyJump.evaluate(ctx).length).toBe(0);
   });
 });
 
 describe('missing-meta-description × pageType', () => {
-  it('downgrades severity on legal pages', () => {
+  it('suppresses the rule entirely on legal pages', () => {
+    // /privacy doesn't compete for ranking; a missing meta description there
+    // is not a prospect-credibility finding. Modulation suppresses outright.
     const snap = makeSnapshot('/privacy', [], [], [], [], { description: null });
     snap.data.visualSignals = makeVisionSignals('legal');
     const ctx = makeContext([], [snap]);
-    const findings = missingMetaDescription.evaluate(ctx);
-    expect(findings.length).toBe(1);
-    expect(findings[0].severity).toBe('info');
-    expect(findings[0].priorityScore).toBeLessThan(0.4);
+    expect(missingMetaDescription.evaluate(ctx).length).toBe(0);
   });
 
   it('keeps warn severity on home pages (no modulation)', () => {
@@ -222,13 +221,11 @@ describe('missing-meta-description × pageType', () => {
 });
 
 describe('missing-canonical-url × pageType', () => {
-  it('drops priority score on legal pages', () => {
+  it('suppresses the rule entirely on legal pages', () => {
     const snap = makeSnapshot('/privacy', [], [], [], [], { canonical: null });
     snap.data.visualSignals = makeVisionSignals('legal');
     const ctx = makeContext([], [snap]);
-    const findings = missingCanonicalUrl.evaluate(ctx);
-    expect(findings.length).toBe(1);
-    expect(findings[0].priorityScore).toBeLessThan(0.2);
+    expect(missingCanonicalUrl.evaluate(ctx).length).toBe(0);
   });
 
   it('keeps base priority on a landing page', () => {

@@ -97,16 +97,23 @@ describe('pageTypeModulation', () => {
     });
   });
 
-  describe('SEO rules downgrade severity on low-priority pages', () => {
+  describe('SEO rules on low-priority pages', () => {
     it.each([
-      ['heading-hierarchy-jump', 'legal'],
-      ['heading-hierarchy-jump', 'about'],
-      ['missing-meta-description', 'legal'],
-      ['missing-meta-description', 'about'],
-      ['missing-canonical-url', 'legal'],
-      ['missing-canonical-url', 'about'],
-    ] as const)('%s downgrades severity on %s', (ruleId, pageType) => {
+      ['heading-hierarchy-jump', 'legal'] as const,
+      ['missing-meta-description', 'legal'] as const,
+      ['missing-canonical-url', 'legal'] as const,
+    ])('%s suppresses entirely on %s (legal pages are not lead-magnet credibility)', (ruleId, pageType) => {
       const out = pageTypeModulation(ruleId, pageType);
+      expect(out.suppress).toBe(true);
+    });
+
+    it.each([
+      ['heading-hierarchy-jump', 'about'] as const,
+      ['missing-meta-description', 'about'] as const,
+      ['missing-canonical-url', 'about'] as const,
+    ])('%s downgrades severity on %s', (ruleId, pageType) => {
+      const out = pageTypeModulation(ruleId, pageType);
+      expect(out.suppress).toBe(false);
       expect(out.severityDowngrade).toBe(true);
     });
 

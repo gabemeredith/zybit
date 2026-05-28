@@ -16,6 +16,7 @@ import { recordAuditUserActivity } from '@/lib/audit/recordAuditUserActivity';
 import { generateFixPreviews } from '@/lib/audit/fixPreview';
 import { PUBLIC_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 import { severityFromScore, formatAuditDate } from '@/lib/audit/auditReportFormatting';
+import { pickTopFindings, collapseDuplicateFindings } from '@/lib/audit/pickTopFindings';
 import { runUrlAudit } from '../../../../../../lighthouse/lib/runner/runUrlAudit';
 import { eq, desc } from 'drizzle-orm';
 
@@ -297,7 +298,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     .orderBy(desc(zybitFindings.priorityScore))
     .limit(50);
 
-  const top4Findings = dbFindings.slice(0, 4);
+  // Diversity cascade + off-conversion path filter. The cascade prefers
+  // (page, rule) variety so the email reads as "what's wrong across my
+  // site"; the filter drops legal / utility / boilerplate pages (e.g.
+  // Stripe's `/impressum`, PostHog's `/baa`) that are correct findings
+  // but not credibility-building in a lead-magnet email. Findings still
+  // persist to `zybit_findings` for the signed-in dashboard — this filter
+  // only applies to the top-4 selection. See `pickTopFindings.ts`.
+  const submittedPath = (() => {
+    try { return new URL(audit.url).pathname || '/'; }
+    catch { return '/'; }
+  })();
+  // Collapse template duplicates (e.g. Linear's 8 pages × 3 rules = 24
+  // identical findings) before the diversity cascade — see `pickTopFindings`.
+  const dedupedFindings = collapseDuplicateFindings(dbFindings, submittedPath);
+  const { top: top4Findings } = pickTopFindings(dedupedFindings, submittedPath);
 
   // Generate before/after fix previews for the top findings. Fail-soft —
   // a thrown error or an empty result leaves `topFindings` without the
