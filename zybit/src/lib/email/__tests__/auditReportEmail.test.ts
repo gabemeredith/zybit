@@ -21,40 +21,20 @@ beforeEach(() => {
 });
 
 describe('renderAuditReportEmailHtml', () => {
-  it('emits the HMAC-signed signup CTA href', () => {
-    const html = renderAuditReportEmailHtml(sampleAuditReport());
-    expect(html).toMatch(/\/api\/auth\/request-link-from-audit\?/);
-    // HTML escapes `&` to `&amp;`, so don't anchor sig match on a preceding
-    // delimiter — just look for the `<expiry>.<64-char-hex>` blob.
-    expect(html).toMatch(/s=\d+\.[0-9a-f]{64}/);
-    // email + auditId echoed back
-    expect(html).toContain('e=priya%40acme.com');
-    expect(html).toContain('a=pub_sample0000000000000000');
-  });
-
-  it('emits the bookCallUrl', () => {
+  it('emits the bookCallUrl as the primary CTA', () => {
     const html = renderAuditReportEmailHtml(sampleAuditReport());
     expect(html).toContain('https://calendly.com/asad-getzybit/30min');
+    // No signup link in the book-call-first funnel
+    expect(html).not.toContain('request-link-from-audit');
   });
 
-  it('puts the signup CTA before the Calendly CTA in source order', () => {
+  it('links the caveat block to the bookCallUrl', () => {
     const html = renderAuditReportEmailHtml(sampleAuditReport());
-    const signupAt = html.indexOf('request-link-from-audit');
-    const calendlyAt = html.indexOf('calendly.com');
-    expect(signupAt).toBeGreaterThan(-1);
-    expect(calendlyAt).toBeGreaterThan(-1);
-    expect(signupAt).toBeLessThan(calendlyAt);
-  });
-
-  it('turns the PostHog caveat phrase into a link', () => {
-    const html = renderAuditReportEmailHtml(sampleAuditReport());
-    // The caveat block contains a link wrapping "Connect PostHog" that points
-    // at the same signup destination — keeps the journey one URL deep.
     const caveatStart = html.indexOf('Based on page structure');
     const caveatEnd = html.indexOf('</td>', caveatStart);
     const caveatHtml = html.slice(caveatStart, caveatEnd);
-    expect(caveatHtml).toMatch(/<a [^>]*href=".*request-link-from-audit/);
-    expect(caveatHtml).toContain('Connect PostHog');
+    expect(caveatHtml).toMatch(/<a [^>]*href=".*calendly\.com/);
+    expect(caveatHtml).toContain('Jump on a call');
   });
 
   it('does not leak the resend.dev sandbox domain anywhere in the body', () => {
@@ -127,7 +107,7 @@ describe('renderAuditReportEmailHtml', () => {
     expect(html).not.toMatch(/>(High|Medium|Low)</);
   });
 
-  it('signs different emails to different sigs', () => {
+  it('renders different prospect emails without leaking cross-user data', () => {
     const a = renderAuditReportEmailHtml({
       ...sampleAuditReport(),
       prospect: { email: 'a@acme.com', role: 'PM' },
@@ -136,14 +116,10 @@ describe('renderAuditReportEmailHtml', () => {
       ...sampleAuditReport(),
       prospect: { email: 'b@acme.com', role: 'PM' },
     });
-    // sig now has form `<expiry>.<64-char-hex>` — compare just the hex tail
-    // since the expiry timestamps will match when both renders happen in the
-    // same millisecond.
-    const sigA = /s=\d+\.([0-9a-f]{64})/.exec(a)?.[1];
-    const sigB = /s=\d+\.([0-9a-f]{64})/.exec(b)?.[1];
-    expect(sigA).toBeTruthy();
-    expect(sigB).toBeTruthy();
-    expect(sigA).not.toEqual(sigB);
+    expect(a).toContain('a@acme.com');
+    expect(b).toContain('b@acme.com');
+    expect(a).not.toContain('b@acme.com');
+    expect(b).not.toContain('a@acme.com');
   });
 });
 
