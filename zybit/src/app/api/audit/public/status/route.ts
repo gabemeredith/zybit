@@ -47,10 +47,10 @@ export type PublicBrandDna = {
 
 // Findings are stored in two formats:
 //   v1 (legacy): bare array of finding objects
-//   v2 (current): { v: 2, items: [...], brandDna: {...} | null }
+//   v2 (current): { v: 2, items: [...], brandDna: {...} | null, screenshotUrl: string | null }
 // Both formats are supported so old audit rows keep working.
-function unpackFindings(raw: unknown): { items: unknown[]; brandDna: PublicBrandDna | null } {
-  if (Array.isArray(raw)) return { items: raw, brandDna: null };
+function unpackFindings(raw: unknown): { items: unknown[]; brandDna: PublicBrandDna | null; screenshotUrl: string | null } {
+  if (Array.isArray(raw)) return { items: raw, brandDna: null, screenshotUrl: null };
   if (raw && typeof raw === 'object' && (raw as Record<string, unknown>).v === 2) {
     const r = raw as Record<string, unknown>;
     const items = Array.isArray(r.items) ? r.items : [];
@@ -64,9 +64,10 @@ function unpackFindings(raw: unknown): { items: unknown[]; brandDna: PublicBrand
           ctaVocabulary: Array.isArray(bd.ctaVocabulary) ? (bd.ctaVocabulary as string[]) : [],
         }
       : null;
-    return { items, brandDna };
+    const screenshotUrl = typeof r.screenshotUrl === 'string' && r.screenshotUrl ? r.screenshotUrl : null;
+    return { items, brandDna, screenshotUrl };
   }
-  return { items: [], brandDna: null };
+  return { items: [], brandDna: null, screenshotUrl: null };
 }
 
 function pickPublicFindings(items: unknown[]): PublicFinding[] {
@@ -163,10 +164,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   let findings: PublicFinding[] | null = null;
   let brandDna: PublicBrandDna | null = null;
+  let screenshotUrl: string | null = null;
   if (confirmed && status === 'done') {
     const unpacked = unpackFindings(row.findings);
     findings = pickPublicFindings(unpacked.items);
     brandDna = unpacked.brandDna;
+    screenshotUrl = unpacked.screenshotUrl;
   }
 
   return NextResponse.json({
@@ -177,5 +180,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     error: userFacingError(status, error),
     findings,
     brandDna,
+    screenshotUrl,
   });
 }

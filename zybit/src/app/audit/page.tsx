@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { SiteNav } from '@/components/SiteNav';
 import { IntakeModal } from '@/components/IntakeModal';
-import { isPersonalEmail, isAllowlistedTestEmail, rejectionMessage } from '@/lib/audit/personalEmailDomains';
 import { PUBLIC_AUDIT_RULE_COUNT, PUBLIC_AUDIT_DEFERRED_RULE_COUNT, TOTAL_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 import type { IntakeFinding } from '@/lib/intake/structuralAudit';
 
@@ -116,10 +115,7 @@ export default function AuditPage() {
       setError('Please enter a valid email address.');
       return;
     }
-    if (isPersonalEmail(form.email) && !isAllowlistedTestEmail(form.email)) {
-      setError(rejectionMessage());
-      return;
-    }
+
     if (!form.role) {
       setError('Pick a role so we know who we\'re writing to.');
       return;
@@ -260,7 +256,7 @@ function Hero() {
           maxWidth: 620,
         }}
       >
-        Work email only. We send a confirmation link before running anything, so your
+        We send a confirmation link before running anything, so your
         results go only to the inbox that asked for them.
       </p>
     </header>
@@ -307,7 +303,7 @@ function AuditForm({
         />
       </Field>
 
-      <Field label="Work email" htmlFor="audit-email" hint="We confirm by email before running anything. Personal addresses (gmail, etc.) are routed to the waitlist instead.">
+      <Field label="Email" htmlFor="audit-email" hint="We send a confirmation link before running anything.">
         <input
           id="audit-email"
           type="email"
@@ -867,10 +863,6 @@ function FAQ() {
     {
       q: 'Why do I have to confirm by email?',
       a: 'The form is open to anyone. Without the confirmation step, someone could type your address and we\'d send you an unsolicited report. A quick click in your inbox keeps that from happening.',
-    },
-    {
-      q: 'Why work email only?',
-      a: 'The report is for product teams. It cites your funnel, your CTAs, your conversion path. A personal address does not connect to a real conversation about any of that. Personal addresses go to the waitlist instead.',
     },
     {
       q: 'Will you put me on a drip campaign?',

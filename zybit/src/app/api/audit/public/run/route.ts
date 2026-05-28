@@ -143,18 +143,11 @@ async function collectBrandDna(args: {
     ctaVocabulary,
   };
 
-  // Return null when every field is empty so the route surfaces "no brand
-  // DNA available" cleanly instead of an all-null payload that the renderer
-  // would have to special-case downstream.
-  if (
-    !dna.primaryColor &&
-    !dna.secondaryColor &&
-    (!dna.typeScale || dna.typeScale.length === 0) &&
-    !dna.cssSystem &&
-    dna.ctaVocabulary.length === 0
-  ) {
-    return null;
-  }
+  // Always return the dna object — the UI handles null fields gracefully
+  // (cssSystem falls back to "unknown", colors/typeScale rows are omitted).
+  // Returning null here caused the entire "Design signals" section to be
+  // suppressed for sites where Browserless didn't capture colors or the CSS
+  // framework wasn't detectable.
   return dna;
 }
 
@@ -452,10 +445,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     emailError = err instanceof Error ? err.message : String(err);
   }
 
-  // Wrap findings + brand DNA together so the status endpoint can return
-  // both without an extra join. Old rows stored a bare array; new rows store
-  // { v: 2, items: [...], brandDna: {...} }. The status route handles both.
-  const findingsPayload = JSON.stringify({ v: 2, items: topFindings, brandDna: brandDna ?? null });
+  // Wrap findings + brand DNA + homepage screenshot together so the status
+  // endpoint can return all three without an extra join. Old rows stored a
+  // bare array; new rows store { v: 2, items: [...], brandDna: {...},
+  // screenshotUrl: "..." }. The status route handles both formats.
+  const findingsPayload = JSON.stringify({
+    v: 2,
+    items: topFindings,
+    brandDna: brandDna ?? null,
+    screenshotUrl: screenshot?.screenshotUrl || null,
+  });
 
   if (emailError) {
     // Pipeline succeeded but delivery failed — surface in DB so the audit

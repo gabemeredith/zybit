@@ -123,7 +123,14 @@ export async function runVisionPass(
             ],
           },
         ],
-        generationConfig: { maxOutputTokens: 220, temperature: 0.4 },
+        generationConfig: {
+          maxOutputTokens: 220,
+          temperature: 0.4,
+          // gemini-3.5-flash thinking-mode defaults ON and counts against
+          // maxOutputTokens — without this the model exhausts the budget on
+          // internal reasoning and returns an empty response every time.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
       signal: AbortSignal.timeout(30_000),
     });
