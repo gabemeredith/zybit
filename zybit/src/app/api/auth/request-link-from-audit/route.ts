@@ -10,11 +10,7 @@ import { verifyAuditSignupParam } from '@/lib/audit/cookies';
 export const runtime = 'nodejs';
 
 function appBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_BASE_URL ??
-    'https://getzybit.com'
-  ).replace(/\/$/, '');
+  return (process.env.NEXT_PUBLIC_APP_URL ?? 'https://getzybit.com').replace(/\/$/, '');
 }
 
 function extractIp(request: NextRequest): string {

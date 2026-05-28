@@ -4,7 +4,7 @@ import { createMagicLink } from '@/lib/auth/session';
 import { checkAuthRateLimit } from '@/lib/auth/rateLimit';
 
 function getBaseUrl(): string {
-  return (process.env.APP_BASE_URL ?? '').replace(/\/$/, '');
+  return (process.env.NEXT_PUBLIC_APP_URL ?? 'https://getzybit.com').replace(/\/$/, '');
 }
 
 function extractIp(request: Request): string {
