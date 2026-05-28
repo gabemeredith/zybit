@@ -27,6 +27,7 @@ import {
   topByCount,
 } from "./helpers";
 import { ANNOTATION_CLICKED_COLOR, ANNOTATION_HEAVY_COLOR } from "./annotationColors";
+import { siteNicheModulation } from "./siteNicheModulation";
 import { annotationCaption, outlineMod } from "./annotationHelpers";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
@@ -228,6 +229,17 @@ export const heroHierarchyInversion: AuditRule = {
 
       const finding = evaluatePage(pathRef, snapshot, clicks, ctx);
       if (finding !== null) findings.push(finding);
+    }
+
+    // Site-niche severity downgrade: community/education/devtools hero patterns
+    // are often intentional — an event photo hero or terminal-first hero is
+    // not a CTA mistake. Downgrade warn → info so it surfaces for awareness
+    // without being ranked as a top-priority fix.
+    const nicheModulation = siteNicheModulation('hero-hierarchy-inversion', ctx.siteNiche);
+    if (nicheModulation.severityDowngrade) {
+      for (const f of findings) {
+        if (f.severity === 'warn') f.severity = 'info';
+      }
     }
 
     return findings;

@@ -33,6 +33,7 @@ import {
 } from "./helpers";
 import { calibratedFloor } from "./ruleCalibration";
 import { pageTypeFromSnapshot, pageTypeModulation } from "./pageTypeModulation";
+import { siteNicheModulation } from "./siteNicheModulation";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -171,6 +172,8 @@ export const aboveFoldCoverage: AuditRule = {
       const pageType = pageTypeFromSnapshot(snapshot?.data.visualSignals);
       const modulation = pageTypeModulation("above-fold-coverage", pageType);
       if (modulation.suppress) continue;
+      const nicheModulation = siteNicheModulation("above-fold-coverage", ctx.siteNiche);
+      if (nicheModulation.suppress) continue;
 
       // Prefer headless capture (precise bbox) over legacy heuristic snapshot
       if (ctx.pageCapturesByPath) {
