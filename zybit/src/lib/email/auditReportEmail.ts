@@ -138,11 +138,11 @@ function introCopy(report: AuditReport): string {
   const rulesCount = numberWord(report.rulesEvaluated);
   const pages = pagesPhrase(report.pagesScanned);
   if (n === 0) {
-    return `We ran our ${rulesCount} friction rules against ${pages}. Nothing surfaced above our confidence floor today — that's a real signal, not an empty report. The other ${numberWord(PUBLIC_AUDIT_DEFERRED_RULE_COUNT)} rules light up once you connect PostHog so we can see how your visitors actually behave.`;
+    return `We crawled ${pages} and ran ${rulesCount} structural checks against the HTML. Nothing exceeded our detection threshold — on pages with clean markup and strong SEO fundamentals, that is a real result. The ${numberWord(PUBLIC_AUDIT_DEFERRED_RULE_COUNT)} behavioral rules light up once you connect PostHog and we can see how your visitors actually move through the site.`;
   }
   const findingPhrase = `<strong>${numberWord(n)} finding${n === 1 ? '' : 's'} below</strong>`;
   const tail = n === 1 ? 'is the one' : 'are the ones';
-  return `We ran our ${rulesCount} friction rules against ${pages}. The ${findingPhrase} ${tail} most worth fixing first — ranked by impact and how confident we are in the call. Each one cites what we saw on your site and what to change.`;
+  return `We crawled ${pages} and ran ${rulesCount} structural checks against the HTML. The ${findingPhrase} ${tail} that stood out — each grounded in something specific we found in your markup, with a concrete fix.`;
 }
 
 /**
