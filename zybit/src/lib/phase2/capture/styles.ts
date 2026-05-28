@@ -52,9 +52,12 @@ export async function extractMeasurements(page: Page): Promise<PageMeasurements>
       // ---- helpers --------------------------------------------------------
 
       function rgbToHex(rgb: string): string | null {
-        const m = rgb.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+        const m = rgb.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
         if (!m) return null;
-        const toHex = (n: string) => parseInt(n).toString(16).padStart(2, '0');
+        // Skip fully transparent colors — rgba(0,0,0,0) is the browser default
+        // for "no background" and would corrupt the primary-color mode as black.
+        if (m[4] !== undefined && parseFloat(m[4]) === 0) return null;
+        const toHex = (n: string) => parseInt(n, 10).toString(16).padStart(2, '0');
         return `#${toHex(m[1])}${toHex(m[2])}${toHex(m[3])}`;
       }
 

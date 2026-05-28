@@ -41,6 +41,7 @@ interface StatusResponse {
   error: string | null;
   findings: InlineFinding[] | null;
   brandDna: BrandDna | null;
+  screenshotUrl: string | null;
 }
 
 function Dots() {
@@ -165,8 +166,9 @@ function ColorSwatch({ hex, label }: { hex: string; label: string }) {
 function BrandDnaSection({ dna }: { dna: BrandDna }) {
   const hasColors = (dna.primaryColor && SAFE_HEX_RE.test(dna.primaryColor)) ||
     (dna.secondaryColor && SAFE_HEX_RE.test(dna.secondaryColor));
-  const hasAnyContent = hasColors || dna.cssSystem !== null || (dna.typeScale && dna.typeScale.length > 0) || dna.ctaVocabulary.length > 0;
-  if (!hasAnyContent) return null;
+  // Always render — the framework row has a "unknown" fallback so the section
+  // is never blank even when Browserless didn't capture colors or the CSS
+  // framework couldn't be detected.
 
   return (
     <div style={{ marginBottom: 24 }}>
@@ -302,6 +304,7 @@ function AuditStatusPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [findings, setFindings] = useState<InlineFinding[] | null>(null);
   const [brandDna, setBrandDna] = useState<BrandDna | null>(null);
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!auditId) return;
@@ -323,6 +326,7 @@ function AuditStatusPageInner() {
         setDomain(data.domain);
         if (data.findings) setFindings(data.findings);
         if (data.brandDna) setBrandDna(data.brandDna);
+        if (data.screenshotUrl) setScreenshotUrl(data.screenshotUrl);
 
         if (data.status === 'done') {
           setStatus('done');
@@ -453,6 +457,32 @@ function AuditStatusPageInner() {
           >
             Your audit of {domain || 'your site'} is ready.
           </h1>
+
+          {screenshotUrl && (
+            <div style={{ marginBottom: 24 }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  color: MUTED,
+                  marginBottom: 10,
+                }}
+              >
+                Above the fold
+              </div>
+              <img
+                src={screenshotUrl}
+                alt={`${domain} homepage screenshot`}
+                style={{
+                  width: '100%',
+                  display: 'block',
+                  border: `1px solid ${HAIRLINE}`,
+                }}
+              />
+            </div>
+          )}
 
           {brandDna && <BrandDnaSection dna={brandDna} />}
 
