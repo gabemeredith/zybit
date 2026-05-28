@@ -146,17 +146,41 @@ function introCopy(report: AuditReport): string {
 }
 
 /**
- * Severity badge for the finding card header bar.
- * Email-safe: inline-block span with border, no flex/grid.
+ * Maps a ruleId to a human-readable category label for the email card header.
+ * Categories are meaningful to founders (SEO, Accessibility, etc.) unlike
+ * internal severity/confidence scores which are heuristic-derived and opaque.
  */
-function severityBadge(severity: 'high' | 'medium' | 'low'): string {
-  const map = {
-    high: { bg: INK, color: CREAM, border: INK, label: 'High impact' },
-    medium: { bg: '#F5F0E8', color: INK, border: 'rgba(0,0,0,0.25)', label: 'Medium impact' },
-    low: { bg: 'transparent', color: MUTED, border: 'rgba(0,0,0,0.2)', label: 'Low impact' },
-  };
-  const s = map[severity] ?? map.medium;
-  return `<span style="display: inline-block; padding: 3px 9px; background: ${s.bg}; color: ${s.color}; border: 1px solid ${s.border}; font-family: ${FONT_STACK}; font-size: 9px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;">${s.label}</span>`;
+const RULE_CATEGORIES: Record<string, string> = {
+  'hero-hierarchy-inversion': 'CTA structure',
+  'above-fold-coverage': 'CTA structure',
+  'cta-low-contrast': 'Visual contrast',
+  'nav-dispersion': 'Navigation',
+  'nav-item-count': 'Navigation',
+  'heading-hierarchy-jump': 'Page structure',
+  'form-label-missing': 'Accessibility',
+  'image-alt-text-missing': 'Accessibility',
+  'link-text-generic': 'Link quality',
+  'dead-click-target': 'Interaction',
+  'missing-meta-description': 'SEO',
+  'missing-canonical-url': 'SEO',
+  'vague-claim-detected': 'Copy quality',
+  'proof-missing': 'Copy quality',
+  'cta-verb-mismatch': 'Copy quality',
+  'rage-click-target': 'Behavioral',
+  'bounce-on-key-page': 'Behavioral',
+  'return-visit-thrash': 'Behavioral',
+  'help-seeking-spike': 'Behavioral',
+  'hesitation-pattern': 'Behavioral',
+  'form-abandonment': 'Behavioral',
+  'freeze-on-cta': 'Behavioral',
+  'dead-zone': 'Behavioral',
+  'scroll-reversal': 'Behavioral',
+  'frustration-signal': 'Behavioral',
+  'flow-inter-step-dropoff': 'Conversion flow',
+};
+
+function ruleCategoryTag(ruleId: string): string {
+  return RULE_CATEGORIES[ruleId] ?? 'Structural';
 }
 
 /**
@@ -288,21 +312,10 @@ function fixPreviewRow(f: AuditFindingForEmail): string {
 }
 
 function findingCard(f: AuditFindingForEmail): string {
-  const confidence = Math.round(f.confidence * 100);
-
   const metaBar = `
     <tr>
-      <td style="padding: 10px 18px; border-bottom: 1px solid ${HAIRLINE}; background: rgba(0,0,0,0.02);">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td style="vertical-align: middle; padding-right: 12px;">
-              ${severityBadge(f.severity)}
-            </td>
-            <td style="vertical-align: middle; font-family: ${FONT_STACK}; font-size: 10px; color: ${MUTED}; letter-spacing: 0.06em;">
-              ${confidence}% confidence
-            </td>
-          </tr>
-        </table>
+      <td style="padding: 9px 18px; border-bottom: 1px solid ${HAIRLINE}; background: rgba(0,0,0,0.02);">
+        <span style="font-family: ${FONT_STACK}; font-size: 9px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED};">${escapeHtml(ruleCategoryTag(f.ruleId))}</span>
       </td>
     </tr>`;
 
@@ -430,7 +443,7 @@ function brandDnaSection(report: AuditReport): string {
     factRows.push(factRow('Framework', escapeHtml(b.cssSystem)));
   } else {
     factRows.push(
-      factRow('Framework', `<span style="color: ${MUTED};">unknown (compiled or hashed utility classes)</span>`),
+      factRow('Framework', `<span style="color: ${MUTED};">custom compiled CSS</span>`),
     );
   }
   if (b.typeScale && b.typeScale.length > 0) {

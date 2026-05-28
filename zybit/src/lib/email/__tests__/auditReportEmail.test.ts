@@ -90,7 +90,7 @@ describe('renderAuditReportEmailHtml', () => {
     expect(section).not.toContain('•');
   });
 
-  it('renders the severity badge above the Why this matters block', () => {
+  it('renders the rule category tag above the Why this matters block', () => {
     const sample = sampleAuditReport();
     // Pick a finding that has both a title and whyItMatters set.
     const sampleWithBoth = {
@@ -99,18 +99,21 @@ describe('renderAuditReportEmailHtml', () => {
     };
     expect(sampleWithBoth.findings.length).toBe(1);
     const html = renderAuditReportEmailHtml(sampleWithBoth);
-    // The meta bar (severity badge + confidence) renders before "Why this matters"
-    const confidenceAt = html.indexOf('% confidence');
+    // hero-hierarchy-inversion → "CTA structure" category tag
+    const categoryAt = html.indexOf('CTA structure');
     const whyLabelAt = html.indexOf('>Why this matters<');
-    expect(confidenceAt).toBeGreaterThan(-1);
+    expect(categoryAt).toBeGreaterThan(-1);
     expect(whyLabelAt).toBeGreaterThan(-1);
-    expect(confidenceAt).toBeLessThan(whyLabelAt);
+    expect(categoryAt).toBeLessThan(whyLabelAt);
   });
 
-  it('no longer renders the severity badge or estimated impact figure', () => {
+  it('does not render estimated impact figures or raw severity/confidence scores', () => {
     const html = renderAuditReportEmailHtml(sampleAuditReport());
     expect(html).not.toContain('Est. impact');
-    expect(html).not.toMatch(/>(High|Medium|Low)</);
+    expect(html).not.toContain('% confidence');
+    // Severity words only appear as rule category labels (e.g. "CTA structure"),
+    // never as bare impact badges like ">High<" or ">Medium<"
+    expect(html).not.toMatch(/>(High|Medium|Low) impact</);
   });
 
   it('renders different prospect emails without leaking cross-user data', () => {

@@ -244,6 +244,21 @@ function isSkipLink(el: HTMLElement, text: string, ariaLabel: string): boolean {
 // glyphs included; multi-letter labels like "Close panel" don't match.
 const CHROME_BUTTON_TEXT = /^(back|close|dismiss|cancel|menu|search|open menu|open navigation|toggle menu|toggle navigation|×|✕|✖|\+|−|‒)$/i;
 
+// Badge/counter text — pure-digit strings with optional "+" suffix (e.g. "0"
+// on a cart icon, "99+" on a notification bell). These are DOM counters, not
+// marketing copy. A cart anchor whose *only* visible text is "0" is structural
+// UI and must not surface as a hero CTA. Filter regardless of tag or href.
+const BADGE_COUNT_TEXT = /^\d+\+?$/;
+
+// State-toggle buttons contain both sides of a visibility toggle concatenated
+// in a single accessible label — the browser shows only one state at a time
+// but the DOM holds both strings. Hamburger menus are the common case:
+// "Open Menu Close Menu" or "Close NavigationOpen Navigation". Matches when
+// the text contains an open-type word followed within 40 chars by a close-type
+// word (or vice versa), case-insensitive.
+const STATE_TOGGLE_TEXT =
+  /\b(open|show)\b.{0,40}\b(close|hide)\b|\b(close|hide)\b.{0,40}\b(open|show)\b/i;
+
 // Site brand logos are commonly authored as `<a href="/"><img alt="Stripe
 // logo"></a>` — a navigation affordance to the homepage, not a conversion
 // CTA. Without this filter `hero-hierarchy-inversion` on Stripe
@@ -275,6 +290,17 @@ function isChromeButton(
   if (LOGO_ALT_TEXT.test(text)) return true;
   if (LOGO_ALT_TEXT.test(imgAlt)) return true;
   if (LOGO_ALT_TEXT.test(ariaLabel)) return true;
+  // Badge/counter text (e.g. "0", "99+") is structural UI — DOM counters for
+  // cart items, notification counts, or numeric indexes are not marketing copy.
+  // Filter regardless of tag or href; a cart anchor whose only text is "0" is
+  // still not a conversion CTA.
+  if (BADGE_COUNT_TEXT.test(text)) return true;
+  if (BADGE_COUNT_TEXT.test(ariaLabel)) return true;
+  // State-toggle text (e.g. "Open Menu Close Menu") is a hamburger button
+  // whose accessible label contains both toggle states. Filter regardless of
+  // tag or href — it is always structural UI, never a marketing headline.
+  if (STATE_TOGGLE_TEXT.test(text)) return true;
+  if (STATE_TOGGLE_TEXT.test(ariaLabel)) return true;
   return false;
 }
 
