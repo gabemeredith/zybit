@@ -1,7 +1,8 @@
 /**
- * "How tracking works" panel. Surfaces the proxy-bridge model on the
- * demo cockpit so a viewer can immediately see how both buckets are
- * measured from a single PostHog project. Server component — no state.
+ * "How both versions are measured" panel on the demo cockpit. Plain-language
+ * framing of the bridge model — both versions measured from the customer's
+ * existing PostHog, no re-instrumentation — for a PM/founder demo audience.
+ * Server component — no state.
  */
 
 const INK = "#111";
@@ -27,30 +28,20 @@ export default function HowTrackingWorks() {
           marginBottom: 8,
         }}
       >
-        How both variants are tracked
+        How both versions are measured
       </div>
       <p style={{ margin: "0 0 12px", fontSize: 13, color: INK, lineHeight: 1.55 }}>
-        One PostHog project sees both buckets. The Zybit proxy stamps a sticky
-        <code style={mono}>_zybit_vid</code> cookie and picks the bucket, then
-        injects a bridge into <strong>control and variant HTML</strong> that
-        registers <code style={mono}>posthog.register({"{ zybit_vid }"})</code>.
-        Every PostHog event carries it as a super-property; the assignment log
-        joins to conversions on that key.
+        Zybit measures the control and the variant from your{" "}
+        <strong>existing PostHog</strong> — no new tracking code, no second
+        project. Each visitor is tagged once with the version they saw, that tag
+        rides along on every event they fire, and at results time Zybit maps each
+        conversion back to its version.
       </p>
       <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: INK, lineHeight: 1.55 }}>
-        <li>Proxy sets <code style={mono}>_zybit_vid</code> + bucket cookie</li>
-        <li>Proxy logs assignment server-side, keyed by <code style={mono}>zybit_vid</code></li>
-        <li>Bridge script registers <code style={mono}>zybit_vid</code> on PostHog</li>
-        <li>Outcome compute joins assignments ↔ PostHog events on the shared id</li>
+        <li>Visitor arrives → Zybit assigns a version and tags them</li>
+        <li>The tag travels with every PostHog event they trigger</li>
+        <li>Results match each conversion to the version that visitor saw</li>
       </ol>
     </div>
   );
 }
-
-const mono: React.CSSProperties = {
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-  fontSize: 12,
-  background: "rgba(0,0,0,0.04)",
-  padding: "1px 4px",
-  borderRadius: 4,
-};
