@@ -719,7 +719,7 @@ function TeaserCard({ finding }: { finding: IntakeFinding }) {
           opacity: 0.85,
         }}
       >
-        Full report includes 3 more findings + dollar estimates
+        Full report includes 3 more findings with evidence and what to change
       </div>
     </div>
   );
@@ -882,8 +882,8 @@ function FAQ() {
       a: 'The audit is the static-crawl part. The full product connects to your analytics (PostHog, Segment, GA4), watches real user sessions, and re-ranks findings based on what actually moves your metrics — a continuous loop instead of a one-shot snapshot.',
     },
     {
-      q: 'How accurate are the dollar estimates?',
-      a: 'They\'re grounded in your declared (or inferred) MRR/AOV and the funnel stage each finding hits. Treat them as order-of-magnitude, not forecasts. The confidence score on each finding tells you which ones to trust most.',
+      q: 'How are findings ranked?',
+      a: 'Each finding gets a priority score based on confidence, structural severity, and how many pages it affects. The top four in the email are chosen for variety across pages and rule types — so you see the breadth of issues, not four instances of the same problem.',
     },
     {
       q: 'My site is a SPA — will the audit work?',

@@ -257,6 +257,13 @@ export const PIXEL_DIFF_THRESHOLD = 1_000;
  * Sampling stride keeps the cost low (~12 KB of work on a 1280×900 frame).
  */
 export function isLikelyBlankFrame(buffer: Buffer): boolean {
+  // JPEG: detect by magic bytes (FF D8) and use a minimum-size heuristic.
+  // A real 1280×900 screenshot JPEG is always well above 10 KB; anything
+  // smaller is a broken/empty response from the model.
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+    return buffer.length < 10_000;
+  }
+  // PNG: pixel-level white-ratio check via pngjs.
   let img: PNG;
   try {
     img = PNG.sync.read(buffer);

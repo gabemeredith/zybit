@@ -93,7 +93,6 @@ function ruleSpecificGuidance(ruleId: string): string | null {
         'voice. Do not change the button geometry, colour, position, or any',
         'surrounding copy. Keep the new label short (max 4 words).',
       ].join(' ');
-    case 'vague-claim-detected':
     case 'hero-hierarchy-inversion':
       return [
         'CONCRETE EDIT: Replace the existing hero headline text in place — paint',
@@ -102,6 +101,17 @@ function ruleSpecificGuidance(ruleId: string): string | null {
         'render the new headline as an additional line above or below the',
         'original. The visible result should look like a clean replacement, not',
         'two overlapping headlines.',
+      ].join(' ');
+    case 'vague-claim-detected':
+      return [
+        'CONCRETE EDIT: Locate the specific vague marketing claim cited in the',
+        'evidence — this may appear in a stat block, testimonial, feature blurb,',
+        'or body copy, NOT necessarily the hero headline. Paint over that exact',
+        'text in place and render a more specific version that quantifies or names',
+        'the concrete benefit (e.g., replace "powerful analytics" with "cuts',
+        'analysis time by 40%"). Do NOT change the hero headline unless the',
+        'evidence explicitly cites it. Keep the same position, font, and weight.',
+        'This is the ONLY change.',
       ].join(' ');
     default:
       return null;
@@ -245,19 +255,22 @@ export async function inpaintFixAfter(
   // can't synthesize the requested edit (most often on "add logos" /
   // "insert a trust row" prompts). Catch the no-op + blank cases so we
   // fall through to Tier 3 instead of mailing an identical pair.
-  if (edited.mimeType.startsWith('image/png')) {
-    if (isLikelyBlankFrame(edited.buffer)) {
-      console.warn('[visionInpaint] edited image is blank — declining', {
-        findingId: input.findingId,
-      });
-      return null;
-    }
-    if (!isVisiblyChanged(input.beforeBuffer, edited.buffer)) {
-      console.warn('[visionInpaint] edited image is perceptually identical to before — declining', {
-        findingId: input.findingId,
-      });
-      return null;
-    }
+  //
+  // Blank check applies to all formats: isLikelyBlankFrame handles PNG via
+  // pixel analysis and JPEG via magic-byte + minimum-size heuristic.
+  if (isLikelyBlankFrame(edited.buffer)) {
+    console.warn('[visionInpaint] edited image is blank — declining', {
+      findingId: input.findingId,
+    });
+    return null;
+  }
+  // Pixel-level echo detection requires PNG on both sides; skip for JPEG
+  // responses (pngjs throws on JPEG input, returning the fail-open true).
+  if (edited.mimeType.startsWith('image/png') && !isVisiblyChanged(input.beforeBuffer, edited.buffer)) {
+    console.warn('[visionInpaint] edited image is perceptually identical to before — declining', {
+      findingId: input.findingId,
+    });
+    return null;
   }
 
   // Nano Banana sometimes returns JPEG even when given a PNG input — honor
