@@ -6,7 +6,6 @@ import { eq, and } from "drizzle-orm";
 import { getServerAuth } from "@/lib/auth/serverAuth";
 import { getDb } from "@/lib/db/client";
 import { phase1Sites, zybitExperiments, zybitFindings } from "@/lib/db/schema";
-import { DEMO_SITE_ID } from "@/lib/demo/constants";
 import ExperimentControls from "@/components/app/ExperimentControls";
 import ExperimentScreenshotPreview from "@/components/app/ExperimentScreenshotPreview";
 import type { VariantModification } from "@/lib/experiments/types";
@@ -300,14 +299,7 @@ export default async function ExperimentDetailPage({
               {/* Before/after screenshots rendered via Browserless (scripts
                   stripped, so the variant survives on SPA pages — unlike the
                   old live-iframe preview). */}
-              <ExperimentScreenshotPreview
-                experimentId={id}
-                proxyBaseUrl={
-                  exp.siteId === DEMO_SITE_ID && siteProxySlug
-                    ? `https://${siteProxySlug}.zybit.run${exp.targetPath ?? "/"}`
-                    : null
-                }
-              />
+              <ExperimentScreenshotPreview experimentId={id} />
             </div>
           )}
         </div>

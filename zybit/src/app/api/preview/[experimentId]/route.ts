@@ -29,8 +29,22 @@ import { eq, and } from 'drizzle-orm';
 import { getServerAuth } from '@/lib/auth/serverAuth';
 import { getDb } from '@/lib/db/client';
 import { zybitExperiments, phase1Sites } from '@/lib/db/schema';
-import { applyModifications } from '@/lib/experiments/htmlModifier';
+import { applyModifications, stripScripts } from '@/lib/experiments/htmlModifier';
 import type { VariantModification } from '@/lib/experiments/types';
+
+/**
+ * Resolve relative asset URLs (CSS/fonts/images) against the real origin so the
+ * preview renders fully styled instead of as bare HTML, and escape the value so
+ * it can't break out of the attribute.
+ */
+function injectBaseHref(html: string, originUrl: string): string {
+  if (/<base\s/i.test(html)) return html;
+  const safe = originUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const baseTag = `<base href="${safe}">`;
+  const headOpen = html.match(/<head[^>]*>/i);
+  if (headOpen) return html.replace(headOpen[0], `${headOpen[0]}${baseTag}`);
+  return `${baseTag}${html}`;
+}
 
 export const runtime = 'nodejs';
 
@@ -115,7 +129,7 @@ export async function GET(
     return new NextResponse(`Could not reach origin: ${message}`, { status: 504 });
   }
 
-  // TODO: apply modifications only for variant bucket; control gets unmodified HTML
+  // Apply modifications only for variant bucket; control gets unmodified HTML.
   let outputHtml = html;
   if (bucket === 'variant') {
     const modifications = experiment.modifications as VariantModification[] | null;
@@ -123,6 +137,13 @@ export async function GET(
       outputHtml = applyModifications(html, modifications);
     }
   }
+
+  // Strip the origin's own scripts so a client-rendered (SPA) page can't
+  // hydrate over and wipe the injected variant — the preview is a static,
+  // fully-styled snapshot of the page. Then point relative asset URLs at the
+  // real origin so its CSS/fonts/images actually load (otherwise they resolve
+  // against the Zybit origin and the page renders unstyled).
+  outputHtml = injectBaseHref(stripScripts(outputHtml), originUrl);
 
   // TODO: inject a visible banner so the PM knows this is a preview
   const banner = `
@@ -151,10 +172,21 @@ export async function GET(
   const frameAncestors = lighthouseSlug
     ? `'self' ${lighthouseAncestors}`
     : "'self'";
+  // Block scripts (we already stripped them) but allow the origin's styles,
+  // fonts, and images from any host so the preview renders fully styled.
+  const csp =
+    "default-src 'none'; " +
+    "script-src 'none'; " +
+    "style-src 'unsafe-inline' *; " +
+    'img-src * data: blob:; ' +
+    'font-src * data:; ' +
+    // No `base-uri` restriction — we inject a <base> so relative assets resolve
+    // to the real origin; locking base-uri would null that out and unstyle it.
+    `frame-ancestors ${frameAncestors}`;
   const headers = new Headers({
     'content-type': 'text/html; charset=utf-8',
     'x-robots-tag': 'noindex',
-    'content-security-policy': `frame-ancestors ${frameAncestors}`,
+    'content-security-policy': csp,
   });
 
   return new NextResponse(outputHtml, { status: 200, headers });
