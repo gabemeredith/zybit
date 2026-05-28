@@ -28,7 +28,7 @@ import {
 } from '@/lib/db/schema';
 import type { VariantModification } from '@/lib/experiments/types';
 import { formatCount, pct } from '@/lib/phase2/rules/helpers';
-import { generateFixPreviews } from '@/lib/audit/fixPreview/generateFixPreviews';
+import { renderBeforeAfter } from '@/lib/audit/fixPreview/renderBeforeAfter';
 import { runUrlAudit } from '../../../lighthouse/lib/runner/runUrlAudit';
 import { DirectEventSink } from '../../../lighthouse/lib/sinks/direct';
 import {
@@ -337,11 +337,36 @@ async function curateDemoThrashFinding(): Promise<void> {
 }
 
 /**
- * Generate the brand-matched fix-preview (Gemini vision advisor → Browserless
- * before/after) for the thrash finding once and cache it on the row. The launch
- * path reuses these `fixModifications` + screenshots so the demo experiment
- * preview is on-brand and instant. Idempotent (skips when already present) and
- * fail-soft — if generation is disabled or errors, the launch falls back to the
+ * The brand-matched variant for the demo thrash finding: a clean "quick links"
+ * pill nav inserted below the hero subhead. The copy/brand colour came from the
+ * audit's Gemini vision advisor; the placement (below the subhead, not pinned to
+ * the top) and the clean pill styling are curated deterministically so the demo
+ * is reproducible and pixel-stable rather than re-rolled by the model each run.
+ * Companion css-inject rules carry the styling (the insert sanitizer strips
+ * inline styles); they're hidden from the experiment-detail change list.
+ */
+const DEMO_THRASH_INSERT_HTML =
+  '<div id="zb-quicknav">' +
+  '<span class="zb-qn-label">Looking for how it works?</span>' +
+  '<nav class="zb-qn-links">' +
+  '<a href="#how-it-works">Set a goal</a>' +
+  '<a href="#how-it-works">Stake capital</a>' +
+  '<a href="#signup">Verify &amp; earn</a>' +
+  '</nav></div>';
+
+const DEMO_THRASH_FIX_MODS: VariantModification[] = [
+  { type: 'element-insert', selector: 'p.max-w-xl', position: 'after', html: DEMO_THRASH_INSERT_HTML },
+  { type: 'css-inject', selector: '#zb-quicknav', css: 'display:flex;flex-direction:column;align-items:center;gap:12px;margin:8px auto 28px' },
+  { type: 'css-inject', selector: '#zb-quicknav .zb-qn-label', css: 'font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.45)' },
+  { type: 'css-inject', selector: '#zb-quicknav .zb-qn-links', css: 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center' },
+  { type: 'css-inject', selector: '#zb-quicknav .zb-qn-links a', css: 'display:inline-block;padding:9px 18px;border-radius:999px;border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.92);font-size:13px;font-weight:500;text-decoration:none' },
+];
+
+/**
+ * Cache the curated variant + its before/after screenshots on the thrash
+ * finding so the launch path reuses them and the experiment preview is instant.
+ * Re-renders only when the stored variant is stale (mods changed or no
+ * screenshot yet). Fail-soft — on a render error the launch falls back to the
  * theme-adaptive scaffold card.
  */
 async function ensureDemoThrashFixPreview(): Promise<void> {
@@ -349,11 +374,8 @@ async function ensureDemoThrashFixPreview(): Promise<void> {
   const rows = await db
     .select({
       id: zybitFindings.id,
-      ruleId: zybitFindings.ruleId,
-      title: zybitFindings.title,
-      pathRef: zybitFindings.pathRef,
-      prescription: zybitFindings.prescription,
       fixModifications: zybitFindings.fixModifications,
+      screenshotAfterUrl: zybitFindings.screenshotAfterUrl,
     })
     .from(zybitFindings)
     .where(
@@ -365,30 +387,36 @@ async function ensureDemoThrashFixPreview(): Promise<void> {
     .limit(1);
   const row = rows[0];
   if (!row) return;
-  if (Array.isArray(row.fixModifications) && row.fixModifications.length > 0) return;
+
+  const currentInsert = Array.isArray(row.fixModifications)
+    ? (row.fixModifications as VariantModification[]).find((m) => m.type === 'element-insert')
+    : null;
+  const upToDate =
+    currentInsert?.type === 'element-insert' &&
+    currentInsert.html === DEMO_THRASH_INSERT_HTML &&
+    !!row.screenshotAfterUrl;
+  if (upToDate) return;
+
+  await db
+    .update(zybitFindings)
+    .set({ fixModifications: DEMO_THRASH_FIX_MODS, fixPreviewTier: 1, updatedAt: new Date() })
+    .where(eq(zybitFindings.id, row.id));
 
   try {
-    await generateFixPreviews({
-      organizationId: DEMO_ORG_ID,
-      siteId: DEMO_SITE_ID,
-      auditUrl: DEMO_TARGET_URL,
-      findings: [
-        {
-          id: row.id,
-          ruleId: row.ruleId,
-          title: row.title,
-          pathRef: row.pathRef,
-          prescription: row.prescription as {
-            whatToChange: string;
-            whyItWorks: string;
-            experimentVariantDescription: string;
-          } | null,
-        },
-      ],
-      maxFindings: 1,
+    const res = await renderBeforeAfter({
+      findingId: row.id,
+      originUrl: `${DEMO_TARGET_URL}/`,
+      modifications: DEMO_THRASH_FIX_MODS,
+      enforceSsrfGuard: true,
     });
+    if (res) {
+      await db
+        .update(zybitFindings)
+        .set({ screenshotBeforeUrl: res.beforeUrl, screenshotAfterUrl: res.afterUrl, updatedAt: new Date() })
+        .where(eq(zybitFindings.id, row.id));
+    }
   } catch (err) {
-    console.error('[demo] thrash fix-preview generation failed (non-fatal)', err);
+    console.error('[demo] thrash fix-preview render failed (non-fatal)', err);
   }
 }
 
