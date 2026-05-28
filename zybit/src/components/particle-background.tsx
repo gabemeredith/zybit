@@ -618,9 +618,11 @@ function ParticleSwarm() {
       uP = Math.min(5, scrollY / window.innerHeight);
     }
 
-    // Mobile: exponential-decay lerp absorbs dropped frames + URL-bar jitter. ~40ms time constant.
-    // Desktop: instant tracking — precise mice feel best without smoothing lag.
-    const lerpFactor = isMobile ? 1 - Math.exp(-25 * delta) : 1.0;
+    // Cap delta so a browser pause (tab switch, GC) doesn't produce a one-frame teleport.
+    const dt = Math.min(delta, 0.05);
+    // Mobile: lambda=10 → τ≈100ms. Soft enough to absorb frame drops without visible lag.
+    // Desktop: instant tracking — precise mice feel best without trailing.
+    const lerpFactor = isMobile ? 1 - Math.exp(-10 * dt) : 1.0;
     smoothProgressRef.current += (uP - smoothProgressRef.current) * lerpFactor;
 
     const smoothed = smoothProgressRef.current;
@@ -665,8 +667,12 @@ export function ParticleCanvas() {
   const dpr: [number, number] = isMobile ? [1, 1] : [1, 1.5];
   return (
     <div className="fixed inset-0 w-full h-full pointer-events-none z-0">
-      <Canvas camera={{ position: [0, 0, 10], fov: 45 }} dpr={dpr}>
-        <ambientLight intensity={1} />
+      <Canvas
+        camera={{ position: [0, 0, 10], fov: 45 }}
+        dpr={dpr}
+        gl={{ antialias: false }}
+        performance={{ min: 0.5 }}
+      >
         <ParticleSwarm />
       </Canvas>
     </div>
