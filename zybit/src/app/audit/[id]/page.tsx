@@ -127,6 +127,33 @@ function SigninBanner({ state, email }: { state: SigninState; email: string | nu
   );
 }
 
+function SeverityBadge({ severity }: { severity: string }) {
+  const map: Record<string, { bg: string; color: string; border: string; label: string }> = {
+    high: { bg: INK, color: '#FAFAF8', border: INK, label: 'High impact' },
+    medium: { bg: '#F5F0E8', color: INK, border: 'rgba(0,0,0,0.25)', label: 'Medium impact' },
+    low: { bg: 'transparent', color: MUTED, border: 'rgba(0,0,0,0.2)', label: 'Low impact' },
+  };
+  const s = map[severity] ?? map.medium;
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        padding: '3px 9px',
+        background: s.bg,
+        color: s.color,
+        border: `1px solid ${s.border}`,
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.16em',
+        textTransform: 'uppercase',
+        marginBottom: 10,
+      }}
+    >
+      {s.label}
+    </span>
+  );
+}
+
 function ColorSwatch({ hex, label }: { hex: string; label: string }) {
   if (!SAFE_HEX_RE.test(hex)) return null;
   return (
@@ -472,18 +499,7 @@ function AuditStatusPageInner() {
                       background: CREAM,
                     }}
                   >
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: '0.18em',
-                        textTransform: 'uppercase',
-                        color: MUTED,
-                        marginBottom: 6,
-                      }}
-                    >
-                      {f.severity}
-                    </div>
+                    <SeverityBadge severity={f.severity} />
                     <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.35, color: INK }}>
                       {f.title}
                     </div>

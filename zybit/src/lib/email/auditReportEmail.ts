@@ -117,6 +117,7 @@ const INK = '#111';
 const CREAM = '#FAFAF8';
 const MUTED = '#6B6B6B';
 const HAIRLINE = 'rgba(0,0,0,0.12)';
+const FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif";
 
 // Number word for prose flow at the small counts the audit produces.
 // Falls back to digits for 11+ (the audit caps at 4 today, so the high
@@ -145,29 +146,87 @@ function introCopy(report: AuditReport): string {
 }
 
 /**
- * Audit-rule evidence strings concatenate atoms with ` · ` (e.g.
- * "Dead links on this page: 15 · Examples: 'Reload' · Page: /foo · Based
- * on: page structure"). Rendered as a paragraph that wraps illegibly in
- * Gmail. Split on the separator and emit a bulleted list when there's
- * more than one atom, falling back to a plain block for a single
- * sentence. Email-safe: indented divs with a leading bullet glyph
- * (real `<ul>` rendering varies wildly across Outlook).
+ * Severity badge for the finding card header bar.
+ * Email-safe: inline-block span with border, no flex/grid.
  */
-function renderEvidence(evidence: string): string {
-  const parts = evidence
+function severityBadge(severity: 'high' | 'medium' | 'low'): string {
+  const map = {
+    high: { bg: INK, color: CREAM, border: INK, label: 'High impact' },
+    medium: { bg: '#F5F0E8', color: INK, border: 'rgba(0,0,0,0.25)', label: 'Medium impact' },
+    low: { bg: 'transparent', color: MUTED, border: 'rgba(0,0,0,0.2)', label: 'Low impact' },
+  };
+  const s = map[severity] ?? map.medium;
+  return `<span style="display: inline-block; padding: 3px 9px; background: ${s.bg}; color: ${s.color}; border: 1px solid ${s.border}; font-family: ${FONT_STACK}; font-size: 9px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;">${s.label}</span>`;
+}
+
+/**
+ * Parses evidence atoms (split on " · ") into categorized groups and renders
+ * a structured diagnostic block:
+ *   - main observations → bullet list (or single paragraph when only one)
+ *   - "Examples: …" atoms → monospace inset block
+ *   - "Page: …" / "Pages: …" atoms → monospace path tags
+ *   - "Based on: …" atoms → italic footnote
+ *
+ * Email-safe: indented divs, no flex/grid, Outlook-compatible.
+ */
+function renderEvidenceStructured(evidence: string): string {
+  const atoms = evidence
     .split(/\s+·\s+/)
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
-  if (parts.length <= 1) {
-    return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK};">${escapeHtml(evidence)}</div>`;
+
+  const main: string[] = [];
+  const pageRefs: string[] = [];
+  const basedOn: string[] = [];
+  const examples: string[] = [];
+
+  for (const atom of atoms) {
+    if (/^pages?:\s*/i.test(atom)) {
+      pageRefs.push(atom.replace(/^pages?:\s*/i, '').trim());
+    } else if (/^based on:\s*/i.test(atom)) {
+      basedOn.push(atom.replace(/^based on:\s*/i, '').trim());
+    } else if (/^examples?:\s*/i.test(atom)) {
+      examples.push(atom.replace(/^examples?:\s*/i, '').trim());
+    } else {
+      main.push(atom);
+    }
   }
-  const items = parts
-    .map(
-      (part) =>
-        `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK}; padding-left: 16px; text-indent: -10px; margin: 0 0 6px;"><span style="color: ${MUTED};">•</span>&nbsp;${escapeHtml(part)}</div>`,
-    )
-    .join('');
-  return items;
+
+  let html = '';
+
+  if (main.length === 0 && atoms.length > 0) {
+    // Fallback: no categorizable atoms — render everything as plain text
+    html += `<div style="font-family: ${FONT_STACK}; font-size: 14px; line-height: 1.6; color: ${INK};">${escapeHtml(evidence)}</div>`;
+  } else if (main.length === 1) {
+    html += `<div style="font-family: ${FONT_STACK}; font-size: 14px; line-height: 1.6; color: ${INK};">${escapeHtml(main[0])}</div>`;
+  } else {
+    html += main
+      .map(
+        (a) =>
+          `<div style="font-family: ${FONT_STACK}; font-size: 14px; line-height: 1.55; color: ${INK}; padding-left: 14px; text-indent: -8px; margin: 0 0 5px;"><span style="color: ${MUTED};">•</span>&nbsp;${escapeHtml(a)}</div>`,
+      )
+      .join('');
+  }
+
+  if (examples.length > 0) {
+    html += `<div style="margin-top: 8px; padding: 5px 10px; background: rgba(0,0,0,0.04); border-left: 2px solid ${HAIRLINE}; font-family: 'Courier New', Courier, monospace; font-size: 12px; color: ${INK};">${examples.map(escapeHtml).join(' · ')}</div>`;
+  }
+
+  if (pageRefs.length > 0) {
+    const tags = pageRefs
+      .map(
+        (p) =>
+          `<span style="display: inline-block; padding: 1px 7px; background: rgba(0,0,0,0.05); border: 1px solid ${HAIRLINE}; font-family: 'Courier New', Courier, monospace; font-size: 11px; color: ${INK}; margin-right: 4px; margin-bottom: 2px;">${escapeHtml(p)}</span>`,
+      )
+      .join('');
+    html += `<div style="margin-top: 9px;">${tags}</div>`;
+  }
+
+  if (basedOn.length > 0) {
+    html += `<div style="margin-top: 8px; font-family: ${FONT_STACK}; font-size: 11px; color: ${MUTED}; font-style: italic;">Based on: ${escapeHtml(basedOn.join('; '))}</div>`;
+  }
+
+  return html;
 }
 
 function escapeHtml(value: string): string {
@@ -229,34 +288,53 @@ function fixPreviewRow(f: AuditFindingForEmail): string {
 }
 
 function findingCard(f: AuditFindingForEmail): string {
+  const confidence = Math.round(f.confidence * 100);
+
+  const metaBar = `
+    <tr>
+      <td style="padding: 10px 18px; border-bottom: 1px solid ${HAIRLINE}; background: rgba(0,0,0,0.02);">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="vertical-align: middle; padding-right: 12px;">
+              ${severityBadge(f.severity)}
+            </td>
+            <td style="vertical-align: middle; font-family: ${FONT_STACK}; font-size: 10px; color: ${MUTED}; letter-spacing: 0.06em;">
+              ${confidence}% confidence
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+
   const whyItMattersRow = f.whyItMatters
     ? `
       <tr>
-        <td style="padding: 18px 18px 4px; border-bottom: 1px solid ${HAIRLINE};">
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Why this matters</div>
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.6; color: ${INK}; padding-bottom: 14px;">${escapeHtml(f.whyItMatters)}</div>
+        <td style="padding: 14px 18px 4px; border-bottom: 1px solid ${HAIRLINE};">
+          <div style="font-family: ${FONT_STACK}; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Why this matters</div>
+          <div style="font-family: ${FONT_STACK}; font-size: 14px; line-height: 1.6; color: ${INK}; padding-bottom: 10px;">${escapeHtml(f.whyItMatters)}</div>
         </td>
       </tr>`
     : '';
+
   return `
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 0 0 20px; border-collapse: separate; border: 2px solid ${INK}; box-shadow: 6px 6px 0 ${INK}; background: ${CREAM};">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 0 0 24px; border-collapse: separate; border: 2px solid ${INK}; box-shadow: 6px 6px 0 ${INK}; background: ${CREAM};">
+      ${metaBar}
       <tr>
-        <td style="padding: 18px; border-bottom: 1px solid ${HAIRLINE};">
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Finding</div>
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 18px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; color: ${INK};">${escapeHtml(f.title)}</div>
+        <td style="padding: 16px 18px 14px; border-bottom: 1px solid ${HAIRLINE};">
+          <div style="font-family: ${FONT_STACK}; font-size: 18px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; color: ${INK};">${escapeHtml(f.title)}</div>
         </td>
       </tr>
       ${whyItMattersRow}
       <tr>
         <td style="padding: 16px 18px; border-bottom: 1px solid ${HAIRLINE};">
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Evidence</div>
-          ${renderEvidence(f.evidence)}
+          <div style="font-family: ${FONT_STACK}; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 10px;">Structural observation</div>
+          ${renderEvidenceStructured(f.evidence)}
         </td>
       </tr>
       <tr>
         <td style="padding: 16px 18px; border-bottom: 1px solid ${HAIRLINE};">
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">What to change</div>
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK};">${escapeHtml(f.whatToChange)}</div>
+          <div style="font-family: ${FONT_STACK}; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Recommendation</div>
+          <div style="font-family: ${FONT_STACK}; font-size: 14px; line-height: 1.6; color: ${INK};">${escapeHtml(f.whatToChange)}</div>
         </td>
       </tr>
       ${fixPreviewRow(f)}

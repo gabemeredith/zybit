@@ -52,7 +52,7 @@ describe('renderAuditReportEmailHtml', () => {
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
   });
 
-  it('renders multi-atom evidence as bulleted rows', () => {
+  it('renders multi-atom evidence as structured sections (no raw · separator)', () => {
     const sample = sampleAuditReport();
     const multi = {
       ...sample,
@@ -64,11 +64,16 @@ describe('renderAuditReportEmailHtml', () => {
       ],
     };
     const html = renderAuditReportEmailHtml(multi);
-    const evidenceSectionStart = html.indexOf('>Evidence<');
-    const evidenceSectionEnd = html.indexOf('What to change', evidenceSectionStart);
+    const evidenceSectionStart = html.indexOf('Structural observation');
+    const evidenceSectionEnd = html.indexOf('Recommendation', evidenceSectionStart);
     const section = html.slice(evidenceSectionStart, evidenceSectionEnd);
-    expect(section.match(/•/g)?.length ?? 0).toBe(4);
+    // Atoms are categorized — raw separator should not appear in the rendered output
     expect(section).not.toContain(' · ');
+    // Page ref and basis footnote should appear in their respective blocks
+    expect(section).toContain('/foo');
+    expect(section).toContain('page structure');
+    // Single main atom renders as plain paragraph, not a bullet
+    expect(section).not.toContain('•');
   });
 
   it('renders a single-sentence evidence as a plain block (no bullet)', () => {
@@ -78,14 +83,14 @@ describe('renderAuditReportEmailHtml', () => {
       findings: [{ ...sample.findings[0], evidence: 'Single sentence with no separators.' }],
     };
     const html = renderAuditReportEmailHtml(single);
-    const evidenceSectionStart = html.indexOf('>Evidence<');
-    const evidenceSectionEnd = html.indexOf('What to change', evidenceSectionStart);
+    const evidenceSectionStart = html.indexOf('Structural observation');
+    const evidenceSectionEnd = html.indexOf('Recommendation', evidenceSectionStart);
     const section = html.slice(evidenceSectionStart, evidenceSectionEnd);
     expect(section).toContain('Single sentence with no separators.');
     expect(section).not.toContain('•');
   });
 
-  it('renders the Finding title above the Why this matters block (when both present)', () => {
+  it('renders the severity badge above the Why this matters block', () => {
     const sample = sampleAuditReport();
     // Pick a finding that has both a title and whyItMatters set.
     const sampleWithBoth = {
@@ -94,11 +99,12 @@ describe('renderAuditReportEmailHtml', () => {
     };
     expect(sampleWithBoth.findings.length).toBe(1);
     const html = renderAuditReportEmailHtml(sampleWithBoth);
-    const findingLabelAt = html.indexOf('>Finding<');
+    // The meta bar (severity badge + confidence) renders before "Why this matters"
+    const confidenceAt = html.indexOf('% confidence');
     const whyLabelAt = html.indexOf('>Why this matters<');
-    expect(findingLabelAt).toBeGreaterThan(-1);
+    expect(confidenceAt).toBeGreaterThan(-1);
     expect(whyLabelAt).toBeGreaterThan(-1);
-    expect(findingLabelAt).toBeLessThan(whyLabelAt);
+    expect(confidenceAt).toBeLessThan(whyLabelAt);
   });
 
   it('no longer renders the severity badge or estimated impact figure', () => {
