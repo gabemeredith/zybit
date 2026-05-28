@@ -14,6 +14,7 @@
 
 import type { AuditFinding, AuditRule, AuditRuleContext } from './types';
 import { pageTypeFromSnapshot, pageTypeModulation } from './pageTypeModulation';
+import { displayPath } from './helpers';
 
 export const missingCanonicalUrl: AuditRule = {
   id: 'missing-canonical-url',
@@ -43,19 +44,19 @@ export const missingCanonicalUrl: AuditRule = {
         confidence: 0.9,
         priorityScore: modulation.severityDowngrade ? 0.15 : 0.25,
         pathRef: snapshot.pathRef,
-        title: `No canonical URL on ${snapshot.pathRef}`,
+        title: `Search engines can't tell which web address is the real one for ${displayPath(snapshot.pathRef)}`,
         summary: `${snapshot.pathRef} has no <link rel="canonical"> tag. When the same content is accessible via multiple URLs (www vs apex, UTM params, trailing slashes), search engines consolidate ranking signals at whichever URL they choose — not necessarily your preferred one.`,
         recommendation: [
           `Add <link rel="canonical" href="https://yourdomain.com${snapshot.pathRef}"> inside the <head> of ${snapshot.pathRef}.`,
           `This is especially important for landing pages that receive paid traffic with UTM parameters, where the same content is indexed under dozens of URL variants.`,
         ],
         evidence: [
-          { label: 'Canonical tag', value: 'absent' },
-          { label: 'Page path', value: snapshot.pathRef },
+          { label: 'Preferred-address tag', value: 'missing' },
+          { label: 'Page', value: displayPath(snapshot.pathRef) },
         ],
         prescription: {
-          whyItMatters: `Without a canonical tag, every UTM parameter, locale variant, and www-vs-apex URL gets treated as a separate page by search engines — splitting the ranking signal across copies of the same content. The page that should be ranking gets out-competed by its own duplicates, and the inbound links you earned scatter across URLs that don't accumulate authority.`,
-          whatToChange: `Add a canonical link tag to the <head> pointing to the preferred URL for this page.`,
+          whyItMatters: `The same page can usually be reached through several slightly different web addresses (with or without "www", with tracking tags on the end, and so on). Without a tag telling search engines which address is the official one, they treat each version as a separate page and split your search ranking across all of them — so none of them ranks as well as it should.`,
+          whatToChange: `Tell search engines which web address is the official one for this page. In your page's code this is a <link rel="canonical"> tag in the <head> pointing to your preferred address.`,
           whyItWorks: `Canonical tags consolidate link equity and prevent duplicate-content dilution. Without one, any inbound links to UTM variants or www/apex variants are treated as separate pages.`,
           experimentVariantDescription: `Technical change only — add the canonical tag and monitor Google Search Console for consolidation of impressions to the canonical URL within 2–4 weeks.`,
         },

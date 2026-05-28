@@ -14,6 +14,7 @@
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
 import type { CtaCandidate } from '../snapshots/types';
 import { pageTypeFromSnapshot, pageTypeModulation } from './pageTypeModulation';
+import { displayPath } from './helpers';
 
 // Always-generic anchor text — fires on any occurrence. These phrases are
 // context-free and never describe a destination, so a single instance is
@@ -96,7 +97,7 @@ export const linkTextGeneric: AuditRule = {
         // evidence row clearly maps to a subset of the title's total.
         const distinctPhrases = [...new Set(genericLinks.map((c) => `"${c.text.trim()}"`))];
         evidence.push({
-          label: 'Anchors with vague text ("read more", "click here", …)',
+          label: 'Links with vague text ("read more", "click here", …)',
           value: genericLinks.length,
           context: `${distinctPhrases.length} distinct phrase${distinctPhrases.length === 1 ? '' : 's'}: ${distinctPhrases.slice(0, 5).join(', ')}`,
         });
@@ -113,7 +114,7 @@ export const linkTextGeneric: AuditRule = {
         evidence.push({
           label: `Repeated link text "${group[0].text.trim()}"`,
           value: group.length,
-          context: `appears ${group.length}× — screen reader users hear the same announcement each time`,
+          context: `appears ${group.length}× — people using a screen reader hear the same words each time`,
         });
       }
       // Account for any high-frequency groups beyond the slice in a single
@@ -138,8 +139,8 @@ export const linkTextGeneric: AuditRule = {
       const firstFrequent = highFrequency[0]?.[0]?.text.trim();
       const offendingText = firstGeneric ?? firstFrequent ?? null;
       const whatToChange = offendingText
-        ? `Replace the "${offendingText}" link text on ${snapshot.pathRef} with anchor text that names the destination, e.g. "Read the pricing guide" or "Get started with the free plan". Each link should make sense out of context.`
-        : `Update anchor text to describe the link destination. Each link should make sense out of context.`;
+        ? `Change the "${offendingText}" link text on ${displayPath(snapshot.pathRef)} to say where it goes, e.g. "Read the pricing guide" or "Get started with the free plan". Each link should make sense on its own, without the words around it.`
+        : `Change the link text to say where each link goes. Each link should make sense on its own, without the words around it.`;
 
       const totalFlagged = genericLinks.length + highFrequency.reduce((s, g) => s + g.length, 0);
       const rate = totalFlagged / Math.max(links.length, 1);
@@ -166,12 +167,11 @@ export const linkTextGeneric: AuditRule = {
         .filter(Boolean)
         .join('; ');
       const whyItMatters =
-        `On ${snapshot.pathRef}, ${observation || `${totalFlagged} links share uninformative anchor text`}. ` +
-        `A visitor scanning the page sees a row of identical-looking anchors and has to read each ` +
-        `surrounding sentence to figure out where the link actually goes — that's friction on every ` +
-        `click. Screen reader users hear the same announcement repeated. Search engines treat anchor ` +
-        `text as a relevance signal for the destination page; when the same phrase points at different ` +
-        `pages, that signal scatters and nothing accumulates.`;
+        `On ${displayPath(snapshot.pathRef)}, ${observation || `${totalFlagged} links share vague, repeated text`}. ` +
+        `Someone scanning the page sees a row of links that all look the same and has to read the ` +
+        `sentence around each one to work out where it goes — that's friction on every click. People ` +
+        `using a screen reader hear the same words over and over. Search engines also use link text to ` +
+        `understand the page a link points to, so vague text teaches them nothing.`;
 
       findings.push({
         id: `link-text-generic:${snapshot.pathRef}`,
@@ -181,7 +181,7 @@ export const linkTextGeneric: AuditRule = {
         confidence: 0.88,
         priorityScore: 0.35,
         pathRef: snapshot.pathRef,
-        title: `${totalFlagged} link${totalFlagged > 1 ? 's' : ''} on ${snapshot.pathRef} use vague or repeated text`,
+        title: `${totalFlagged} link${totalFlagged > 1 ? 's' : ''} on ${displayPath(snapshot.pathRef)} use vague or repeated text`,
         summary: `${snapshot.pathRef} has ${totalFlagged} link${totalFlagged > 1 ? 's' : ''} with generic text. Screen reader users navigating by links hear a list of "click here", "read more", and "learn more" with no context about the destination. Search engines similarly lose link-destination signals when anchor text is uninformative.`,
         recommendation: [
           `Replace generic link text with descriptive text that identifies the destination: "Read the pricing guide" instead of "Read more", "Get started with the free plan" instead of "Get started".`,

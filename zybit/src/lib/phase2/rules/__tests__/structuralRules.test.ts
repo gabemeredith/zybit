@@ -42,7 +42,7 @@ describe('headingHierarchyJump', () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].severity).toBe('warn');
     expect(findings[0].ruleId).toBe('heading-hierarchy-jump');
-    expect(findings[0].title).toContain('no H1');
+    expect(findings[0].title).toContain('no main heading');
   });
 
   it('H1→H3 skip → fires info', () => {
@@ -52,7 +52,7 @@ describe('headingHierarchyJump', () => {
     ]);
     const findings = headingHierarchyJump.evaluate(makeContext([], [snap]));
     expect(findings).toHaveLength(1);
-    expect(findings[0].evidence.some((e) => e.label.includes('H1→H3'))).toBe(true);
+    expect(findings[0].evidence.some((e) => e.label.includes('H1 to H3'))).toBe(true);
   });
 
   it('multiple H1s → fires', () => {
@@ -62,7 +62,7 @@ describe('headingHierarchyJump', () => {
     ]);
     const findings = headingHierarchyJump.evaluate(makeContext([], [snap]));
     expect(findings).toHaveLength(1);
-    expect(findings[0].title).toContain('2 H1');
+    expect(findings[0].title).toContain('2 main headings');
   });
 
   it('going back up levels (H3→H2) is not a skip — no findings', () => {
@@ -96,7 +96,7 @@ describe('headingHierarchyJump', () => {
     const snap = makeSnapshot('/', [], headings);
     const findings = headingHierarchyJump.evaluate(makeContext([], [snap]));
     expect(findings).toHaveLength(1);
-    expect(findings[0].title).toContain('5 H1');
+    expect(findings[0].title).toContain('5 main headings');
   });
 
   it('content-index template suppresses jumps too, not just multi-H1', () => {
@@ -335,7 +335,7 @@ describe('missingMetaDescription', () => {
     const findings = missingMetaDescription.evaluate(makeContext([], [snap]));
     expect(findings).toHaveLength(1);
     expect(findings[0].ruleId).toBe('missing-meta-description');
-    expect(findings[0].title).toContain('No meta description');
+    expect(findings[0].title).toContain('has no summary');
   });
 
   it('short description (<50 chars) → fires with different title', () => {
@@ -349,7 +349,7 @@ describe('missingMetaDescription', () => {
     const snap = makeSnapshot('/', [], [], [], [], { description: '   ' });
     const findings = missingMetaDescription.evaluate(makeContext([], [snap]));
     expect(findings).toHaveLength(1);
-    expect(findings[0].title).toContain('No meta description');
+    expect(findings[0].title).toContain('has no summary');
   });
 });
 

@@ -10,6 +10,7 @@
 
 import {
   clamp,
+  displayPath,
   evidenceFromFinding,
   formatCount,
   gini,
@@ -44,20 +45,20 @@ export const navDispersion: AuditRule = {
   // a lot of destinations" — still applies because nav-item count is parsed
   // from real HTML; the click-distribution claim is dropped.
   structuralPublicAuditCopy(finding) {
-    const page = evidenceFromFinding(finding, 'Page') ?? finding.pathRef ?? 'your homepage';
+    const page = displayPath(evidenceFromFinding(finding, 'Page') ?? finding.pathRef);
     return {
-      title: `Your top nav on ${page} exposes a lot of destinations`,
+      title: `Your menu on ${page} has a lot of links`,
       summary:
-        `A wide nav forces every visitor to choose. The more options at the top, the more cognitive ` +
-        `load before the visitor can do the thing they came for. The best-converting marketing sites ` +
-        `keep top-level nav to 4-5 items.`,
+        `When the top menu has many links, every visitor has to stop and choose before they can ` +
+        `do what they came for. The websites that turn the most visitors into customers keep their ` +
+        `main menu to about 4–5 links.`,
       whyItMatters:
-        `A wide nav forces every visitor to choose before doing the thing they came for; the best-converting marketing sites keep top-level nav to 4–5 items.`,
+        `A long menu makes every visitor pause and choose before they can act; the sites that convert best keep the main menu to about 4–5 links.`,
       evidence: [
         { label: 'Page', value: page },
         {
-          label: 'Based on',
-          value: 'page structure (nav-item count parsed from your HTML — connect PostHog to see which destinations actually win clicks)',
+          label: 'How we know',
+          value: "We counted the links in your page's menu. Connect your analytics later to see which ones visitors actually click.",
         },
       ],
     };
@@ -142,7 +143,7 @@ export const navDispersion: AuditRule = {
     const topFour = ordered.slice(0, 4).map((e) => quote(e[0])).join(', ');
 
     const prescription = {
-      whatToChange: `Reduce the top nav to 4 entries: ${topFour}.`,
+      whatToChange: `Trim the main menu to 4 links: ${topFour}.`,
       whyItWorks:
         `Navigation with Gini ${round(giniValue, 3)} means clicks are spread almost uniformly across ${distinctDests} items — ` +
         `visitors have no clear signal about where to start. Reducing to 4 items creates visual hierarchy and guides intent.`,

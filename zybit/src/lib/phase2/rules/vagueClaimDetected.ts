@@ -23,6 +23,7 @@
  */
 
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
+import { displayPath } from './helpers';
 
 const SPECIFICITY_THRESHOLD = 0.4;
 
@@ -58,9 +59,9 @@ export const vagueClaimDetected: AuditRule = {
           value: headline.length > 200 ? headline.slice(0, 197) + '…' : headline,
         },
         {
-          label: 'Specificity score',
+          label: 'Clarity score',
           value: `${Math.round(critique.specificity * 100)} / 100`,
-          context: `Below the 40 / 100 floor — visitors cannot tell what your product does from this copy alone.`,
+          context: `Below our 40 / 100 mark — visitors can't tell what you do from this headline alone.`,
         },
       ];
 
@@ -75,7 +76,7 @@ export const vagueClaimDetected: AuditRule = {
         evidence.push({
           label: 'Possible rewrites',
           value: rewrites.map((r) => `"${r}"`).join(' · '),
-          context: 'Suggested by the structural reviewer, in the same register as your existing copy. Use as a starting point, not a final variant.',
+          context: 'Starting points in your own style — a place to begin, not the final wording.',
         });
       }
 
@@ -93,7 +94,7 @@ export const vagueClaimDetected: AuditRule = {
         confidence: 0.75,
         priorityScore: 0.55,
         pathRef: snapshot.pathRef,
-        title: `The hero on ${snapshot.pathRef} doesn't tell visitors what you do`,
+        title: `The headline on ${displayPath(snapshot.pathRef)} doesn't tell visitors what you do`,
         summary:
           `The headline on ${snapshot.pathRef} scored ${Math.round(critique.specificity * 100)} / 100 ` +
           `for specificity. Hero copy is the first 2 seconds of a visitor's relationship with your ` +
@@ -111,8 +112,8 @@ export const vagueClaimDetected: AuditRule = {
         ],
         prescription: {
           whyItMatters:
-            `Visitors decide in seconds whether ${snapshot.pathRef} is for them; a hero that doesn't ` +
-            `name what your product does makes every visitor do the diligence themselves — most won't.`,
+            `Visitors decide in seconds whether ${displayPath(snapshot.pathRef)} is for them; a headline that doesn't ` +
+            `say what you do makes every visitor work it out for themselves — most won't.`,
           whatToChange:
             `Replace "${headline}" with a headline that names the specific outcome ${rewrites[0] ? `(e.g. "${rewrites[0]}")` : ''} — ` +
             `a verb that describes what the product does, plus the named benefit a customer would talk about.`,

@@ -224,7 +224,7 @@ describe('cta-verb-mismatch', () => {
     const ctx = makeContext([], [snap]);
     const findings = ctaVerbMismatch.evaluate(ctx);
     expect(findings.length).toBe(1);
-    expect(findings[0].evidence.some((e) => e.label === 'Current CTA' && String(e.value) === 'Read the docs')).toBe(true);
+    expect(findings[0].evidence.some((e) => e.label === 'Your button text' && String(e.value) === 'Read the docs')).toBe(true);
   });
 
   it('does not fire when pageType is unknown (we need a confident classification)', () => {

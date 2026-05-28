@@ -21,6 +21,7 @@
  */
 
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
+import { displayPath } from './helpers';
 
 export const ctaVerbMismatch: AuditRule = {
   id: 'cta-verb-mismatch',
@@ -56,20 +57,20 @@ export const ctaVerbMismatch: AuditRule = {
       const suggested = critique.ctaAlignment.suggestedVerbs.slice(0, 3);
 
       const evidence: AuditFindingEvidence[] = [
-        { label: 'Current CTA', value: ctaLabel },
-        { label: 'Page type', value: pageType },
+        { label: 'Your button text', value: ctaLabel },
+        { label: 'Type of page', value: pageType },
         {
-          label: 'Mismatch',
-          value: 'verb does not fit page intent',
-          context: 'A reviewer asked: would a visitor arriving here expect this verb? The answer was no.',
+          label: 'The problem',
+          value: "the wording doesn't fit what people came here to do",
+          context: 'We asked: would someone arriving on this page expect this wording? The answer was no.',
         },
       ];
 
       if (suggested.length > 0) {
         evidence.push({
-          label: 'Suggested alternatives',
+          label: 'Better options',
           value: suggested.join(' · '),
-          context: 'Ranked by reviewer fit. Pick the closest match for your tone.',
+          context: 'Ranked by best fit. Pick the one that sounds most like you.',
         });
       }
 
@@ -81,7 +82,7 @@ export const ctaVerbMismatch: AuditRule = {
         confidence: 0.7,
         priorityScore: 0.5,
         pathRef: snapshot.pathRef,
-        title: `Your CTA on ${snapshot.pathRef} doesn't match the page intent`,
+        title: `Your button text on ${displayPath(snapshot.pathRef)} doesn't match what this page is for`,
         summary:
           `On a ${pageType} page, visitors arrive ready for a particular action — and "${ctaLabel}" ` +
           `isn't it. The CTA verb is the small contract between the page and the visitor; when the ` +
@@ -99,10 +100,10 @@ export const ctaVerbMismatch: AuditRule = {
         ],
         prescription: {
           whyItMatters:
-            `A mismatched CTA verb forces the visitor to translate — "is 'Contact us' the same as 'sign up'?" — and a meaningful share don't bother.`,
+            `When the button wording doesn't match what people came to do — "is 'Contact us' the same as 'Sign up'?" — they hesitate, and a fair share just leave.`,
           whatToChange:
             suggested.length > 0
-              ? `Replace "${ctaLabel}" with "${suggested[0]}" on ${snapshot.pathRef}.`
+              ? `Replace "${ctaLabel}" with "${suggested[0]}" on ${displayPath(snapshot.pathRef)}.`
               : `Replace "${ctaLabel}" with a verb that fits a ${pageType} page.`,
           whyItWorks:
             `CTAs work when the verb matches the visitor's mental model of the page. The verb should ` +

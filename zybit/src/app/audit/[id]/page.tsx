@@ -29,8 +29,6 @@ interface BrandDna {
   primaryColor: string | null;
   secondaryColor: string | null;
   typeScale: number[] | null;
-  cssSystem: string | null;
-  ctaVocabulary: string[];
 }
 
 interface StatusResponse {
@@ -166,9 +164,9 @@ function ColorSwatch({ hex, label }: { hex: string; label: string }) {
 function BrandDnaSection({ dna }: { dna: BrandDna }) {
   const hasColors = (dna.primaryColor && SAFE_HEX_RE.test(dna.primaryColor)) ||
     (dna.secondaryColor && SAFE_HEX_RE.test(dna.secondaryColor));
-  // Always render — the framework row has a "unknown" fallback so the section
-  // is never blank even when Browserless didn't capture colors or the CSS
-  // framework couldn't be detected.
+  const hasTypeScale = Boolean(dna.typeScale && dna.typeScale.length > 0);
+  // Nothing visible to show → skip the section rather than render an empty box.
+  if (!hasColors && !hasTypeScale) return null;
 
   return (
     <div style={{ marginBottom: 24 }}>
@@ -182,7 +180,7 @@ function BrandDnaSection({ dna }: { dna: BrandDna }) {
           marginBottom: 10,
         }}
       >
-        Design signals we observed
+        What we observed
       </div>
       <div
         style={{
@@ -194,44 +192,17 @@ function BrandDnaSection({ dna }: { dna: BrandDna }) {
         {hasColors && (
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 12 }}>
             {dna.primaryColor && SAFE_HEX_RE.test(dna.primaryColor) && (
-              <ColorSwatch hex={dna.primaryColor} label="CTA fill" />
+              <ColorSwatch hex={dna.primaryColor} label="Main button color" />
             )}
             {dna.secondaryColor && SAFE_HEX_RE.test(dna.secondaryColor) && (
-              <ColorSwatch hex={dna.secondaryColor} label="Heading" />
+              <ColorSwatch hex={dna.secondaryColor} label="Heading color" />
             )}
           </div>
         )}
 
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <tbody>
-            <tr>
-              <td
-                style={{
-                  paddingBottom: 6,
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: '0.14em',
-                  textTransform: 'uppercase',
-                  color: MUTED,
-                  width: '36%',
-                  verticalAlign: 'top',
-                  paddingTop: hasColors ? 0 : 0,
-                }}
-              >
-                Framework
-              </td>
-              <td
-                style={{
-                  paddingBottom: 6,
-                  fontSize: 12,
-                  color: dna.cssSystem ? INK : MUTED,
-                  verticalAlign: 'top',
-                }}
-              >
-                {dna.cssSystem ?? 'unknown (compiled or hashed classes)'}
-              </td>
-            </tr>
-            {dna.typeScale && dna.typeScale.length > 0 && (
+        {hasTypeScale && (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <tbody>
               <tr>
                 <td
                   style={{
@@ -241,46 +212,23 @@ function BrandDnaSection({ dna }: { dna: BrandDna }) {
                     letterSpacing: '0.14em',
                     textTransform: 'uppercase',
                     color: MUTED,
+                    width: '36%',
                     verticalAlign: 'top',
                   }}
                 >
-                  Type sizes
+                  Text sizes on the page
                 </td>
                 <td style={{ paddingBottom: 6, fontSize: 12, color: INK, verticalAlign: 'top' }}>
-                  {dna.typeScale.map((n) => `${n}px`).join(' · ')}
+                  {dna.typeScale!.map((n) => `${n}px`).join(' · ')}
                 </td>
               </tr>
-            )}
-            {dna.ctaVocabulary.length > 0 && (
-              <tr>
-                <td
-                  style={{
-                    fontSize: 9,
-                    fontWeight: 700,
-                    letterSpacing: '0.14em',
-                    textTransform: 'uppercase',
-                    color: MUTED,
-                    verticalAlign: 'top',
-                  }}
-                >
-                  Copy samples
-                </td>
-                <td style={{ fontSize: 12, color: INK, verticalAlign: 'top' }}>
-                  {dna.ctaVocabulary.slice(0, 5).map((t, i) => (
-                    <span key={i}>
-                      {i > 0 && <span style={{ color: MUTED }}> · </span>}
-                      &ldquo;{t}&rdquo;
-                    </span>
-                  ))}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        )}
 
         <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.55, color: MUTED }}>
-          Colors your CTAs and headings actually render with, the type sizes the page uses,
-          and the conversion copy we found. The findings reference them by name.
+          The visible design details we pulled from your homepage — the main colors and text
+          sizes your pages use. The findings reference them by name.
         </p>
       </div>
     </div>
