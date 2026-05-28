@@ -85,9 +85,16 @@ export async function buildAnnotatedFindingHtml(
   );
   const designTokens = (designRow?.designTokens as DesignTokens | null) ?? null;
 
-  const lighthouseSlug = findingRow.siteId.startsWith('lighthouse_site_')
+  const rawSlug = findingRow.siteId.startsWith('lighthouse_site_')
     ? findingRow.siteId.slice('lighthouse_site_'.length)
     : null;
+  // `urlaudit-*` sites are real-domain audits (the public `/audit` funnel and
+  // `/demo`) that reuse the `lighthouse_site_*` id scheme — their pages live at
+  // the real domain, not at the Lighthouse dev server's `/fake-sites/<slug>/`
+  // path. Only genuine fake-site scenarios (manifest slugs) use that path and
+  // the `LIGHTHOUSE_PREVIEW_ORIGIN` CSP allowance.
+  const lighthouseSlug =
+    rawSlug !== null && !rawSlug.startsWith('urlaudit-') ? rawSlug : null;
   const originUrl = lighthouseSlug
     ? `http://${domain}/fake-sites/${lighthouseSlug}${findingRow.pathRef}`
     : `https://${domain}${findingRow.pathRef}`;

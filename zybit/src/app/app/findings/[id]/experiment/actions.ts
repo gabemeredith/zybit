@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db/client";
 import { phase1Sites, zybitExperiments, zybitFindings } from "@/lib/db/schema";
 import type { VariantModification, InsertPosition } from "@/lib/experiments/types";
 import { targetPageIsSpaShell } from "@/lib/experiments/spaGuard";
+import { DEMO_ORG_ID } from "@/lib/demo/constants";
 import {
   validateBriefShape,
   INSERT_POSITIONS,
@@ -103,7 +104,29 @@ function briefToModifications(
       insertPosition && (INSERT_POSITIONS as readonly string[]).includes(insertPosition)
         ? insertPosition
         : "before";
-    return [{ type: "element-insert", selector, position, html: newValue }];
+    const mods: VariantModification[] = [
+      { type: "element-insert", selector, position, html: newValue },
+    ];
+    // The insert sanitizer strips inline styles, so a raw inserted block
+    // renders with browser defaults (ugly in the preview). Our scaffolds carry
+    // a `.zybit-insert` class; pair the insert with companion css-inject rules
+    // scoped to that class so the section renders as a styled card. Gated on
+    // the class being present, so a custom insert without it is untouched.
+    if (/\bzybit-insert\b/.test(newValue)) {
+      // Theme-adaptive styling so the card blends into the host page's design
+      // instead of pasting a white sticker on it: a neutral translucent surface
+      // (subtle on both dark and light themes) and text that inherits the host's
+      // own color (`currentColor`) so it's legible on any background. No brand
+      // tokens or AI needed — universally-supported rgba + currentColor only.
+      mods.push(
+        { type: "css-inject", selector: ".zybit-insert", css: "background:rgba(127,127,127,0.08);border:1px solid rgba(127,127,127,0.22);border-radius:16px;padding:20px 24px;margin:0 0 24px 0" },
+        { type: "css-inject", selector: ".zybit-insert h2", css: "margin:0 0 8px 0;font-size:18px;font-weight:700;line-height:1.3" },
+        { type: "css-inject", selector: ".zybit-insert p", css: "margin:0 0 12px 0;font-size:14px;line-height:1.5;opacity:0.75" },
+        { type: "css-inject", selector: ".zybit-insert li", css: "margin:6px 0" },
+        { type: "css-inject", selector: ".zybit-insert a", css: "color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:2px" },
+      );
+    }
+    return mods;
   }
   // style: use css-inject to force the variant visual. newValue may be class names
   // or raw CSS — the PM decides. We store the raw value; the manifest API
@@ -227,6 +250,31 @@ export async function launchExperimentAction(
   const now = new Date();
   const experimentId = randomUUID();
 
+  // Demo polish: when the audit fix-preview already produced a brand-matched,
+  // vision-validated variant (`fixModifications`) for this finding, launch with
+  // THAT instead of the brief scaffold, and reuse its cached before/after
+  // screenshots so the experiment preview is instant + on-brand. Scoped to the
+  // demo org so real customers' launches stay driven by the brief they authored.
+  const fixMods =
+    auth.orgId === DEMO_ORG_ID && Array.isArray(finding.fixModifications)
+      ? (finding.fixModifications as VariantModification[])
+      : [];
+  const useFix = fixMods.length > 0;
+  const fixInsert = fixMods.find((m) => m.type === "element-insert");
+
+  const notes: Record<string, unknown> = {
+    name: brief.experimentName,
+    // Surface the variant that actually launches in the Configuration panel.
+    selector: useFix && fixInsert ? fixInsert.selector : brief.selector,
+    changeType: useFix && fixInsert ? "insert" : brief.changeType,
+    newValue: useFix && fixInsert ? fixInsert.html : brief.newValue,
+    insertPosition: useFix && fixInsert ? fixInsert.position : brief.insertPosition ?? null,
+  };
+  if (useFix && finding.screenshotBeforeUrl && finding.screenshotAfterUrl) {
+    notes.screenshotBeforeUrl = finding.screenshotBeforeUrl;
+    notes.screenshotAfterUrl = finding.screenshotAfterUrl;
+  }
+
   await db.insert(zybitExperiments).values({
     id: experimentId,
     organizationId: auth.orgId,
@@ -239,21 +287,16 @@ export async function launchExperimentAction(
     durationDays: 14,
     status: "running",
     targetPath: finding.pathRef ?? null,
-    modifications: briefToModifications(
-      brief.changeType,
-      brief.selector,
-      brief.newValue,
-      brief.insertPosition ?? undefined,
-    ),
+    modifications: useFix
+      ? fixMods
+      : briefToModifications(
+          brief.changeType,
+          brief.selector,
+          brief.newValue,
+          brief.insertPosition ?? undefined,
+        ),
     overlappingExperimentIds: runningOnSite.length > 0 ? runningOnSite.map((e) => e.id) : null,
-    // Store original brief fields so the client-side manifest can serve them directly
-    notes: JSON.stringify({
-      name: brief.experimentName,
-      selector: brief.selector,
-      changeType: brief.changeType,
-      newValue: brief.newValue,
-      insertPosition: brief.insertPosition ?? null,
-    }),
+    notes: JSON.stringify(notes),
     startedAt: now,
     createdAt: now,
     updatedAt: now,

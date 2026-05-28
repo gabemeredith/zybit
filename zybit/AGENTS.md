@@ -87,8 +87,12 @@ zybit/
 > 4 not built, 2 superseded.**
 > - **Sprint 0:** 6/7 done. Zybit-114 (Stripe) **verified live end-to-end**;
 >   Zybit-118 (snapshot cadence) partial.
-> - **Sprint 1:** 5/8 done. Zybit-124 partial; Zybit-127/128 (demo seed +
->   synthetic outcomes) not built.
+> - **Sprint 1:** 7/8 done. Zybit-124 partial; Zybit-127/128 (demo seed +
+>   synthetic outcomes) shipped — `scripts/seed-demo.ts` runs the real
+>   `/audit` pipeline against commitmint.app and `posthogOverlay.ts`
+>   lays a 14-day `source='posthog'` stream + bucketed assignments over
+>   the grounded layer; `/demo` mints a session for the synthetic PM and
+>   drops into the real cockpit.
 > - **Sprint 2:** ✅ 5/5 complete.
 > - **Sprint 3:** Zybit-141/142 in open PR #58 (migration `0016` applied to
 >   Neon). **Zybit-143/144/148 shipped in open PR #66** (`feat/sprint-3-followup`) —

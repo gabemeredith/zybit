@@ -63,8 +63,14 @@ function defaultChangeType(category: string): ChangeType {
   }
 }
 
+/** Render a path for PM-facing copy — the bare site root reads as "the homepage". */
+function formatPathLabel(pathRef: string | null): string {
+  if (!pathRef || pathRef === "/") return "the homepage";
+  return pathRef;
+}
+
 function defaultPrimaryMetric(category: string, pathRef: string | null): string {
-  const page = pathRef ? ` on ${pathRef}` : "";
+  const page = pathRef ? ` on ${formatPathLabel(pathRef)}` : "";
   if (category === "rage") return `rage_click rate${page}`;
   if (category === "abandonment") return `form_submit rate${page}`;
   if (category === "hierarchy") return `CTA click-through rate${page}`;
@@ -113,7 +119,6 @@ function defaultNewValue(
   changeType: ChangeType,
   category: string,
   evidence: AuditFindingEvidence[],
-  pathRef: string | null,
 ): string {
   if (changeType === "hide") return "";
   if (changeType === "style") {
@@ -131,9 +136,12 @@ function defaultNewValue(
     // rule's actual prescription — not a generic placeholder the PM has to
     // throw away. All scaffolds use tags from the sanitizer's allowlist so
     // they round-trip unchanged.
-    const path = pathRef ?? "/this-page";
+    // All scaffolds carry the `zybit-insert` class so the launch path can pair
+    // them with companion `css-inject` styling (see `briefToModifications`) —
+    // inline styles are stripped by the insert sanitizer, so the class is the
+    // only way to make the inserted block render as a styled card.
     if (category === "help") {
-      return `<section class="zybit-faq">
+      return `<section class="zybit-insert zybit-faq">
   <h2>Frequently asked</h2>
   <p><strong>How long does this take?</strong> A few minutes — no commitment.</p>
   <p><strong>Is there a fee?</strong> No setup fees, no minimums.</p>
@@ -141,18 +149,18 @@ function defaultNewValue(
 </section>`;
     }
     if (category === "hesitation") {
-      return `<aside class="zybit-proof">
+      return `<aside class="zybit-insert zybit-proof">
   <p><strong>Used by 12,000+ teams</strong> — average setup time under 5 minutes.</p>
 </aside>`;
     }
     // thrash (and any future insert categories) — quick-answer / anchor nav.
-    return `<section class="zybit-quick-answer">
-  <h2>Quick answer for ${path}</h2>
-  <p>Most visitors here are looking for one of:</p>
+    return `<section class="zybit-insert zybit-quick-answer">
+  <h2>Looking for something specific?</h2>
+  <p>Jump straight to what most visitors come here for:</p>
   <ul>
-    <li><a href="#option-1">Option 1</a></li>
-    <li><a href="#option-2">Option 2</a></li>
-    <li><a href="#option-3">Option 3</a></li>
+    <li><a href="#">How it works</a></li>
+    <li><a href="#">Pricing</a></li>
+    <li><a href="#">Get started</a></li>
   </ul>
 </section>`;
   }
@@ -289,7 +297,7 @@ export default async function ExperimentBuilderPage({
     experimentName: `${finding.title} — Variant B`,
     selector: defaultSelector(finding.category, changeType, refs, ctas, forms, headings),
     changeType,
-    newValue: defaultNewValue(changeType, finding.category, evidence, finding.pathRef),
+    newValue: defaultNewValue(changeType, finding.category, evidence),
     variantDescription: prescription.experimentVariantDescription,
     primaryMetric: defaultPrimaryMetric(finding.category, finding.pathRef),
     hypothesis: "",

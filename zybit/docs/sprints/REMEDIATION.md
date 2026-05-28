@@ -55,8 +55,8 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 | Zybit-124 | Insights dead-state UX | ⚠️ **Partial** — `WelcomeState` shows progress vs. threshold; no dedicated `InsightsDeadState` surface |
 | Zybit-125 | Copy-hint heuristic in builder | ✅ Done |
 | Zybit-126 | PostHog bridge health probe | ✅ Done |
-| Zybit-127 | Demo site seed + stable demo env | ❌ **Not built** — no `scripts/seed-demo.ts` |
-| Zybit-128 | Synthetic outcome data for demo | ❌ **Not built** |
+| Zybit-127 | Demo site seed + stable demo env | ✅ **Done** — `scripts/seed-demo.ts` + `src/lib/demo/seed.ts`; `/demo` entry mints a session for the synthetic `lighthouse_org_urlaudit-commitmint-app` PM user and renders the real cockpit |
+| Zybit-128 | Synthetic outcome data for demo | ✅ **Done** — `src/lib/demo/posthogOverlay.ts` lays a 14-day `source='posthog'` event stream + bucketed assignments over the audit's grounded layer; a pre-baked completed experiment carries `result_*` columns |
 
 ### Sprint 2 — Selector Robustness — ✅ COMPLETE
 
@@ -106,12 +106,10 @@ remains is one demo-polish gap, the entire AI/design-capture product surface
 
 ## Remaining work — the definitive list
 
-### ❌ Not built (7 tickets)
+### ❌ Not built (5 tickets)
 
 | Ticket | Feature | Est. | Customer-blocking? |
 |--------|---------|------|--------------------|
-| Zybit-127 | Demo site seed (`scripts/seed-demo.ts`) | ~1d | No — sales/demo aid |
-| Zybit-128 | Synthetic outcome data for demo measurement view | ~0.5d | No — sales/demo aid |
 | Zybit-145 | AI Variant Advisor UI | ~1d | No — Sprint 3 surface |
 | Zybit-146 | DOM tree element picker + screenshot thumbnail | ~2d | No — Sprint 3 surface |
 | Zybit-149 | Client-side variant runtime (complex & SPA-safe changes) | ~6d | No — unlocks SPA experiments + richer variants beyond the seven simple types (now including `element-insert`); **without it, the Zybit-144 advisor only proposes — nothing applies its modifications to a live DOM** |
@@ -177,8 +175,9 @@ The core loop is customer-ready. Remaining sequencing:
    Sprint 3 data layer (Zybit-141/142). Migration `0016` already applied.
 2. ~~**Zybit-156 — operator dashboard**~~ **Shipped 2026-05-23** — read-only
    `/admin/ops` is live.
-3. **Sprint 1 demo polish** — Zybit-127/128 (demo seed + synthetic outcomes)
-   and Zybit-124 finish, if a populated demo environment is wanted for sales.
+3. **Sprint 1 demo polish** — ~~Zybit-127/128~~ **shipped** (real `/audit`
+   pipeline against commitmint.app + PostHog overlay, behind `/demo`).
+   Zybit-124 finish remains if a populated demo environment is wanted.
 4. **Sprint 3 proper** — Zybit-143 / 144 / 148 shipped in PR #66 (merge after
    applying migration `0018` and setting `GEMINI_API_KEY` in Vercel).
    Remaining: Zybit-145 (advisor UI) → Zybit-146 (DOM picker + screenshot

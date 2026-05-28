@@ -238,7 +238,7 @@ export default async function FindingDetailPage({
               brief={finding.experimentBrief as {
                 experimentName: string;
                 selector: string;
-                changeType: "copy" | "style" | "hide";
+                changeType: "copy" | "style" | "hide" | "insert";
                 newValue: string;
                 variantDescription: string;
                 primaryMetric: string;

@@ -20,6 +20,9 @@ const PUBLIC_PREFIXES = [
   // Public URL-audit lead magnet
   '/audit',
   '/api/audit',
+  // Video-ready demo entry — seeds + signs in the synthetic PM user.
+  '/demo',
+  '/api/demo',
 ];
 
 function isPublicPath(pathname: string): boolean {
