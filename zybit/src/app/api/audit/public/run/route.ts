@@ -484,6 +484,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         firedRules: dbFindings.map(f => ({ findingId: f.id, ruleId: f.ruleId })),
         generatedAt: completedAt,
         industry,
+        roleTitle: audit.role ?? null,
       });
     } catch (err) {
       // recordAuditUserActivity is already fail-soft, but defensively catch
