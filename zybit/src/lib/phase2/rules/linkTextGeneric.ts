@@ -184,8 +184,8 @@ export const linkTextGeneric: AuditRule = {
         title: `${totalFlagged} link${totalFlagged > 1 ? 's' : ''} on ${displayPath(snapshot.pathRef)} use vague or repeated text`,
         summary: `${snapshot.pathRef} has ${totalFlagged} link${totalFlagged > 1 ? 's' : ''} with generic text. Screen reader users navigating by links hear a list of "click here", "read more", and "learn more" with no context about the destination. Search engines similarly lose link-destination signals when anchor text is uninformative.`,
         recommendation: [
-          `Replace generic link text with descriptive text that identifies the destination: "Read the pricing guide" instead of "Read more", "Get started with the free plan" instead of "Get started".`,
-          `Where space is constrained, use aria-label to provide a longer accessible name: <a href="..." aria-label="Read the pricing guide">Read more</a>.`,
+          `Replace generic link text with descriptive anchor text that names the destination page or resource. Each link should convey its destination without relying on surrounding sentence context.`,
+          `Where space is constrained, use aria-label to provide a longer accessible name without changing the visible text: <a href="..." aria-label="[Full descriptive label]">Short text</a>.`,
         ],
         evidence,
         prescription: {

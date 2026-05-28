@@ -21,6 +21,7 @@
  */
 
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
+import { siteNicheModulation } from './siteNicheModulation';
 import { displayPath } from './helpers';
 
 export const ctaVerbMismatch: AuditRule = {
@@ -31,6 +32,13 @@ export const ctaVerbMismatch: AuditRule = {
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];
+
+    // Community/education/media sites use non-commercial CTA verbs
+    // ("Apply Now", "Volunteer", "Subscribe", "Join") that are appropriate
+    // for their audience — suppress to avoid tone-deaf prescriptions.
+    if (siteNicheModulation('cta-verb-mismatch', ctx.siteNiche).suppress) {
+      return findings;
+    }
 
     for (const snapshot of ctx.pageSnapshots) {
       const critique = snapshot.data.copyCritique;

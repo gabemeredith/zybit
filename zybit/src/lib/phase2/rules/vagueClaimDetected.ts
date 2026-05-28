@@ -23,6 +23,7 @@
  */
 
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
+import { siteNicheModulation } from './siteNicheModulation';
 import { displayPath } from './helpers';
 
 const SPECIFICITY_THRESHOLD = 0.4;
@@ -37,6 +38,14 @@ export const vagueClaimDetected: AuditRule = {
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];
+
+    // Site-level suppression: community/education/media niches use
+    // mission/values language that reads as vague copy by the specificity
+    // model but is the correct register for their audience.
+    if (siteNicheModulation('vague-claim-detected', ctx.siteNiche).suppress) {
+      return findings;
+    }
+    const nicheDowngrade = siteNicheModulation('vague-claim-detected', ctx.siteNiche).severityDowngrade;
 
     for (const snapshot of ctx.pageSnapshots) {
       const critique = snapshot.data.copyCritique;
@@ -90,7 +99,7 @@ export const vagueClaimDetected: AuditRule = {
         // Severity bands:
         //   <= 0.2 → 'warn' (very vague: "Empower your team" / "Reimagine your workflow")
         //    0.2..0.4 → 'info' (mildly vague — fires but not loud)
-        severity: critique.specificity <= 0.2 ? 'warn' : 'info',
+        severity: nicheDowngrade ? 'info' : critique.specificity <= 0.2 ? 'warn' : 'info',
         confidence: 0.75,
         priorityScore: 0.55,
         pathRef: snapshot.pathRef,

@@ -7,7 +7,7 @@ import { sendAuditReportEmail } from '@/lib/email/auditReportEmail';
 import type { AuditReport, AuditFindingForEmail, AuditBrandDna } from '@/lib/email/auditReportEmail';
 import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
 import type { DesignTokens } from '@/lib/phase2/snapshots/tokenExtractor';
-import { normalizePathRef } from '@/lib/phase2/snapshots/types';
+import { normalizePathRef, type PageSnapshotData } from '@/lib/phase2/snapshots/types';
 import { recordAuditCost, checkDailyBudget } from '@/lib/audit/publicAuditRateLimit';
 import { captureAuditScreenshot, runVisionPass } from '@/lib/audit/visionPass';
 import { validatePublicUrl } from '@/lib/audit/urlValidator';
@@ -67,7 +67,9 @@ async function collectBrandDna(args: {
     }
   })();
 
+  const db = getDb();
   let tokens: DesignTokens | null = null;
+  let cssSystemFromDesign: string | null = null;
   try {
     const row = await createDesignSnapshotRepository().findBySitePath(
       args.organizationId,
@@ -76,6 +78,7 @@ async function collectBrandDna(args: {
     );
     if (row) {
       tokens = (row.designTokens ?? null) as DesignTokens | null;
+      cssSystemFromDesign = row.cssSystem ?? null;
     }
   } catch {
     // fail-soft — the section is optional. The audit row is already
@@ -83,10 +86,52 @@ async function collectBrandDna(args: {
     // the audit into a failed state.
   }
 
+  // CTA vocabulary lives on the structural snapshot, not on the design
+  // snapshot row — pull from the existing phase2_page_snapshots row the
+  // structural fetch wrote earlier in the same run. Filter nav/header
+  // landmarks + dead links so the register is conversion copy, not IA
+  // labels, and prefer high-weight entries when selecting the top 5.
+  const ctaVocabulary: string[] = [];
+  let cssSystemFromSnapshot: string | null = null;
+  try {
+    const snap = await db.execute<{ data: PageSnapshotData }>(sql`
+      SELECT data FROM phase2_page_snapshots
+      WHERE site_id = ${args.siteId} AND path_ref = ${pathRef}
+      LIMIT 1
+    `);
+    const data = snap.rows[0]?.data;
+    if (data) {
+      cssSystemFromSnapshot = (data.cssSystem ?? null) as string | null;
+      const candidates = (data.ctas ?? [])
+        .filter((c) => {
+          if (c.landmark === 'nav' || c.landmark === 'header') return false;
+          if (c.tag === 'a') {
+            const h = c.href ?? '';
+            if (!h || /^#!?\s*$/.test(h) || /^javascript:/i.test(h)) return false;
+          }
+          return true;
+        })
+        .slice()
+        .sort((a, b) => (b.visualWeight ?? 0) - (a.visualWeight ?? 0));
+      const seen = new Set<string>();
+      for (const cta of candidates) {
+        const t = (cta.text ?? '').trim();
+        if (!t || seen.has(t)) continue;
+        seen.add(t);
+        ctaVocabulary.push(t);
+        if (ctaVocabulary.length >= 5) break;
+      }
+    }
+  } catch {
+    // fail-soft
+  }
+
   const dna: AuditBrandDna = {
     primaryColor: tokens?.primaryColor ?? null,
     secondaryColor: tokens?.secondaryColor ?? null,
     typeScale: tokens?.typeScale ?? null,
+    cssSystem: cssSystemFromDesign ?? cssSystemFromSnapshot,
+    ctaVocabulary,
   };
 
   // Always return the dna object — the UI handles null fields gracefully

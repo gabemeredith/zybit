@@ -73,6 +73,14 @@ export interface AuditBrandDna {
   secondaryColor: string | null;
   /** Sorted heading font sizes in px. */
   typeScale: number[] | null;
+  /** Detected CSS authoring framework ("tailwind", "bootstrap", etc).
+   * Null doesn't mean "no system" — it means the signature matcher didn't
+   * recognize a fingerprint (common on sites that compile / hash / tree-shake
+   * utility classes). The renderer surfaces this distinction. */
+  cssSystem: string | null;
+  /** Up to 5 unique CTA copy samples from the structural snapshot (nav and
+   * header items excluded — this is conversion copy, not IA labels). */
+  ctaVocabulary: string[];
 }
 
 export interface AuditReport {
@@ -109,6 +117,7 @@ const INK = '#111';
 const CREAM = '#FAFAF8';
 const MUTED = '#6B6B6B';
 const HAIRLINE = 'rgba(0,0,0,0.12)';
+const FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif";
 
 // Number word for prose flow at the small counts the audit produces.
 // Falls back to digits for 11+ (the audit caps at 4 today, so the high
@@ -129,37 +138,119 @@ function introCopy(report: AuditReport): string {
   const rulesCount = numberWord(report.rulesEvaluated);
   const pages = pagesPhrase(report.pagesScanned);
   if (n === 0) {
-    return `We ran our ${rulesCount} friction rules against ${pages}. Nothing surfaced above our confidence floor today — that's a real signal, not an empty report. The other ${numberWord(PUBLIC_AUDIT_DEFERRED_RULE_COUNT)} rules light up once you connect PostHog so we can see how your visitors actually behave.`;
+    return `We crawled ${pages} and ran ${rulesCount} structural checks against the HTML. Nothing exceeded our detection threshold — on pages with clean markup and strong SEO fundamentals, that is a real result. The ${numberWord(PUBLIC_AUDIT_DEFERRED_RULE_COUNT)} behavioral rules light up once you connect PostHog and we can see how your visitors actually move through the site.`;
   }
   const findingPhrase = `<strong>${numberWord(n)} finding${n === 1 ? '' : 's'} below</strong>`;
   const tail = n === 1 ? 'is the one' : 'are the ones';
-  return `We ran our ${rulesCount} friction rules against ${pages}. The ${findingPhrase} ${tail} most worth fixing first — ranked by impact and how confident we are in the call. Each one cites what we saw on your site and what to change.`;
+  return `We crawled ${pages} and ran ${rulesCount} structural checks against the HTML. The ${findingPhrase} ${tail} that stood out — each grounded in something specific we found in your markup, with a concrete fix.`;
 }
 
 /**
- * Audit-rule evidence strings concatenate atoms with ` · ` (e.g.
- * "Dead links on this page: 15 · Examples: 'Reload' · Page: /foo · Based
- * on: page structure"). Rendered as a paragraph that wraps illegibly in
- * Gmail. Split on the separator and emit a bulleted list when there's
- * more than one atom, falling back to a plain block for a single
- * sentence. Email-safe: indented divs with a leading bullet glyph
- * (real `<ul>` rendering varies wildly across Outlook).
+ * Maps a ruleId to a human-readable category label for the email card header.
+ * Categories are meaningful to founders (SEO, Accessibility, etc.) unlike
+ * internal severity/confidence scores which are heuristic-derived and opaque.
  */
-function renderEvidence(evidence: string): string {
-  const parts = evidence
+const RULE_CATEGORIES: Record<string, string> = {
+  'hero-hierarchy-inversion': 'CTA structure',
+  'above-fold-coverage': 'CTA structure',
+  'cta-low-contrast': 'Visual contrast',
+  'nav-dispersion': 'Navigation',
+  'nav-item-count': 'Navigation',
+  'heading-hierarchy-jump': 'Page structure',
+  'form-label-missing': 'Accessibility',
+  'image-alt-text-missing': 'Accessibility',
+  'link-text-generic': 'Link quality',
+  'dead-click-target': 'Interaction',
+  'missing-meta-description': 'SEO',
+  'missing-canonical-url': 'SEO',
+  'vague-claim-detected': 'Copy quality',
+  'proof-missing': 'Copy quality',
+  'cta-verb-mismatch': 'Copy quality',
+  'rage-click-target': 'Behavioral',
+  'bounce-on-key-page': 'Behavioral',
+  'return-visit-thrash': 'Behavioral',
+  'help-seeking-spike': 'Behavioral',
+  'hesitation-pattern': 'Behavioral',
+  'form-abandonment': 'Behavioral',
+  'freeze-on-cta': 'Behavioral',
+  'dead-zone': 'Behavioral',
+  'scroll-reversal': 'Behavioral',
+  'frustration-signal': 'Behavioral',
+  'flow-inter-step-dropoff': 'Conversion flow',
+};
+
+function ruleCategoryTag(ruleId: string): string {
+  return RULE_CATEGORIES[ruleId] ?? 'Structural';
+}
+
+/**
+ * Parses evidence atoms (split on " · ") into categorized groups and renders
+ * a structured diagnostic block:
+ *   - main observations → bullet list (or single paragraph when only one)
+ *   - "Examples: …" atoms → monospace inset block
+ *   - "Page: …" / "Pages: …" atoms → monospace path tags
+ *   - "Based on: …" atoms → italic footnote
+ *
+ * Email-safe: indented divs, no flex/grid, Outlook-compatible.
+ */
+function renderEvidenceStructured(evidence: string): string {
+  const atoms = evidence
     .split(/\s+·\s+/)
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
-  if (parts.length <= 1) {
-    return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK};">${escapeHtml(evidence)}</div>`;
+
+  const main: string[] = [];
+  const pageRefs: string[] = [];
+  const basedOn: string[] = [];
+  const examples: string[] = [];
+
+  for (const atom of atoms) {
+    if (/^pages?:\s*/i.test(atom)) {
+      pageRefs.push(atom.replace(/^pages?:\s*/i, '').trim());
+    } else if (/^based on:\s*/i.test(atom)) {
+      basedOn.push(atom.replace(/^based on:\s*/i, '').trim());
+    } else if (/^examples?:\s*/i.test(atom)) {
+      examples.push(atom.replace(/^examples?:\s*/i, '').trim());
+    } else {
+      main.push(atom);
+    }
   }
-  const items = parts
-    .map(
-      (part) =>
-        `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK}; padding-left: 16px; text-indent: -10px; margin: 0 0 6px;"><span style="color: ${MUTED};">•</span>&nbsp;${escapeHtml(part)}</div>`,
-    )
-    .join('');
-  return items;
+
+  let html = '';
+
+  if (main.length === 0 && atoms.length > 0) {
+    // Fallback: no categorizable atoms — render everything as plain text
+    html += `<div style="font-family: ${FONT_STACK}; font-size: 14px; line-height: 1.6; color: ${INK};">${escapeHtml(evidence)}</div>`;
+  } else if (main.length === 1) {
+    html += `<div style="font-family: ${FONT_STACK}; font-size: 14px; line-height: 1.6; color: ${INK};">${escapeHtml(main[0])}</div>`;
+  } else {
+    html += main
+      .map(
+        (a) =>
+          `<div style="font-family: ${FONT_STACK}; font-size: 14px; line-height: 1.55; color: ${INK}; padding-left: 14px; text-indent: -8px; margin: 0 0 5px;"><span style="color: ${MUTED};">•</span>&nbsp;${escapeHtml(a)}</div>`,
+      )
+      .join('');
+  }
+
+  if (examples.length > 0) {
+    html += `<div style="margin-top: 8px; padding: 5px 10px; background: rgba(0,0,0,0.04); border-left: 2px solid ${HAIRLINE}; font-family: 'Courier New', Courier, monospace; font-size: 12px; color: ${INK};">${examples.map(escapeHtml).join(' · ')}</div>`;
+  }
+
+  if (pageRefs.length > 0) {
+    const tags = pageRefs
+      .map(
+        (p) =>
+          `<span style="display: inline-block; padding: 1px 7px; background: rgba(0,0,0,0.05); border: 1px solid ${HAIRLINE}; font-family: 'Courier New', Courier, monospace; font-size: 11px; color: ${INK}; margin-right: 4px; margin-bottom: 2px;">${escapeHtml(p)}</span>`,
+      )
+      .join('');
+    html += `<div style="margin-top: 9px;">${tags}</div>`;
+  }
+
+  if (basedOn.length > 0) {
+    html += `<div style="margin-top: 8px; font-family: ${FONT_STACK}; font-size: 11px; color: ${MUTED}; font-style: italic;">Based on: ${escapeHtml(basedOn.join('; '))}</div>`;
+  }
+
+  return html;
 }
 
 function escapeHtml(value: string): string {
@@ -221,34 +312,42 @@ function fixPreviewRow(f: AuditFindingForEmail): string {
 }
 
 function findingCard(f: AuditFindingForEmail): string {
+  const metaBar = `
+    <tr>
+      <td style="padding: 9px 18px; border-bottom: 1px solid ${HAIRLINE}; background: rgba(0,0,0,0.02);">
+        <span style="font-family: ${FONT_STACK}; font-size: 9px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED};">${escapeHtml(ruleCategoryTag(f.ruleId))}</span>
+      </td>
+    </tr>`;
+
   const whyItMattersRow = f.whyItMatters
     ? `
       <tr>
-        <td style="padding: 18px 18px 4px; border-bottom: 1px solid ${HAIRLINE};">
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Why this matters</div>
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.6; color: ${INK}; padding-bottom: 14px;">${escapeHtml(f.whyItMatters)}</div>
+        <td style="padding: 14px 18px 4px; border-bottom: 1px solid ${HAIRLINE};">
+          <div style="font-family: ${FONT_STACK}; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Why this matters</div>
+          <div style="font-family: ${FONT_STACK}; font-size: 14px; line-height: 1.6; color: ${INK}; padding-bottom: 10px;">${escapeHtml(f.whyItMatters)}</div>
         </td>
       </tr>`
     : '';
+
   return `
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 0 0 20px; border-collapse: separate; border: 2px solid ${INK}; box-shadow: 6px 6px 0 ${INK}; background: ${CREAM};">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 0 0 24px; border-collapse: separate; border: 2px solid ${INK}; box-shadow: 6px 6px 0 ${INK}; background: ${CREAM};">
+      ${metaBar}
       <tr>
-        <td style="padding: 18px; border-bottom: 1px solid ${HAIRLINE};">
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Finding</div>
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 18px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; color: ${INK};">${escapeHtml(f.title)}</div>
+        <td style="padding: 16px 18px 14px; border-bottom: 1px solid ${HAIRLINE};">
+          <div style="font-family: ${FONT_STACK}; font-size: 18px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; color: ${INK};">${escapeHtml(f.title)}</div>
         </td>
       </tr>
       ${whyItMattersRow}
       <tr>
         <td style="padding: 16px 18px; border-bottom: 1px solid ${HAIRLINE};">
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Evidence</div>
-          ${renderEvidence(f.evidence)}
+          <div style="font-family: ${FONT_STACK}; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 10px;">Structural observation</div>
+          ${renderEvidenceStructured(f.evidence)}
         </td>
       </tr>
       <tr>
         <td style="padding: 16px 18px; border-bottom: 1px solid ${HAIRLINE};">
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">What to change</div>
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 15px; line-height: 1.55; color: ${INK};">${escapeHtml(f.whatToChange)}</div>
+          <div style="font-family: ${FONT_STACK}; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 8px;">Recommendation</div>
+          <div style="font-family: ${FONT_STACK}; font-size: 14px; line-height: 1.6; color: ${INK};">${escapeHtml(f.whatToChange)}</div>
         </td>
       </tr>
       ${fixPreviewRow(f)}
@@ -335,6 +434,16 @@ function brandDnaSection(report: AuditReport): string {
     `<tr><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; width: 38%;">${escapeHtml(label)}</td><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK};">${value}</td></tr>`;
 
   const factRows: string[] = [];
+  // `cssSystem === null` doesn't mean "no system" — it means the matcher
+  // didn't recognize a fingerprint. Render the row anyway with explanatory
+  // copy so a Stripe/Linear-class site doesn't look broken in the report.
+  if (b.cssSystem) {
+    factRows.push(factRow('Framework', escapeHtml(b.cssSystem)));
+  } else {
+    factRows.push(
+      factRow('Framework', `<span style="color: ${MUTED};">custom compiled CSS</span>`),
+    );
+  }
   if (b.typeScale && b.typeScale.length > 0) {
     const scale = b.typeScale.map((n) => `${n}px`).join(' · ');
     factRows.push(factRow('Text sizes on the page', escapeHtml(scale)));
@@ -571,6 +680,8 @@ export function sampleAuditReport(): AuditReport {
       primaryColor: '#1A73E8',
       secondaryColor: '#0F2540',
       typeScale: [14, 16, 20, 28, 48],
+      cssSystem: 'tailwind',
+      ctaVocabulary: ['Start free trial', 'Book a demo', 'See pricing'],
     },
     findings: [
       {

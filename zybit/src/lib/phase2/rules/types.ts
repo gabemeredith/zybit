@@ -295,6 +295,15 @@ export interface AuditRuleContext {
    * Page-level rules ignore it.
    */
   flowGraph?: FlowGraph;
+  /**
+   * Site-level niche classification — `'saas'`, `'devtools'`, `'ecommerce'`,
+   * `'community'`, `'media'`, `'local'`, or `'unknown'`. Computed from all
+   * page snapshots before the rule loop runs via `classifySiteFromSnapshots`.
+   * Rules read this through `siteNicheModulation(ruleId, ctx.siteNiche)`.
+   * Absent (undefined) and `'unknown'` are equivalent: rules apply base
+   * thresholds with no modulation.
+   */
+  siteNiche?: import('@/lib/phase2/classification/siteClassifier').SiteNiche;
 }
 
 /**

@@ -17,6 +17,7 @@
  */
 
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
+import { siteNicheModulation } from './siteNicheModulation';
 
 const RELEVANT_PAGE_TYPES = new Set(['home', 'landing', 'pricing']);
 
@@ -28,6 +29,14 @@ export const proofMissing: AuditRule = {
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];
+
+    // Site-level suppression: community, education, local, and media niches
+    // prove credibility through entirely different signals (accreditation,
+    // bylines, location reviews) — the "no logos/metrics" finding is
+    // actively misleading on those sites.
+    if (siteNicheModulation('proof-missing', ctx.siteNiche).suppress) {
+      return findings;
+    }
 
     for (const snapshot of ctx.pageSnapshots) {
       const critique = snapshot.data.copyCritique;

@@ -12,6 +12,7 @@ import { createCaptureRepository } from '@/lib/phase2/capture/repository';
 import type { PageCapture } from '@/lib/phase2/capture/types';
 import { createOutcomesRepository } from '@/lib/phase2/outcomes/repository';
 import { deriveFlowGraph } from '@/lib/phase2/flow';
+import { classifySiteFromSnapshots } from '@/lib/phase2/classification/siteClassifier';
 
 export interface RunPhase2InsightsArgs {
   organizationId: string;
@@ -109,6 +110,8 @@ export async function runPhase2InsightsPipeline(
     generatedAt,
   });
 
+  const siteNiche = classifySiteFromSnapshots(pageSnapshots);
+
   const auditReport = runAuditRules({
     organizationId,
     siteId,
@@ -120,6 +123,7 @@ export async function runPhase2InsightsPipeline(
     pageSnapshotsByPath,
     calibration,
     flowGraph,
+    siteNiche,
     ...(mode ? { mode } : {}),
     ...(pageCapturesByPath ? { pageCapturesByPath } : {}),
   });

@@ -359,7 +359,7 @@ function AuditStatusPageInner() {
             <Dots />
           </h1>
           <p style={{ margin: '0 0 16px', fontSize: 15, lineHeight: 1.6, color: INK }}>
-            We&rsquo;re crawling your pages and running the {PUBLIC_AUDIT_RULE_COUNT} friction rules now.
+            We&rsquo;re crawling your pages and running the {PUBLIC_AUDIT_RULE_COUNT}{' '}friction rules now.
             This takes 45&ndash;90 seconds. The full report will arrive in your inbox
             as soon as it&rsquo;s done.
           </p>
@@ -450,18 +450,6 @@ function AuditStatusPageInner() {
                       background: CREAM,
                     }}
                   >
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: '0.18em',
-                        textTransform: 'uppercase',
-                        color: MUTED,
-                        marginBottom: 6,
-                      }}
-                    >
-                      {f.severity}
-                    </div>
                     <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.35, color: INK }}>
                       {f.title}
                     </div>
