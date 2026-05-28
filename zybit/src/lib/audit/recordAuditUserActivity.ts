@@ -38,9 +38,11 @@ export interface RecordAuditUserActivityInput {
   generatedAt: Date;
   /** May be null when the URL gave no deterministic signal. */
   industry: Industry | null;
+  /** The role the user selected on the /audit form (e.g. "Founder / CEO"). */
+  roleTitle: string | null;
 }
 
-type UserRow = { id: string; organization_id: string; industry: string | null };
+type UserRow = { id: string; organization_id: string; industry: string | null; role_title: string | null };
 
 /**
  * Atomic post-audit profile + rules-fired write. Idempotent on user
@@ -57,7 +59,7 @@ export async function recordAuditUserActivity(
     // missing, the audit was triggered without the funnel (e.g. an operator
     // re-fired /run directly) — fail silently.
     const userResult = await db.execute<UserRow>(sql`
-      SELECT id, organization_id, industry
+      SELECT id, organization_id, industry, role_title
       FROM app_users
       WHERE source_audit_id = ${input.auditId}
       LIMIT 1
@@ -66,10 +68,10 @@ export async function recordAuditUserActivity(
     if (!user) return;
 
     const shouldSetIndustry = input.industry !== null && user.industry === null;
+    const shouldSetRoleTitle = input.roleTitle !== null && user.role_title === null;
 
-    // Update profile fields. industry is guarded with a CASE so a concurrent
-    // write between the SELECT and the UPDATE can't blow away a non-null
-    // industry that was just set elsewhere.
+    // Update profile fields. Both industry and role_title are set only once
+    // (never overwritten) so an operator's manual correction is preserved.
     await db.execute(sql`
       UPDATE app_users
       SET
@@ -77,6 +79,10 @@ export async function recordAuditUserActivity(
         industry = CASE
           WHEN ${shouldSetIndustry} AND industry IS NULL THEN ${input.industry}
           ELSE industry
+        END,
+        role_title = CASE
+          WHEN ${shouldSetRoleTitle} AND role_title IS NULL THEN ${input.roleTitle}
+          ELSE role_title
         END
       WHERE id = ${user.id}
     `);

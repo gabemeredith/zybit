@@ -21,6 +21,7 @@ type AuditRow = {
   status: string;
   email: string;
   domain: string;
+  role: string;
 };
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // Look up audit
   const auditResult = await db.execute<AuditRow>(sql`
-    SELECT id, status, email, domain FROM public_audits WHERE id = ${row.audit_id} LIMIT 1
+    SELECT id, status, email, domain, role FROM public_audits WHERE id = ${row.audit_id} LIMIT 1
   `);
   const audit = auditResult.rows[0] as AuditRow | undefined;
   if (!audit) {
@@ -97,7 +98,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // still gets the report. The signup CTA falls back to the existing
   // request-link flow which will surface "no account" and let them request
   // access manually.
-  await autoProvisionUser(audit.email, audit.domain, audit.id);
+  await autoProvisionUser(audit.email, audit.domain, audit.id, audit.role);
 
   // Kick off the pipeline asynchronously. The confirm endpoint responds
   // immediately; the run endpoint does the heavy lifting (45-90s) and sends
@@ -155,6 +156,7 @@ async function autoProvisionUser(
   email: string,
   domain: string,
   auditId: string,
+  roleTitle: string,
 ): Promise<void> {
   const db = getDb();
   try {
@@ -178,8 +180,8 @@ async function autoProvisionUser(
         VALUES (${orgId}, ${domain})
         RETURNING id
       )
-      INSERT INTO app_users (id, email, organization_id, role, source, source_audit_id)
-      SELECT ${userId}, ${email}, new_org.id, 'admin', 'public_audit', ${auditId}
+      INSERT INTO app_users (id, email, organization_id, role, role_title, source, source_audit_id)
+      SELECT ${userId}, ${email}, new_org.id, 'admin', ${roleTitle}, 'public_audit', ${auditId}
       FROM new_org
       ON CONFLICT (email) DO NOTHING
     `);

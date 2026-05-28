@@ -74,6 +74,12 @@ export default function AdminDashboard({ initialUsers }: { initialUsers: AppUser
           >
             Ops
           </Link>
+          <Link
+            href="/admin/leads"
+            className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#6B6B6B] hover:text-[#111] transition-colors"
+          >
+            Leads
+          </Link>
           <form action="/api/auth/sign-out" method="post">
             <button
               type="submit"
