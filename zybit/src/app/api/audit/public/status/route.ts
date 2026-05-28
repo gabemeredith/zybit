@@ -3,7 +3,6 @@ import { sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import {
   AUDIT_CONFIRMED_COOKIE,
-  signAuditSignupParam,
   verifyAuditCookie,
 } from '@/lib/audit/cookies';
 
@@ -20,19 +19,8 @@ type AuditStatusRow = {
   confirmed_at: string | null;
   completed_at: string | null;
   error: string | null;
-  findings: unknown[] | null;
+  findings: unknown;
 };
-
-function mintSignupLink(email: string, auditId: string): string {
-  const base = (
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_BASE_URL ??
-    'https://getzybit.com'
-  ).replace(/\/$/, '');
-  const sig = signAuditSignupParam(email, auditId);
-  const params = new URLSearchParams({ e: email, a: auditId, s: sig });
-  return `${base}/api/auth/request-link-from-audit?${params.toString()}`;
-}
 
 // Mirrors the trimmed finding shape rendered by /audit/[id] — title +
 // severity + the human-readable summary. Anything richer (full evidence,
@@ -49,9 +37,40 @@ type PublicFinding = {
   fixRationale?: string;
 };
 
-function pickPublicFindings(raw: unknown): PublicFinding[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.slice(0, 2).map((f) => {
+export type PublicBrandDna = {
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  typeScale: number[] | null;
+  cssSystem: string | null;
+  ctaVocabulary: string[];
+};
+
+// Findings are stored in two formats:
+//   v1 (legacy): bare array of finding objects
+//   v2 (current): { v: 2, items: [...], brandDna: {...} | null }
+// Both formats are supported so old audit rows keep working.
+function unpackFindings(raw: unknown): { items: unknown[]; brandDna: PublicBrandDna | null } {
+  if (Array.isArray(raw)) return { items: raw, brandDna: null };
+  if (raw && typeof raw === 'object' && (raw as Record<string, unknown>).v === 2) {
+    const r = raw as Record<string, unknown>;
+    const items = Array.isArray(r.items) ? r.items : [];
+    const bd = r.brandDna && typeof r.brandDna === 'object' ? (r.brandDna as Record<string, unknown>) : null;
+    const brandDna: PublicBrandDna | null = bd
+      ? {
+          primaryColor: typeof bd.primaryColor === 'string' ? bd.primaryColor : null,
+          secondaryColor: typeof bd.secondaryColor === 'string' ? bd.secondaryColor : null,
+          typeScale: Array.isArray(bd.typeScale) ? (bd.typeScale as number[]) : null,
+          cssSystem: typeof bd.cssSystem === 'string' ? bd.cssSystem : null,
+          ctaVocabulary: Array.isArray(bd.ctaVocabulary) ? (bd.ctaVocabulary as string[]) : [],
+        }
+      : null;
+    return { items, brandDna };
+  }
+  return { items: [], brandDna: null };
+}
+
+function pickPublicFindings(items: unknown[]): PublicFinding[] {
+  return items.slice(0, 2).map((f) => {
     const r = (f ?? {}) as Record<string, unknown>;
     const out: PublicFinding = {
       title: typeof r.title === 'string' ? r.title : 'Finding',
@@ -141,14 +160,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // operator can still read raw rows directly from the DB.
   const cookieValue = req.cookies.get(AUDIT_CONFIRMED_COOKIE)?.value;
   const confirmed = verifyAuditCookie(cookieValue, id);
-  const findings = confirmed && status === 'done' ? pickPublicFindings(row.findings) : null;
-  // Mint the same signup CTA URL the report email uses — only for the
-  // cookie-verified requester, and only once the audit has finished. Gating
-  // on status === 'done' aligns the link's effective lifetime with the
-  // fixed 30-day TTL minted into the email; otherwise the page polls every
-  // ~2s while 'running' and would generate a rolling-window HMAC.
-  const signupLink =
-    confirmed && status === 'done' ? mintSignupLink(row.email, row.id) : null;
+
+  let findings: PublicFinding[] | null = null;
+  let brandDna: PublicBrandDna | null = null;
+  if (confirmed && status === 'done') {
+    const unpacked = unpackFindings(row.findings);
+    findings = pickPublicFindings(unpacked.items);
+    brandDna = unpacked.brandDna;
+  }
 
   return NextResponse.json({
     id: row.id,
@@ -157,6 +176,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     completedAt: row.completed_at ?? null,
     error: userFacingError(status, error),
     findings,
-    signupLink,
+    brandDna,
   });
 }

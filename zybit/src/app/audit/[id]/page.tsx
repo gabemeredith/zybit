@@ -9,6 +9,8 @@ import { PUBLIC_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 const INK = '#111';
 const CREAM = '#FAFAF8';
 const MUTED = '#6B6B6B';
+const HAIRLINE = 'rgba(0,0,0,0.12)';
+const SAFE_HEX_RE = /^#[0-9a-fA-F]{3,8}$/;
 
 type AuditStatus = 'running' | 'done' | 'unreachable' | 'failed' | 'unknown';
 type SigninState = 'sent' | 'no-account' | 'rate-limited' | null;
@@ -23,6 +25,14 @@ interface InlineFinding {
   fixRationale?: string;
 }
 
+interface BrandDna {
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  typeScale: number[] | null;
+  cssSystem: string | null;
+  ctaVocabulary: string[];
+}
+
 interface StatusResponse {
   id: string;
   status: string;
@@ -30,7 +40,7 @@ interface StatusResponse {
   completedAt: string | null;
   error: string | null;
   findings: InlineFinding[] | null;
-  signupLink: string | null;
+  brandDna: BrandDna | null;
 }
 
 function Dots() {
@@ -117,6 +127,164 @@ function SigninBanner({ state, email }: { state: SigninState; email: string | nu
   );
 }
 
+function ColorSwatch({ hex, label }: { hex: string; label: string }) {
+  if (!SAFE_HEX_RE.test(hex)) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span
+        style={{
+          display: 'block',
+          width: 20,
+          height: 20,
+          background: hex,
+          border: `1px solid ${HAIRLINE}`,
+          flexShrink: 0,
+        }}
+      />
+      <span>
+        <span
+          style={{
+            display: 'block',
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: MUTED,
+            lineHeight: 1,
+            marginBottom: 2,
+          }}
+        >
+          {label}
+        </span>
+        <span style={{ fontSize: 12, color: INK }}>{hex}</span>
+      </span>
+    </div>
+  );
+}
+
+function BrandDnaSection({ dna }: { dna: BrandDna }) {
+  const hasColors = (dna.primaryColor && SAFE_HEX_RE.test(dna.primaryColor)) ||
+    (dna.secondaryColor && SAFE_HEX_RE.test(dna.secondaryColor));
+  const hasAnyContent = hasColors || dna.cssSystem !== null || (dna.typeScale && dna.typeScale.length > 0) || dna.ctaVocabulary.length > 0;
+  if (!hasAnyContent) return null;
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          color: MUTED,
+          marginBottom: 10,
+        }}
+      >
+        Design signals we observed
+      </div>
+      <div
+        style={{
+          border: `1px solid ${HAIRLINE}`,
+          padding: '14px 16px',
+          background: '#FFFFFF',
+        }}
+      >
+        {hasColors && (
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 12 }}>
+            {dna.primaryColor && SAFE_HEX_RE.test(dna.primaryColor) && (
+              <ColorSwatch hex={dna.primaryColor} label="CTA fill" />
+            )}
+            {dna.secondaryColor && SAFE_HEX_RE.test(dna.secondaryColor) && (
+              <ColorSwatch hex={dna.secondaryColor} label="Heading" />
+            )}
+          </div>
+        )}
+
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <tbody>
+            <tr>
+              <td
+                style={{
+                  paddingBottom: 6,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.14em',
+                  textTransform: 'uppercase',
+                  color: MUTED,
+                  width: '36%',
+                  verticalAlign: 'top',
+                  paddingTop: hasColors ? 0 : 0,
+                }}
+              >
+                Framework
+              </td>
+              <td
+                style={{
+                  paddingBottom: 6,
+                  fontSize: 12,
+                  color: dna.cssSystem ? INK : MUTED,
+                  verticalAlign: 'top',
+                }}
+              >
+                {dna.cssSystem ?? 'unknown (compiled or hashed classes)'}
+              </td>
+            </tr>
+            {dna.typeScale && dna.typeScale.length > 0 && (
+              <tr>
+                <td
+                  style={{
+                    paddingBottom: 6,
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.14em',
+                    textTransform: 'uppercase',
+                    color: MUTED,
+                    verticalAlign: 'top',
+                  }}
+                >
+                  Type sizes
+                </td>
+                <td style={{ paddingBottom: 6, fontSize: 12, color: INK, verticalAlign: 'top' }}>
+                  {dna.typeScale.map((n) => `${n}px`).join(' · ')}
+                </td>
+              </tr>
+            )}
+            {dna.ctaVocabulary.length > 0 && (
+              <tr>
+                <td
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.14em',
+                    textTransform: 'uppercase',
+                    color: MUTED,
+                    verticalAlign: 'top',
+                  }}
+                >
+                  Copy samples
+                </td>
+                <td style={{ fontSize: 12, color: INK, verticalAlign: 'top' }}>
+                  {dna.ctaVocabulary.slice(0, 5).map((t, i) => (
+                    <span key={i}>
+                      {i > 0 && <span style={{ color: MUTED }}> · </span>}
+                      &ldquo;{t}&rdquo;
+                    </span>
+                  ))}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.55, color: MUTED }}>
+          Colors your CTAs and headings actually render with, the type sizes the page uses,
+          and the conversion copy we found. The findings reference them by name.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function AuditStatusPageInner() {
   const params = useParams();
   const auditId = typeof params?.id === 'string' ? params.id : null;
@@ -133,7 +301,7 @@ function AuditStatusPageInner() {
   const [domain, setDomain] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [findings, setFindings] = useState<InlineFinding[] | null>(null);
-  const [signupLink, setSignupLink] = useState<string | null>(null);
+  const [brandDna, setBrandDna] = useState<BrandDna | null>(null);
 
   useEffect(() => {
     if (!auditId) return;
@@ -154,7 +322,7 @@ function AuditStatusPageInner() {
 
         setDomain(data.domain);
         if (data.findings) setFindings(data.findings);
-        if (data.signupLink) setSignupLink(data.signupLink);
+        if (data.brandDna) setBrandDna(data.brandDna);
 
         if (data.status === 'done') {
           setStatus('done');
@@ -257,7 +425,7 @@ function AuditStatusPageInner() {
             border: `2px solid ${INK}`,
             boxShadow: `8px 8px 0 ${INK}`,
             padding: '36px 32px',
-            maxWidth: 560,
+            maxWidth: 580,
             width: '100%',
           }}
         >
@@ -285,6 +453,8 @@ function AuditStatusPageInner() {
           >
             Your audit of {domain || 'your site'} is ready.
           </h1>
+
+          {brandDna && <BrandDnaSection dna={brandDna} />}
 
           {findings && findings.length > 0 ? (
             <>
@@ -343,57 +513,37 @@ function AuditStatusPageInner() {
             </>
           ) : (
             <p style={{ margin: '0 0 24px', fontSize: 15, lineHeight: 1.6, color: INK }}>
-              The full report — with evidence, what to change, and a rough dollar estimate
-              for each finding — was emailed to the address you submitted. Findings only
-              appear here for the original requester.
+              The full report — with evidence, what to change, and fix previews for each
+              finding — was emailed to the address you submitted.
             </p>
           )}
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            {signupLink ? (
-              <a
-                href={signupLink}
-                style={{
-                  display: 'inline-block',
-                  padding: '12px 24px',
-                  background: INK,
-                  color: CREAM,
-                  textDecoration: 'none',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  boxShadow: `4px 4px 0 ${INK}`,
-                  border: `1px solid ${INK}`,
-                }}
-              >
-                Open in your dashboard →
-              </a>
-            ) : null}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
             <a
               href={bookCallUrl}
               target="_blank"
               rel="noreferrer"
               style={{
                 display: 'inline-block',
-                padding: '12px 24px',
-                background: 'transparent',
-                color: INK,
+                padding: '13px 26px',
+                background: INK,
+                color: CREAM,
                 border: `1px solid ${INK}`,
                 textDecoration: 'none',
                 fontSize: 13,
                 fontWeight: 700,
                 letterSpacing: '0.1em',
                 textTransform: 'uppercase',
+                boxShadow: `4px 4px 0 ${INK}`,
               }}
             >
-              Or book 30 min →
+              Book 30 min with us →
             </a>
             <Link
               href="/audit"
               style={{
                 display: 'inline-block',
-                padding: '12px 24px',
+                padding: '13px 24px',
                 background: 'transparent',
                 color: MUTED,
                 textDecoration: 'underline',
@@ -405,12 +555,10 @@ function AuditStatusPageInner() {
             </Link>
           </div>
 
-          {signupLink ? (
-            <p style={{ margin: '20px 0 0', fontSize: 12, lineHeight: 1.5, color: MUTED }}>
-              Account&rsquo;s already set up for <strong style={{ color: INK }}>{domain}</strong>.
-              The dashboard button will email you a one-tap sign-in link.
-            </p>
-          ) : null}
+          <p style={{ margin: '18px 0 0', fontSize: 12, lineHeight: 1.5, color: MUTED }}>
+            30 minutes on a screen-share. We&rsquo;ll walk through each finding, answer your
+            questions, and tell you straight whether Zybit fits your team. No pitch deck.
+          </p>
         </div>
       )}
 

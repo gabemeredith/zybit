@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { SiteNav } from '@/components/SiteNav';
 import { IntakeModal } from '@/components/IntakeModal';
 import { isPersonalEmail, isAllowlistedTestEmail, rejectionMessage } from '@/lib/audit/personalEmailDomains';
-import { PUBLIC_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
+import { PUBLIC_AUDIT_RULE_COUNT, PUBLIC_AUDIT_DEFERRED_RULE_COUNT, TOTAL_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 import type { IntakeFinding } from '@/lib/intake/structuralAudit';
 
 const INK = '#111';
@@ -149,7 +149,7 @@ export default function AuditPage() {
       setTeaserFinding(data.teaserFinding ?? null);
       setStage('teaser');
     } catch {
-      setError('Network error — check your connection and try again.');
+      setError('Network error. Check your connection and try again.');
       setStage('idle');
       setForm(normalizedForm);
     }
@@ -247,9 +247,8 @@ function Hero() {
           maxWidth: 620,
         }}
       >
-        Give us your URL and we&rsquo;ll run the same {PUBLIC_AUDIT_RULE_COUNT} friction rules our customers
-        use — against your live site. You&rsquo;ll get a one-page report by email:
-        ranked findings, the evidence behind each, and what to change.
+        Give us your URL and we&rsquo;ll run {PUBLIC_AUDIT_RULE_COUNT}{' '}of our {TOTAL_AUDIT_RULE_COUNT}{' '}friction rules against your live site right now.
+        You&rsquo;ll get a one-page report by email: ranked findings, the evidence behind each, and what to change.
       </p>
       <p
         className="sans-text"
@@ -261,8 +260,8 @@ function Hero() {
           maxWidth: 620,
         }}
       >
-        Work-email only. We confirm by email before sending — so audit results
-        only ever reach the inbox that asked for them.
+        Work email only. We send a confirmation link before running anything, so your
+        results go only to the inbox that asked for them.
       </p>
     </header>
   );
@@ -460,7 +459,7 @@ function RunningPanel({ form, progressIdx }: { form: FormState; progressIdx: num
         Auditing {host}…
       </div>
       <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: INK, marginBottom: 24 }}>
-        Keep this tab open — about 45 seconds to go.
+        Keep this tab open. About 45 seconds to go.
       </div>
       <ol style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {PROGRESS_STEPS.map((step, i) => {
@@ -570,8 +569,8 @@ function TeaserPanel({
         style={{ fontSize: 15, lineHeight: 1.55, color: MUTED, marginBottom: 24, maxWidth: 600 }}
       >
         {teaserFinding
-          ? 'The full ranked list — plus evidence and suggested changes for the top findings — is in the report. Confirm below and it goes straight to your inbox.'
-          : `We ran ${PUBLIC_AUDIT_RULE_COUNT} friction rules against your homepage. The full report — priority findings with evidence and what to change — will arrive in your inbox once you confirm.`}
+          ? 'The full ranked list is in the report, with evidence and suggested changes for each finding. Confirm below and it goes straight to your inbox.'
+          : `We ran ${PUBLIC_AUDIT_RULE_COUNT} of our ${TOTAL_AUDIT_RULE_COUNT} friction rules against your homepage. The full report, with priority findings, evidence, and what to change, will arrive in your inbox once you confirm.`}
       </p>
 
       {teaserFinding && <TeaserCard finding={teaserFinding} />}
@@ -774,13 +773,13 @@ function AwaitingPanel({ form, onReset }: { form: FormState; onReset: () => void
         that actually asked for them.
       </p>
       <p style={{ fontSize: 15, lineHeight: 1.55, color: MUTED, marginBottom: 24 }}>
-        Want to walk through the findings live once they arrive? Grab 30 minutes
-        with the founders — we&rsquo;ll go through them on screen-share and tell
-        you straight whether Zybit fits your team.
+        Want to walk through the findings once they arrive? Grab 30 minutes
+        with the founders. We&rsquo;ll go through them on a screen share and tell
+        you straight whether Zybit is a fit for your team.
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
         <a
-          href="https://calendly.com/asad-getzybit/30min"
+          href={process.env.NEXT_PUBLIC_BOOK_CALL_URL ?? 'https://calendly.com/asad-getzybit/30min'}
           target="_blank"
           rel="noreferrer"
           className="btn-brutalist"
@@ -816,7 +815,7 @@ function AwaitingPanel({ form, onReset }: { form: FormState; onReset: () => void
 function TrustStrip() {
   const items = useMemo(
     () => [
-      { k: '13', v: 'deterministic rules' },
+      { k: String(TOTAL_AUDIT_RULE_COUNT), v: 'friction rules' },
       { k: '~45s', v: 'audit runtime' },
       { k: '4', v: 'findings per report' },
       { k: 'Double', v: 'opt-in by email' },
@@ -867,31 +866,31 @@ function FAQ() {
   const faqs = [
     {
       q: 'Why do I have to confirm by email?',
-      a: 'So Zybit only ever sends audit results to the inbox that actually asked for them. The form is open to anyone — without the confirmation step, someone could type a stranger\'s address and we\'d unwittingly send unsolicited mail. Two-second click; once-only.',
+      a: 'The form is open to anyone. Without the confirmation step, someone could type your address and we\'d send you an unsolicited report. A quick click in your inbox keeps that from happening.',
     },
     {
       q: 'Why work email only?',
-      a: 'The report is for product teams — it cites your funnel, your CTAs, your conversion path. A personal address can\'t open a conversation about any of that, and gmail floods our spam reputation. Personal addresses are routed to the waitlist instead.',
+      a: 'The report is for product teams. It cites your funnel, your CTAs, your conversion path. A personal address does not connect to a real conversation about any of that. Personal addresses go to the waitlist instead.',
     },
     {
       q: 'Will you put me on a drip campaign?',
-      a: 'No. One confirmation email, one report email, and that\'s it. If you don\'t book a call or write back, you won\'t hear from us again. Every confirmation email has a one-click suppression link too.',
+      a: 'No. One confirmation email, one report email. If you do not book a call or write back, you will not hear from us again. Every email includes an unsubscribe link.',
     },
     {
-      q: 'What does Zybit actually do beyond this audit?',
-      a: 'The audit is the static-crawl part. The full product connects to your analytics (PostHog, Segment, GA4), watches real user sessions, and re-ranks findings based on what actually moves your metrics — a continuous loop instead of a one-shot snapshot.',
+      q: 'What does Zybit do beyond this audit?',
+      a: `The audit runs ${PUBLIC_AUDIT_RULE_COUNT} rules from your HTML right now. The other ${PUBLIC_AUDIT_DEFERRED_RULE_COUNT} rules need your session data to fire: rage-clicks, drop-offs, form abandonment, hesitation, and the patterns you only see in real visitor behaviour. The full product connects to your analytics (PostHog, Segment, GA4) and runs all ${TOTAL_AUDIT_RULE_COUNT} rules continuously.`,
     },
     {
       q: 'How are findings ranked?',
-      a: 'Each finding gets a priority score based on confidence, structural severity, and how many pages it affects. The top four in the email are chosen for variety across pages and rule types — so you see the breadth of issues, not four instances of the same problem.',
+      a: 'Each finding gets a priority score based on confidence, structural severity, and how many pages it affects. The top four are chosen for variety across pages and rule types, so you see the breadth of issues rather than four instances of the same problem.',
     },
     {
-      q: 'My site is a SPA — will the audit work?',
-      a: 'Yes. If the static HTML is empty we fall back to a headless browser render. Some flow-aware findings need real session data and only appear once you connect your analytics.',
+      q: 'My site is a single-page app. Will the audit work?',
+      a: 'Yes. If the static HTML is thin we fall back to a headless browser render. Some flow-aware findings need real session data and only surface once you connect your analytics.',
     },
     {
       q: 'Will you audit anything?',
-      a: 'Almost. Public HTTPS URLs only — no internal IPs, no auth-gated pages, no private hosts. If a site asks us not to crawl them, we honour that. We rate-limit per IP, per email, per email domain, and per target hostname to keep things sane.',
+      a: 'Almost. Public HTTPS URLs only. No internal IPs, no auth-gated pages, no private hosts. If a site asks us not to crawl it, we respect that. Requests are rate-limited to keep the service fair.',
     },
   ];
 

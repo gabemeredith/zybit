@@ -442,6 +442,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     emailError = err instanceof Error ? err.message : String(err);
   }
 
+  // Wrap findings + brand DNA together so the status endpoint can return
+  // both without an extra join. Old rows stored a bare array; new rows store
+  // { v: 2, items: [...], brandDna: {...} }. The status route handles both.
+  const findingsPayload = JSON.stringify({ v: 2, items: topFindings, brandDna: brandDna ?? null });
+
   if (emailError) {
     // Pipeline succeeded but delivery failed — surface in DB so the audit
     // doesn't sit in 'running' forever and an operator can re-send. Guarded
@@ -451,7 +456,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       UPDATE public_audits
       SET
         status = 'failed',
-        findings = ${JSON.stringify(topFindings)},
+        findings = ${findingsPayload},
         pages_scanned = ${counts.snapshots},
         total_findings = ${counts.findings},
         cost_usd = ${estimatedCostUsd.toFixed(4)},
@@ -473,7 +478,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     UPDATE public_audits
     SET
       status = 'done',
-      findings = ${JSON.stringify(topFindings)},
+      findings = ${findingsPayload},
       pages_scanned = ${counts.snapshots},
       total_findings = ${counts.findings},
       cost_usd = ${estimatedCostUsd.toFixed(4)},
