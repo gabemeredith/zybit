@@ -165,7 +165,7 @@ function ColorSwatch({ hex, label }: { hex: string; label: string }) {
 function BrandDnaSection({ dna }: { dna: BrandDna }) {
   const hasColors = (dna.primaryColor && SAFE_HEX_RE.test(dna.primaryColor)) ||
     (dna.secondaryColor && SAFE_HEX_RE.test(dna.secondaryColor));
-  const hasAnyContent = hasColors || dna.cssSystem !== undefined || (dna.typeScale && dna.typeScale.length > 0) || dna.ctaVocabulary.length > 0;
+  const hasAnyContent = hasColors || dna.cssSystem !== null || (dna.typeScale && dna.typeScale.length > 0) || dna.ctaVocabulary.length > 0;
   if (!hasAnyContent) return null;
 
   return (
