@@ -251,6 +251,32 @@ export async function resetDemoCuratedState(): Promise<void> {
   await provisionDemoExperiments({ runningExperimentId });
   await tuneDemoFlowDropoff();
   await curateDemoThrashFinding();
+  await refreshDemoIntegration();
+}
+
+/**
+ * Keep the demo's PostHog integration reading healthy. `lastSyncedAt` is only
+ * stamped by the full seed, so without this every reset would leave it ageing
+ * — and the cockpit flags "Degraded — sync stale" once it crosses the 2h
+ * staleness window. Bump it to now (and clear any failure state) on every
+ * reset so the demo always shows a live, connected pipeline.
+ */
+async function refreshDemoIntegration(): Promise<void> {
+  const db = getDb();
+  await db
+    .update(phase2Integrations)
+    .set({
+      status: 'connected',
+      lastSyncedAt: new Date(),
+      lastErrorCode: null,
+      consecutiveFailures: 0,
+    })
+    .where(
+      and(
+        eq(phase2Integrations.siteId, DEMO_SITE_ID),
+        eq(phase2Integrations.provider, 'posthog'),
+      ),
+    );
 }
 
 /**
