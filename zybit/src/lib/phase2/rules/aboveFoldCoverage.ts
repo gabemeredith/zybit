@@ -25,6 +25,7 @@ import {
 } from "./annotationHelpers";
 import {
   clamp,
+  displayPath,
   evidenceFromFinding,
   formatCount,
   pct,
@@ -69,7 +70,7 @@ export const aboveFoldCoverage: AuditRule = {
   // an icon-only "Get started" hero no longer surfaces as an unnamed
   // placeholder on the prospect surface.
   structuralPublicAuditCopy(finding, ctx) {
-    const page = evidenceFromFinding(finding, 'Page') ?? finding.pathRef ?? 'your homepage';
+    const page = displayPath(evidenceFromFinding(finding, 'Page') ?? finding.pathRef);
     const parsedCtaLabel = evidenceFromFinding(finding, 'Primary CTA') ?? '';
     let ctaLabel = parsedCtaLabel;
     if (!ctaLabel || ctaLabel.toLowerCase().includes('unnamed')) {
@@ -83,19 +84,18 @@ export const aboveFoldCoverage: AuditRule = {
     // let the orchestrator drop the finding.
     if (!ctaLabel || ctaLabel.toLowerCase().includes('unnamed')) return null;
     return {
-      title: `Your primary CTA on ${page} sits below the fold`,
+      title: `Your main button on ${page} is hidden until visitors scroll`,
       summary:
-        `On ${page}, the heaviest CTA in your design ("${ctaLabel}") only becomes visible after a ` +
-        `scroll. Visitors who don't scroll never see your main action — and a meaningful share of any ` +
-        `audience doesn't scroll.`,
+        `On ${page}, your most important button ("${ctaLabel}") only appears after someone scrolls down. ` +
+        `Visitors who don't scroll never see it — and on every site a real share of people don't scroll.`,
       whyItMatters:
-        `Your heaviest CTA ("${ctaLabel}") only becomes visible after a scroll on ${page} — and a meaningful share of any audience never scrolls.`,
+        `Your most important button ("${ctaLabel}") only shows up after scrolling on ${page} — and a real share of every audience never scrolls that far.`,
       evidence: [
-        { label: 'Primary CTA', value: ctaLabel },
+        { label: 'Main button', value: ctaLabel },
         { label: 'Page', value: page },
         {
-          label: 'Based on',
-          value: 'page structure (CTA position measured from your HTML — connect PostHog to confirm with real scroll data)',
+          label: 'How we know',
+          value: 'We measured where the button sits on the page. Connect your analytics later to confirm with real scroll data.',
         },
       ],
     };
@@ -298,8 +298,8 @@ function evaluatePage(
 
   const prescription = {
     whatToChange:
-      `Move ${quote(primary.text)} above the fold on ${pathRef}. ` +
-      `If the layout can't be restructured, add a sticky version or duplicate it as a hero button.`,
+      `Move ${quote(primary.text)} up so it shows on ${pathRef} before anyone has to scroll. ` +
+      `If the layout can't change, keep a copy of the button pinned to the top of the screen.`,
     whyItWorks:
       `${pct(belowFoldShare)}% of sessions never scroll past 40% of the page. ` +
       `${quote(primary.text)} has visual weight ${primary.visualWeight} — it's designed to convert, ` +
@@ -466,8 +466,8 @@ function evaluatePageWithCapture(
 
   const prescription = {
     whatToChange:
-      `Move ${quote(primary.text)} above the fold on ${pathRef}. ` +
-      `If the layout can't be restructured, add a sticky version or duplicate it as a hero button.`,
+      `Move ${quote(primary.text)} up so it shows on ${pathRef} before anyone has to scroll. ` +
+      `If the layout can't change, keep a copy of the button pinned to the top of the screen.`,
     whyItWorks:
       `${pct(belowFoldShare)}% of sessions never scroll past 40% of the page. ` +
       `${quote(primary.text)} has visual weight ${primary.visualWeight}${ctaTopPx !== null ? ` and its top edge is at ${ctaTopPx}px (fold is ${foldPx}px)` : ''} — ` +

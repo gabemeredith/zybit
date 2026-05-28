@@ -88,14 +88,9 @@ async function collectBrandDna(args: {
 
   // CTA vocabulary lives on the structural snapshot, not on the design
   // snapshot row — pull from the existing phase2_page_snapshots row the
-  // structural fetch wrote earlier in the same run.
-  //
-  // The CTA-text register is "detected conversion copy" — what the page
-  // sells with, not its navigation. Including nav/header entries (Products,
-  // Solutions, Developers, Pricing — the labels we ship today on Stripe and
-  // Linear captures) confuses the email's "CTA voice" claim with the IA
-  // labels. Filter those landmarks out and prefer high-weight entries when
-  // selecting the top 5.
+  // structural fetch wrote earlier in the same run. Filter nav/header
+  // landmarks + dead links so the register is conversion copy, not IA
+  // labels, and prefer high-weight entries when selecting the top 5.
   const ctaVocabulary: string[] = [];
   let cssSystemFromSnapshot: string | null = null;
   try {
@@ -110,9 +105,6 @@ async function collectBrandDna(args: {
       const candidates = (data.ctas ?? [])
         .filter((c) => {
           if (c.landmark === 'nav' || c.landmark === 'header') return false;
-          // Dead links (href="#", javascript:void(0), empty href) are not
-          // real conversion CTAs — exclude from brand-DNA vocabulary so
-          // cookie-consent placeholders don't appear as "conversion copy".
           if (c.tag === 'a') {
             const h = c.href ?? '';
             if (!h || /^#!?\s*$/.test(h) || /^javascript:/i.test(h)) return false;
@@ -120,7 +112,6 @@ async function collectBrandDna(args: {
           return true;
         })
         .slice()
-        // Rank by visualWeight so a hero "Start now" beats a footer link.
         .sort((a, b) => (b.visualWeight ?? 0) - (a.visualWeight ?? 0));
       const seen = new Set<string>();
       for (const cta of candidates) {
@@ -143,18 +134,11 @@ async function collectBrandDna(args: {
     ctaVocabulary,
   };
 
-  // Return null when every field is empty so the route surfaces "no brand
-  // DNA available" cleanly instead of an all-null payload that the renderer
-  // would have to special-case downstream.
-  if (
-    !dna.primaryColor &&
-    !dna.secondaryColor &&
-    (!dna.typeScale || dna.typeScale.length === 0) &&
-    !dna.cssSystem &&
-    dna.ctaVocabulary.length === 0
-  ) {
-    return null;
-  }
+  // Always return the dna object — the UI handles null fields gracefully
+  // (cssSystem falls back to "unknown", colors/typeScale rows are omitted).
+  // Returning null here caused the entire "Design signals" section to be
+  // suppressed for sites where Browserless didn't capture colors or the CSS
+  // framework wasn't detectable.
   return dna;
 }
 
@@ -452,10 +436,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     emailError = err instanceof Error ? err.message : String(err);
   }
 
-  // Wrap findings + brand DNA together so the status endpoint can return
-  // both without an extra join. Old rows stored a bare array; new rows store
-  // { v: 2, items: [...], brandDna: {...} }. The status route handles both.
-  const findingsPayload = JSON.stringify({ v: 2, items: topFindings, brandDna: brandDna ?? null });
+  // Wrap findings + brand DNA + homepage screenshot together so the status
+  // endpoint can return all three without an extra join. Old rows stored a
+  // bare array; new rows store { v: 2, items: [...], brandDna: {...},
+  // screenshotUrl: "..." }. The status route handles both formats.
+  const findingsPayload = JSON.stringify({
+    v: 2,
+    items: topFindings,
+    brandDna: brandDna ?? null,
+    screenshotUrl: screenshot?.screenshotUrl || null,
+  });
 
   if (emailError) {
     // Pipeline succeeded but delivery failed — surface in DB so the audit

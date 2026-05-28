@@ -52,14 +52,14 @@ export const proofMissing: AuditRule = {
 
       const evidence: AuditFindingEvidence[] = [
         {
-          label: 'Page type',
+          label: 'Type of page',
           value: pageType,
-          context: 'A sales-shaped page — visitors expect a reason to believe.',
+          context: 'This page is selling something — visitors want a reason to believe it.',
         },
         {
-          label: 'Proof signals detected',
+          label: 'Proof we found',
           value: 0,
-          context: 'No named customers, no specific metrics, no testimonials, no press, no badges identified in the hero block + first paragraphs.',
+          context: 'Near the top of the page we found no customer names, numbers, testimonials, press mentions, or trust badges.',
         },
         {
           label: 'Headline',
@@ -83,8 +83,8 @@ export const proofMissing: AuditRule = {
         title: `${snapshot.pathRef} makes claims without showing proof`,
         summary:
           `${snapshot.pathRef} is a ${pageType} page — the visitor's first question is "is this real?" ` +
-          `Above the fold we detected no customer names, no metrics, no testimonials, no security ` +
-          `badges, no press mentions. Every claim on the page asks the visitor to trust you on faith.`,
+          `Near the top of the page we found no customer names, numbers, testimonials, trust ` +
+          `badges, or press mentions. Every claim on the page asks the visitor to trust you on faith.`,
         recommendation: [
           `Add one credible proof signal above the fold. The simplest version is a row of three to five ` +
             `customer logos under the hero — visitors recognize one and the headline becomes credible. ` +
@@ -96,11 +96,11 @@ export const proofMissing: AuditRule = {
         ],
         prescription: {
           whyItMatters:
-            `Without a single proof signal above the fold, your claim sits at the same level as every other vendor's — and buyers default to the one with proof.`,
+            `With nothing to back up your claims near the top of the page, you look like every other option — and people go with the one that shows proof.`,
           whatToChange:
-            `Add a proof row immediately under the hero: 3–5 named customer logos, or one quantified ` +
-            `customer outcome ("Acme cut their onboarding time 12×"), or a single named testimonial with ` +
-            `title and outcome. Pick the strongest single signal you have available.`,
+            `Add proof near the top of the page, just under your headline: 3–5 recognizable customer logos, ` +
+            `or one specific result ("Acme cut their onboarding time 12×"), or one real testimonial with ` +
+            `a name and title. Pick the strongest one you have.`,
           whyItWorks:
             `Specific, named proof converts because it shifts the page's claim from your voice to a ` +
             `customer's voice. Visitors discount marketing copy; they don't discount Acme saying it ` +

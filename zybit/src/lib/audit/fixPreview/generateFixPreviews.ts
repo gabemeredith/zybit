@@ -38,6 +38,7 @@ import {
   renderBeforeOnly as defaultRenderBeforeOnly,
 } from './renderBeforeAfter';
 import { inpaintFixAfter as defaultInpaintFixAfter } from './visionInpaint';
+import { assessScreenshotQuality as defaultAssessScreenshotQuality } from './screenshotQualityGate';
 import type { FixPreview, FixPreviewOutcome } from './types';
 
 /** A finding row, narrowed to the fields the orchestrator needs. */
@@ -75,6 +76,8 @@ export interface FixPreviewDeps {
   renderBeforeAfter?: typeof import('./renderBeforeAfter').renderBeforeAfter;
   renderBeforeOnly?: typeof import('./renderBeforeAfter').renderBeforeOnly;
   inpaintFixAfter?: typeof import('./visionInpaint').inpaintFixAfter;
+  /** Override the screenshot quality gate for tests. */
+  assessScreenshotQuality?: typeof import('./screenshotQualityGate').assessScreenshotQuality;
   /** Override the domain lookup for tests. */
   lookupDomain?: (organizationId: string, siteId: string) => Promise<string | null>;
   /** Override the design-snapshot lookup for tests. */
@@ -116,6 +119,11 @@ const SKIP_FIX_PREVIEW_RULE_IDS = new Set<string>([
   'missing-canonical-url',
   'form-label-missing',
   'image-alt-text-missing',
+  // nav-dispersion's fix is an information-architecture change (collapse the
+  // top nav to 4 entries, demote the rest). There's no single-page CSS edit
+  // that renders a meaningful before/after, so a screenshot pair would be
+  // visually identical or misleading.
+  'nav-dispersion',
 ]);
 
 export async function generateFixPreviews(
@@ -138,6 +146,7 @@ export async function generateFixPreviews(
   const renderBA = deps.renderBeforeAfter ?? defaultRenderBeforeAfter;
   const renderBO = deps.renderBeforeOnly ?? defaultRenderBeforeOnly;
   const inpaint = deps.inpaintFixAfter ?? defaultInpaintFixAfter;
+  const assessQuality = deps.assessScreenshotQuality ?? defaultAssessScreenshotQuality;
   const persist = deps.persist ?? persistFixPreview;
 
   const lookupDomain = deps.lookupDomain ?? defaultLookupDomain;
@@ -185,7 +194,7 @@ export async function generateFixPreviews(
         cssSystem: design?.cssSystem ?? null,
         ctaVocabulary,
       },
-      { suggest, renderBA, renderBO, inpaint },
+      { suggest, renderBA, renderBO, inpaint, assessQuality },
     );
     outcomes.push(outcome);
 
@@ -282,6 +291,7 @@ interface RunOneDeps {
   renderBA: typeof defaultRenderBeforeAfter;
   renderBO: typeof defaultRenderBeforeOnly;
   inpaint: typeof defaultInpaintFixAfter;
+  assessQuality: typeof defaultAssessScreenshotQuality;
 }
 
 async function runOneFinding(
@@ -308,6 +318,22 @@ async function runOneFinding(
   });
   if (!beforeOnly) {
     return { findingId: args.finding.id, preview: null, reason: 'no-html' };
+  }
+
+  // Quality gate — the before screenshot is the root of all three tiers
+  // (advisor vision channel, inpaint input, tier-3 fallback). When it comes
+  // back login-gated, blank, mid-load, or with a broken layout, every tier
+  // inherits the defect, so we bail before spending advisor + inpaint calls
+  // and ship the finding card without any screenshot row. `isLikelyBlankFrame`
+  // already caught the all-white case in the renderer; this catches the
+  // visually-busy-but-unusable cases (login walls, half-rendered nav) a pixel
+  // ratio can't. Fail-soft: a model failure returns render:true.
+  const verdict = await deps.assessQuality({
+    findingId: args.finding.id,
+    buffer: beforeOnly.beforeBuffer,
+  });
+  if (!verdict.render) {
+    return { findingId: args.finding.id, preview: null, reason: 'screenshot-unusable' };
   }
 
   // Tier 1 — ask the audit advisor for mods, with the before screenshot

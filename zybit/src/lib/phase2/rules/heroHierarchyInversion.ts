@@ -17,6 +17,7 @@ import type { CanonicalEvent } from "@/lib/phase2/types";
 
 import {
   clamp,
+  displayPath,
   evidenceFromFinding,
   formatCount,
   matchCtaToEvent,
@@ -105,7 +106,7 @@ export const heroHierarchyInversion: AuditRule = {
   structuralPublicAuditCopy(finding) {
     const topmost = evidenceFromFinding(finding, 'What visitors click most') ?? '(unnamed button)';
     const heavy = evidenceFromFinding(finding, 'What your design emphasizes') ?? '(unnamed button)';
-    const page = evidenceFromFinding(finding, 'Page') ?? finding.pathRef ?? 'your homepage';
+    const page = displayPath(evidenceFromFinding(finding, 'Page') ?? finding.pathRef);
     if (topmost.includes('(unnamed') || heavy.includes('(unnamed')) {
       // Defense-in-depth: the rule's evaluate() now bails on unnamed sides,
       // but a future regression that emitted them would slip through unless
@@ -114,20 +115,20 @@ export const heroHierarchyInversion: AuditRule = {
       return null;
     }
     return {
-      title: `On ${page}, the topmost CTA isn't the one your design emphasizes`,
+      title: `On ${page}, the first button isn't the one that stands out most`,
       summary:
-        `${page} leads with "${topmost}" at the top of the DOM, but your design's visual weight ` +
-        `is on "${heavy}". The button the eye lands on and the button the page leads with aren't the ` +
-        `same — visitors have to scan past the loud one to find the topmost one. That's friction.`,
+        `${page} shows "${topmost}" first, but "${heavy}" is the button that catches the eye because ` +
+        `of its color and weight. When the first button and the boldest button aren't the same, visitors ` +
+        `have to look past the loud one to find the one they wanted. That slows them down.`,
       whyItMatters:
-        `On ${page} the eye lands on "${heavy}" but the page leads with "${topmost}" — visitors pay a scan tax on every session to reconcile the mismatch.`,
+        `On ${page} the eye lands on "${heavy}" but the page puts "${topmost}" first — visitors have to reconcile the two every time, which costs you clicks.`,
       evidence: [
-        { label: 'Topmost CTA', value: topmost },
-        { label: 'Most visually emphasized CTA', value: heavy },
+        { label: 'First button on the page', value: topmost },
+        { label: 'Button that stands out most', value: heavy },
         { label: 'Page', value: page },
         {
-          label: 'Based on',
-          value: 'page structure (we cannot see your real visitors yet — connect PostHog to confirm with click data)',
+          label: 'How we know',
+          value: 'We compared the order of your buttons with how bold each one looks. Connect your analytics later to confirm with real click data.',
         },
       ],
     };
@@ -378,8 +379,8 @@ function evaluatePage(
       `${heavyLocation}. Every visitor who arrives wanting the thing they actually want has to scan past ` +
       `the loud button to find the small one — that's friction you're paying for on every session.`,
     whatToChange:
-      `Promote ${clickedQ} ${heavyLocation} and give it ${heavyTreatment} (the styling ${heavyQ} has today). ` +
-      `Demote ${heavyQ} to a secondary style.`,
+      `Give ${clickedQ} ${heavyTreatment} — the eye-catching look ${heavyQ} has today ${heavyLocation} — ` +
+      `and make ${heavyQ} a quieter, secondary button.`,
     whyItWorks:
       `Designs work when visual emphasis matches user intent — the eye should land where the value lands. ` +
       `When they don't, visitors slow down, second-guess, and a chunk of them bounce before they find what they came for.`,
@@ -558,8 +559,8 @@ function evaluatePageWithCapture(
       `${heavyLocation}. Every visitor who arrives wanting the thing they actually want has to scan past ` +
       `the loud button to find the small one — that's friction you're paying for on every session.`,
     whatToChange:
-      `Promote ${clickedQ} ${heavyLocation} and give it ${heavyTreatment} (the styling ${heavyQ} has today). ` +
-      `Demote ${heavyQ} to a secondary style.`,
+      `Give ${clickedQ} ${heavyTreatment} — the eye-catching look ${heavyQ} has today ${heavyLocation} — ` +
+      `and make ${heavyQ} a quieter, secondary button.`,
     whyItWorks:
       `Designs work when visual emphasis matches user intent — the eye should land where the value lands. ` +
       `When they don't, visitors slow down, second-guess, and a chunk of them bounce before they find what they came for.`,

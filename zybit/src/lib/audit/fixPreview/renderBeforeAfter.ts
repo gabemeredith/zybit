@@ -39,6 +39,14 @@ import { applyModifications, stripScripts } from '@/lib/experiments/htmlModifier
 import type { VariantModification } from '@/lib/experiments/types';
 import { fetchWithSsrfGuard } from '@/lib/phase2/findings/preview';
 
+// Finding ids are `ruleId:pathRef` (e.g. `missing-meta-description:/`).
+// Vercel Blob rejects keys containing `//`, which a homepage finding's
+// trailing `:/` would create. Collapse the id to a single filesystem-safe
+// segment so the before/after pair always uploads.
+function blobKeySegment(findingId: string): string {
+  return findingId.replace(/[^a-zA-Z0-9_-]/g, '-').replace(/-+/g, '-');
+}
+
 const VIEWPORT_W = 1280;
 const VIEWPORT_H = 900;
 const SCREENSHOT_TIMEOUT_MS = 25_000;
@@ -151,12 +159,16 @@ export async function renderBeforeAfter(args: {
   let afterUrl: string;
   try {
     const stamp = Date.now();
+    // Finding ids are `ruleId:pathRef` — a homepage finding ends in `:/`,
+    // which would produce a `//` in the blob key and the upload rejects it.
+    // Flatten to a single safe segment.
+    const safeId = blobKeySegment(args.findingId);
     const [beforeUpload, afterUpload] = await Promise.all([
-      put(`fix-preview/${args.findingId}/${stamp}-before.png`, pair.beforeBuffer, {
+      put(`fix-preview/${safeId}/${stamp}-before.png`, pair.beforeBuffer, {
         access: 'public',
         token: blobToken,
       }),
-      put(`fix-preview/${args.findingId}/${stamp}-after.png`, pair.afterBuffer, {
+      put(`fix-preview/${safeId}/${stamp}-after.png`, pair.afterBuffer, {
         access: 'public',
         token: blobToken,
       }),
@@ -444,7 +456,7 @@ export async function renderBeforeOnly(args: {
   }
 
   try {
-    const filename = `fix-preview/${args.findingId}/${Date.now()}-before.png`;
+    const filename = `fix-preview/${blobKeySegment(args.findingId)}/${Date.now()}-before.png`;
     const result = await put(filename, buffer, { access: 'public', token: blobToken });
     return { beforeUrl: result.url, beforeBuffer: buffer, fetchedHtml };
   } catch (err) {
