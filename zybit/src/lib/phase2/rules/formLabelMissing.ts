@@ -16,6 +16,7 @@
 
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
 import type { FormInputItem } from '../snapshots/types';
+import { displayPath } from './helpers';
 
 // Checkbox + radio inputs commonly use <fieldset>/<legend> grouping or
 // label-after-input patterns where per-input labelText may legitimately be
@@ -53,11 +54,11 @@ export const formLabelMissing: AuditRule = {
 
         const evidence: AuditFindingEvidence[] = [
           {
-            label: 'Unlabelled inputs',
+            label: 'Form boxes with no label',
             value: unlabelled.length,
             context: unlabelled.map((i) => i.name ?? i.type).join(', '),
           },
-          { label: 'Total form fields', value: form.fieldCount },
+          { label: 'Form boxes in total', value: form.fieldCount },
         ];
 
         const unlabelledRate = unlabelled.length / Math.max(labelRequired.length, 1);
@@ -71,7 +72,7 @@ export const formLabelMissing: AuditRule = {
           confidence: 0.9,
           priorityScore: 0.4,
           pathRef: snapshot.pathRef,
-          title: `${unlabelled.length} unlabelled input${unlabelled.length > 1 ? 's' : ''} in form on ${snapshot.pathRef}`,
+          title: `${unlabelled.length} box${unlabelled.length > 1 ? 'es' : ''} in your form on ${displayPath(snapshot.pathRef)} ${unlabelled.length > 1 ? 'have' : 'has'} no label`,
           summary: `A form on ${snapshot.pathRef} has ${unlabelled.length} field${unlabelled.length > 1 ? 's' : ''} (${unlabelled.map((i) => `"${i.name ?? i.type}"`).join(', ')}) with no associated <label>. Screen readers announce the field type only, leaving the user to guess its purpose. On mobile, placeholders vanish on focus — making unlabelled fields inaccessible.`,
           recommendation: [
             `Add <label for="..."> elements associated via matching id attributes to each unlabelled field: ${unlabelled.map((i) => i.name ?? i.type).join(', ')}.`,
@@ -79,8 +80,8 @@ export const formLabelMissing: AuditRule = {
           ],
           evidence,
           prescription: {
-            whyItMatters: `Unlabelled form fields are one of the largest single causes of form abandonment. Placeholder-only fields force visitors to remember what each box wanted *after* they clicked into it (because the placeholder disappears on focus), and that hesitation often becomes a back-button. Visible labels also let browsers autofill the field — labelled fields complete in a fraction of the time a manual fill takes.`,
-            whatToChange: `Wrap each unlabelled input in a <label> or add a <label for="fieldId"> pointing to the input's id.`,
+            whyItMatters: `Boxes without a visible label are one of the biggest reasons people give up on a form. If the only hint is grey text inside the box, it disappears the moment someone starts typing — so they forget what the box was for and often quit. Visible labels also let the browser auto-fill details like name and email, so the form is faster to finish.`,
+            whatToChange: `Add a visible label next to each box that says what it's for (name, email, and so on). In your page's code, each input should have a matching <label>.`,
             whyItWorks: `Visible labels reduce form abandonment by making field purpose unambiguous at all times. They also unlock browser autofill for labelled fields, cutting time-to-complete.`,
             experimentVariantDescription: `Variant adds visible labels above each unlabelled field. Measure form completion rate and time-on-form.`,
           },

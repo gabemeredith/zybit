@@ -41,8 +41,6 @@ export type PublicBrandDna = {
   primaryColor: string | null;
   secondaryColor: string | null;
   typeScale: number[] | null;
-  cssSystem: string | null;
-  ctaVocabulary: string[];
 };
 
 // Findings are stored in two formats:
@@ -60,8 +58,6 @@ function unpackFindings(raw: unknown): { items: unknown[]; brandDna: PublicBrand
           primaryColor: typeof bd.primaryColor === 'string' ? bd.primaryColor : null,
           secondaryColor: typeof bd.secondaryColor === 'string' ? bd.secondaryColor : null,
           typeScale: Array.isArray(bd.typeScale) ? (bd.typeScale as number[]) : null,
-          cssSystem: typeof bd.cssSystem === 'string' ? bd.cssSystem : null,
-          ctaVocabulary: Array.isArray(bd.ctaVocabulary) ? (bd.ctaVocabulary as string[]) : [],
         }
       : null;
     const screenshotUrl = typeof r.screenshotUrl === 'string' && r.screenshotUrl ? r.screenshotUrl : null;

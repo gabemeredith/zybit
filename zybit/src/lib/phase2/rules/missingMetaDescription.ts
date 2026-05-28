@@ -11,6 +11,7 @@
 
 import type { AuditFinding, AuditRule, AuditRuleContext } from './types';
 import { pageTypeFromSnapshot, pageTypeModulation } from './pageTypeModulation';
+import { displayPath } from './helpers';
 
 // Below 40 characters a description rarely communicates enough to earn a
 // click. The old 50-char floor triggered on descriptions that were
@@ -40,8 +41,8 @@ export const missingMetaDescription: AuditRule = {
 
       const id = `missing-meta-description:${snapshot.pathRef}`;
       const evidence = isMissing
-        ? [{ label: 'Meta description', value: 'absent' }]
-        : [{ label: 'Meta description length', value: `${desc!.trim().length} chars (minimum ${MIN_DESCRIPTION_LENGTH})`, context: desc!.trim() }];
+        ? [{ label: 'Search summary', value: 'missing' }]
+        : [{ label: 'Search summary length', value: `${desc!.trim().length} characters (aim for at least ${MIN_DESCRIPTION_LENGTH})`, context: desc!.trim() }];
 
       findings.push({
         id,
@@ -55,8 +56,8 @@ export const missingMetaDescription: AuditRule = {
         priorityScore: modulation.severityDowngrade ? 0.25 : 0.45,
         pathRef: snapshot.pathRef,
         title: isMissing
-          ? `No meta description on ${snapshot.pathRef}`
-          : `Meta description too short on ${snapshot.pathRef}`,
+          ? `Google has no summary to show for ${displayPath(snapshot.pathRef)}`
+          : `Your search summary for ${displayPath(snapshot.pathRef)} is too short`,
         summary: isMissing
           ? `${snapshot.pathRef} has no <meta name="description">. Search engines will generate a snippet from arbitrary body copy, which typically underperforms a curated description by 5–30% CTR.`
           : `The meta description on ${snapshot.pathRef} is only ${desc!.trim().length} characters. Most search engines truncate at 155–160 characters; descriptions under 40 characters rarely communicate enough to earn a click.`,
@@ -67,8 +68,8 @@ export const missingMetaDescription: AuditRule = {
         ],
         evidence,
         prescription: {
-          whyItMatters: `The meta description is the line that shows up under your page title in Google search results — it's the copy that decides whether someone clicks. Without one, Google synthesizes a snippet from whatever HTML it can find, often grabbing your nav copy or a footer disclaimer instead of your value prop. You're handing your search CTR to whatever text Google happens to scrape first.`,
-          whatToChange: `Add or expand the <meta name="description"> in the page <head>.`,
+          whyItMatters: `This is the sentence that shows up under your page's title in Google search results — it's what convinces someone to click. Without it, Google grabs a random scrap of text from your page (often a menu label or a footer line) and shows that instead, so fewer people click through.`,
+          whatToChange: `Add a short page summary so search engines show your own words instead of a random scrap. In your page's code this is a <meta name="description"> tag in the <head> — 120–155 characters describing the page.`,
           whyItWorks: `Search engines use the description as the default snippet in results pages. A well-written description improves click-through by making the result relevant and compelling before the user even visits the page.`,
           experimentVariantDescription: `Variant adds a 140-character meta description including the primary value proposition. Measure organic CTR in Google Search Console over 30 days.`,
         },

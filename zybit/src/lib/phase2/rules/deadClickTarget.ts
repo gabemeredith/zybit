@@ -25,6 +25,7 @@
 
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
 import type { CtaCandidate } from '../snapshots/types';
+import { displayPath } from './helpers';
 
 const DEAD_HREF_PATTERNS: RegExp[] = [
   /^\s*$/,           // empty string
@@ -84,12 +85,12 @@ export const deadClickTarget: AuditRule = {
       const moreCount = Math.max(0, dead.length - samples.length);
 
       const evidence: AuditFindingEvidence[] = [
-        { label: 'Dead links on this page', value: dead.length },
+        { label: 'Links that go nowhere', value: dead.length },
         { label: 'Examples', value: samples.join(' · ') + (moreCount > 0 ? ` · +${moreCount} more` : '') },
-        { label: 'Page', value: snapshot.pathRef },
+        { label: 'Page', value: displayPath(snapshot.pathRef) },
         {
-          label: 'Based on',
-          value: 'page structure (visible to anyone parsing your HTML)',
+          label: 'How we know',
+          value: 'We found these by reading the links on your page — no analytics needed.',
         },
       ];
 
@@ -103,8 +104,8 @@ export const deadClickTarget: AuditRule = {
         pathRef: snapshot.pathRef,
         title:
           dead.length === 1
-            ? `One link on ${snapshot.pathRef} is wired to nothing`
-            : `${dead.length} links on ${snapshot.pathRef} go nowhere`,
+            ? `One link on ${displayPath(snapshot.pathRef)} doesn't go anywhere`
+            : `${dead.length} links on ${displayPath(snapshot.pathRef)} go nowhere`,
         summary:
           dead.length === 1
             ? `${snapshot.pathRef} has a clickable link that does nothing when a visitor clicks it. The element still draws attention and consumes clicks; the click then silently fails. This is the deterministic counterpart to a rage-click — visible in your HTML, no analytics required.`
@@ -114,8 +115,8 @@ export const deadClickTarget: AuditRule = {
         ],
         evidence,
         prescription: {
-          whatToChange: `On ${snapshot.pathRef}, replace placeholder hrefs (\`#\`, \`javascript:void(0)\`, empty) with real destinations, or remove the affordance entirely for visual-only elements.`,
-          whyItMatters: `A click that goes nowhere is the highest-friction outcome a visitor can have — they tried, the page ignored them.`,
+          whatToChange: `On ${displayPath(snapshot.pathRef)}, point each of these links at a real page, or — if a link is only a decoration — make it not clickable so it doesn't look like a button that does nothing.`,
+          whyItMatters: `A click that goes nowhere is the most frustrating thing a visitor can hit — they tried, and the page ignored them.`,
           whyItWorks: `Real destinations turn high-intent clicks into real outcomes. Removing dead affordances removes the false visual promise.`,
           experimentVariantDescription: `Variant replaces dead hrefs with real destinations (or removes the affordance). Measure: click-through to the intended destination on first session; rage-click rate on the same elements once PostHog is connected.`,
         },

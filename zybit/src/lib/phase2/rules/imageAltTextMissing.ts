@@ -15,6 +15,7 @@
 
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
 import type { ImageItem } from '../snapshots/types';
+import { displayPath } from './helpers';
 
 const MIN_IMAGES_TO_FIRE = 2;
 
@@ -42,16 +43,16 @@ export const imageAltTextMissing: AuditRule = {
 
       const evidence: AuditFindingEvidence[] = [
         {
-          label: 'Images missing alt attribute',
+          label: 'Images with no description',
           value: noAlt.length,
           context: noAlt
             .slice(0, 4)
             .map((img) => img.src.split('/').pop() ?? img.src.slice(0, 40))
             .join(', '),
         },
-        { label: 'Total meaningful images', value: meaningful.length },
+        { label: 'Images on the page', value: meaningful.length },
         {
-          label: 'Alt text coverage',
+          label: 'Images that have a description',
           value: `${Math.round(((meaningful.length - noAlt.length) / meaningful.length) * 100)}%`,
         },
       ];
@@ -67,7 +68,7 @@ export const imageAltTextMissing: AuditRule = {
         confidence: 0.93,
         priorityScore: 0.4,
         pathRef: snapshot.pathRef,
-        title: `${noAlt.length} image${noAlt.length > 1 ? 's' : ''} missing alt text on ${snapshot.pathRef}`,
+        title: `${noAlt.length} image${noAlt.length > 1 ? 's' : ''} on ${displayPath(snapshot.pathRef)} ${noAlt.length > 1 ? 'have' : 'has'} no text description`,
         summary: `${snapshot.pathRef} has ${noAlt.length} of ${meaningful.length} images with no alt attribute. Screen readers skip these images entirely. Search engines cannot index their content or use them as relevance signals. WCAG 1.1.1 requires all non-decorative images to have a text alternative.`,
         recommendation: [
           `Add alt attributes to all ${noAlt.length} flagged images. For informational images, describe what the image shows. For decorative images, use alt="" (empty string) to tell screen readers to skip them.`,
@@ -75,8 +76,8 @@ export const imageAltTextMissing: AuditRule = {
         ],
         evidence,
         prescription: {
-          whyItMatters: `Alt text is what screen reader users hear when an image loads — without it, they hear "image" or the raw filename. It's also the only signal Google Images has about what's actually in the picture, so a missing alt on your product screenshot means the image can't show up for any relevant search query. Both your accessibility scores and your image-search traffic are leaving signal on the table.`,
-          whatToChange: `Add alt="[description]" to each missing image. If the image is decorative, use alt="".`,
+          whyItMatters: `People who use a screen reader (software that reads a page aloud, often for people who can't see it) rely on a short written description of each image — with none, they just hear "image" or the file name. Search engines use that same description to understand the picture, so missing ones can also keep your images out of image search.`,
+          whatToChange: `Add a short text description to each image — what the picture shows. In your page's code this is the image's alt text (for example, alt="Team photo from the 2026 conference"). For purely decorative images, leave the description empty.`,
           whyItWorks: `Alt text makes images accessible to screen reader users and provides Google Image Search with content signals. Pages with complete alt text often see a lift in organic image traffic and improved accessibility scores.`,
           experimentVariantDescription: `Variant adds descriptive alt text to all flagged images. Measure Lighthouse accessibility score and Google Image Search impressions over 30 days.`,
         },

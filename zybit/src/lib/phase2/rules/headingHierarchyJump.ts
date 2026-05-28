@@ -12,6 +12,7 @@
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from './types';
 import type { HeadingItem } from '../snapshots/types';
 import { pageTypeFromSnapshot, pageTypeModulation } from './pageTypeModulation';
+import { displayPath } from './helpers';
 
 function detectJumps(headings: HeadingItem[]): Array<{ from: HeadingItem; to: HeadingItem; gap: number }> {
   const jumps: Array<{ from: HeadingItem; to: HeadingItem; gap: number }> = [];
@@ -81,10 +82,10 @@ export const headingHierarchyJump: AuditRule = {
       const evidence: AuditFindingEvidence[] = [];
 
       if (missingH1) {
-        evidence.push({ label: 'H1 headings', value: 0, context: 'No H1 found on the page' });
+        evidence.push({ label: 'Main heading (H1)', value: 0, context: 'No main heading found on the page' });
       } else if (multipleH1) {
         evidence.push({
-          label: 'H1 headings',
+          label: 'Main headings (H1)',
           value: h1s.length,
           context: h1s.map((h) => `"${h.text}"`).join(', '),
         });
@@ -92,16 +93,16 @@ export const headingHierarchyJump: AuditRule = {
 
       for (const jump of jumps.slice(0, 3)) {
         evidence.push({
-          label: `Heading jump H${jump.from.level}→H${jump.to.level}`,
+          label: `Skipped from heading H${jump.from.level} to H${jump.to.level}`,
           value: `skips ${jump.gap - 1} level${jump.gap > 2 ? 's' : ''}`,
           context: `"${jump.from.text}" → "${jump.to.text}"`,
         });
       }
 
       const issues: string[] = [];
-      if (missingH1) issues.push('no H1');
-      if (multipleH1) issues.push(`${h1s.length} H1s`);
-      if (jumps.length > 0) issues.push(`${jumps.length} heading level skip${jumps.length > 1 ? 's' : ''}`);
+      if (missingH1) issues.push('no main heading');
+      if (multipleH1) issues.push(`${h1s.length} main headings`);
+      if (jumps.length > 0) issues.push(`${jumps.length} skipped heading level${jumps.length > 1 ? 's' : ''}`);
 
       const baseSeverity: 'warn' | 'info' = missingH1 ? 'warn' : 'info';
       const severity: 'warn' | 'info' = modulation.severityDowngrade && baseSeverity === 'warn' ? 'info' : baseSeverity;
@@ -117,7 +118,7 @@ export const headingHierarchyJump: AuditRule = {
         confidence: 0.92,
         priorityScore,
         pathRef: snapshot.pathRef,
-        title: `Broken heading structure on ${snapshot.pathRef} (${issues.join(', ')})`,
+        title: `The headings on ${displayPath(snapshot.pathRef)} aren't in a clear order (${issues.join(', ')})`,
         summary: `The heading hierarchy on ${snapshot.pathRef} has ${issues.join(' and ')}. Screen readers navigate by headings, and search engines weight H1 content higher. A skipped or missing H1 flattens the page's information architecture.`,
         recommendation: [
           missingH1
@@ -129,11 +130,11 @@ export const headingHierarchyJump: AuditRule = {
         evidence,
         prescription: {
           whyItMatters: missingH1
-            ? `Search engines look at the H1 to figure out what your page is fundamentally about. With no H1 (or with multiple competing H1s) Google has to guess, and a guess outranks a confident signal every time. Screen reader users navigating by heading levels also lose their starting point — both are real visitors who can't parse the page the way you intended.`
-            : `Search engines and screen readers both use heading nesting to figure out which section a piece of content belongs to. Jumping levels (H1 → H3, no H2 in between) tells Google the page is structurally malformed, which lowers its confidence in your topic. Visitors using keyboard navigation lose their place between "this is a section" and "this is a subsection."`,
+            ? `Search engines read your page's main heading (the H1) to understand what the page is about. With no main heading — or several competing ones — they have to guess, and a guess ranks worse than a clear signal. People using a screen reader also rely on it as their starting point on the page.`
+            : `Both search engines and screen readers use the order of your headings (main heading, then sub-headings, then smaller ones) to understand how the page is organized. Skipping a level — jumping from a main heading straight to a small one — makes the page look disorganized and harder to follow.`,
           whatToChange: missingH1
-            ? `Add <h1> wrapping the existing primary headline element.`
-            : `Correct heading levels so they descend without skipping (H1→H2→H3, not H1→H3).`,
+            ? `Add one clear main heading (an <h1> tag in your page's code) that names what the page is about, placed above the smaller headings.`
+            : `Put the headings in order without skipping sizes — main heading, then sub-heading, then the next size down (H1 → H2 → H3, not H1 → H3).`,
           whyItWorks: `Search engines treat H1 as the authoritative page title. A clean heading hierarchy signals well-structured content and improves crawlability and accessibility for screen reader users.`,
           experimentVariantDescription: `Variant corrects heading semantics without changing visual design. Measure organic impressions and ranking for target keywords over 60 days.`,
         },

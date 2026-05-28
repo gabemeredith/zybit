@@ -201,6 +201,16 @@ export function quote(text: string | null | undefined): string {
   return `\`${trimmed}\``;
 }
 
+/**
+ * Render a page path for prospect-facing copy. The root path `/` reads as a
+ * bare slash to a non-technical reader, so show "your homepage" instead.
+ * Other paths are left as-is (the user only ever asked about the slash).
+ */
+export function displayPath(pathRef: string | null | undefined): string {
+  if (!pathRef || pathRef === '/') return 'your homepage';
+  return pathRef;
+}
+
 /** Cap a number to N decimal places, returned as a number. */
 export function round(n: number, decimals: number): number {
   if (!Number.isFinite(n)) return 0;

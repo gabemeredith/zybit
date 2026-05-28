@@ -73,14 +73,6 @@ export interface AuditBrandDna {
   secondaryColor: string | null;
   /** Sorted heading font sizes in px. */
   typeScale: number[] | null;
-  /** Detected CSS authoring framework ("tailwind", "bootstrap", etc).
-   * Null doesn't mean "no system" — it means the signature matcher didn't
-   * recognize a fingerprint (common on sites that compile / hash / tree-shake
-   * utility classes). The renderer surfaces this distinction. */
-  cssSystem: string | null;
-  /** Up to 5 unique CTA copy samples from the structural snapshot (nav and
-   * header items excluded — this is conversion copy, not IA labels). */
-  ctaVocabulary: string[];
 }
 
 export interface AuditReport {
@@ -279,9 +271,7 @@ function hasBrandDna(brandDna: AuditBrandDna | null | undefined): brandDna is Au
   return Boolean(
     brandDna.primaryColor ||
       brandDna.secondaryColor ||
-      (brandDna.typeScale && brandDna.typeScale.length > 0) ||
-      brandDna.cssSystem ||
-      brandDna.ctaVocabulary.length > 0,
+      (brandDna.typeScale && brandDna.typeScale.length > 0),
   );
 }
 
@@ -330,11 +320,11 @@ function brandDnaSection(report: AuditReport): string {
   // detector that just sees that Stripe ships black CTAs on its hero.
   const swatchCells: string[] = [];
   if (b.primaryColor) {
-    const cell = colorSwatch(b.primaryColor, 'CTA fill');
+    const cell = colorSwatch(b.primaryColor, 'Main button color');
     if (cell) swatchCells.push(cell);
   }
   if (b.secondaryColor) {
-    const cell = colorSwatch(b.secondaryColor, 'Heading');
+    const cell = colorSwatch(b.secondaryColor, 'Heading color');
     if (cell) swatchCells.push(cell);
   }
   const swatchRow = swatchCells.length
@@ -345,26 +335,9 @@ function brandDnaSection(report: AuditReport): string {
     `<tr><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${MUTED}; width: 38%;">${escapeHtml(label)}</td><td style="padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; color: ${INK};">${value}</td></tr>`;
 
   const factRows: string[] = [];
-  // `cssSystem === null` doesn't mean "no system" — it means the matcher
-  // didn't recognize a fingerprint. Render the row anyway with explanatory
-  // copy so a Stripe/Linear-class site doesn't look broken in the report.
-  if (b.cssSystem) {
-    factRows.push(factRow('Framework', escapeHtml(b.cssSystem)));
-  } else {
-    factRows.push(
-      factRow('Framework', `<span style="color: ${MUTED};">unknown (compiled or hashed utility classes)</span>`),
-    );
-  }
   if (b.typeScale && b.typeScale.length > 0) {
     const scale = b.typeScale.map((n) => `${n}px`).join(' · ');
-    factRows.push(factRow('Observed type sizes', escapeHtml(scale)));
-  }
-  if (b.ctaVocabulary.length > 0) {
-    const samples = b.ctaVocabulary
-      .slice(0, 5)
-      .map((t) => `&ldquo;${escapeHtml(t)}&rdquo;`)
-      .join(' · ');
-    factRows.push(factRow('Conversion copy', samples));
+    factRows.push(factRow('Text sizes on the page', escapeHtml(scale)));
   }
   const factsTable = factRows.length
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${factRows.join('')}</table>`
@@ -377,7 +350,7 @@ function brandDnaSection(report: AuditReport): string {
               <div style="border: 1px solid ${HAIRLINE}; padding: 16px 18px;">
                 ${swatchRow}
                 ${factsTable}
-                <p style="margin: 12px 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px; line-height: 1.55; color: ${MUTED};">These are the visible signals we extracted from your homepage — the colors your CTAs and headings actually render with, the type sizes the page uses, and the conversion copy we found. The findings below reference them by name.</p>
+                <p style="margin: 12px 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px; line-height: 1.55; color: ${MUTED};">These are the visible design details we pulled from your homepage — the main colors and text sizes your pages use. The findings below point back to them.</p>
               </div>
             </td>
           </tr>
@@ -598,8 +571,6 @@ export function sampleAuditReport(): AuditReport {
       primaryColor: '#1A73E8',
       secondaryColor: '#0F2540',
       typeScale: [14, 16, 20, 28, 48],
-      cssSystem: 'tailwind',
-      ctaVocabulary: ['Start free trial', 'Book a demo', 'See pricing', 'Get started'],
     },
     findings: [
       {
