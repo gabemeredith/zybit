@@ -18,7 +18,6 @@
  */
 
 import { Resend } from 'resend';
-import { signAuditSignupParam } from '@/lib/audit/cookies';
 import { PUBLIC_AUDIT_DEFERRED_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 
 export interface AuditFindingForEmail {
@@ -113,20 +112,6 @@ export interface AuditReport {
   brandDna?: AuditBrandDna | null;
 }
 
-// The signup CTA URL is HMAC-signed with email|auditId so a leaked report
-// URL can't be used to spam magic-link emails to arbitrary inboxes. The
-// route at /api/auth/request-link-from-audit verifies the sig before
-// issuing anything.
-function signupLinkFor(email: string, auditId: string): string {
-  const base = (
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_BASE_URL ??
-    'https://getzybit.com'
-  ).replace(/\/$/, '');
-  const sig = signAuditSignupParam(email, auditId);
-  const params = new URLSearchParams({ e: email, a: auditId, s: sig });
-  return `${base}/api/auth/request-link-from-audit?${params.toString()}`;
-}
 
 const INK = '#111';
 const CREAM = '#FAFAF8';
@@ -424,7 +409,6 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
   const safeDomain = escapeHtml(report.domain);
   const safeRole = escapeHtml(report.prospect.role);
   const moreCount = Math.max(0, report.totalFindings - report.findings.length);
-  const signupLink = signupLinkFor(report.prospect.email, report.auditId);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -489,19 +473,14 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
               ${
                 moreCount > 0
                   ? `<p style="margin: 0 0 22px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 14px; line-height: 1.55; color: ${MUTED};">
-                <strong style="color: ${INK};">${moreCount} other findings didn&rsquo;t make the cut.</strong> They&rsquo;re lower-impact or lower-confidence — worth seeing once you&rsquo;ve fixed the ones above. The full ranked list lives in Zybit, along with the things a static crawl can&rsquo;t see: flow drop-offs, session-level evidence, and rules that learn what actually works on <em>your</em> product.
+                <strong style="color: ${INK};">${moreCount} other findings didn&rsquo;t make the cut.</strong> They&rsquo;re lower-impact or lower-confidence — worth seeing once you&rsquo;ve fixed the ones above.
               </p>`
                   : ''
               }
-              <!-- Primary CTA: open the report in the dashboard -->
-              <a href="${escapeHtml(signupLink)}" style="display: inline-block; padding: 14px 28px; background: ${INK}; color: ${CREAM}; text-decoration: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; box-shadow: 4px 4px 0 ${INK}; border: 1px solid ${INK};">See these in your dashboard →</a>
-              <p style="margin: 12px 0 22px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px; line-height: 1.5; color: ${MUTED};">
-                Account&rsquo;s already set up for <strong style="color: ${INK};">${safeDomain}</strong>. Click the button and we&rsquo;ll email a one-tap sign-in link.
-              </p>
-              <!-- Secondary CTA: founder call -->
-              <a href="${escapeHtml(report.bookCallUrl)}" style="display: inline-block; padding: 12px 24px; background: ${CREAM}; color: ${INK}; text-decoration: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; border: 2px solid ${INK};">Or walk through these with us →</a>
+              <!-- Primary CTA: book a call with founders -->
+              <a href="${escapeHtml(report.bookCallUrl)}" style="display: inline-block; padding: 14px 28px; background: ${INK}; color: ${CREAM}; text-decoration: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; box-shadow: 4px 4px 0 ${INK}; border: 1px solid ${INK};">Book 30 min with us →</a>
               <p style="margin: 12px 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px; line-height: 1.5; color: ${MUTED};">
-                30 minutes on screen-share. We&rsquo;ll go through each finding, answer your questions, and tell you straight whether Zybit fits your team. No pitch deck.
+                30 minutes on a screen-share. We&rsquo;ll walk through each finding, answer your questions, and tell you straight whether Zybit fits your team. No pitch deck.
               </p>
             </td>
           </tr>
@@ -512,7 +491,7 @@ export function renderAuditReportEmailHtml(report: AuditReport): string {
               <div style="border: 1px dashed ${HAIRLINE}; padding: 14px 16px; background: rgba(0,0,0,0.02);">
                 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: ${MUTED}; margin-bottom: 6px;">Based on page structure, not your visitors yet</div>
                 <p style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 13px; line-height: 1.55; color: ${INK};">
-                  The findings above come from parsing your HTML — what your page emphasizes, how the nav is structured, where the CTAs sit. They&rsquo;re real structural observations, but we can&rsquo;t see how your real users behave on the page yet. <a href="${escapeHtml(signupLink)}" style="color: ${INK}; text-decoration: underline; font-weight: 600;">Connect PostHog</a> (or send us your data) and the other ${numberWord(PUBLIC_AUDIT_DEFERRED_RULE_COUNT)} rules light up — rage-clicks, drop-offs, form abandonment, hesitation, mobile asymmetry, and the patterns you only see in session data.
+                  The findings above come from parsing your HTML — what your page emphasizes, how the nav is structured, where the CTAs sit. They&rsquo;re real structural observations, but we can&rsquo;t see how your real visitors actually behave yet. <a href="${escapeHtml(report.bookCallUrl)}" style="color: ${INK}; text-decoration: underline; font-weight: 600;">Jump on a call</a> and we&rsquo;ll explain how the other ${numberWord(PUBLIC_AUDIT_DEFERRED_RULE_COUNT)} rules light up once we connect your analytics — rage-clicks, drop-offs, form abandonment, hesitation, and the patterns you only see in session data.
                 </p>
               </div>
             </td>
