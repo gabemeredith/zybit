@@ -51,7 +51,29 @@ export default function ExperimentScreenshotPreview({
 
   return (
     <div className="mt-4">
-      <div className={SECTION_LABEL}>Preview</div>
+      <div className="flex items-center justify-between mb-2">
+        <div className={SECTION_LABEL} style={{ marginBottom: 0 }}>
+          Preview
+        </div>
+        <div className="flex items-center gap-3">
+          <a
+            href={`/api/preview/${experimentId}?bucket=control`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-[#6B6B6B] hover:text-[#111] transition-colors"
+          >
+            Open live control ↗
+          </a>
+          <a
+            href={`/api/preview/${experimentId}?bucket=variant`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-medium text-[#111] hover:underline underline-offset-2"
+          >
+            Open live variant ↗
+          </a>
+        </div>
+      </div>
       {state.kind === "loading" && (
         <div className="grid grid-cols-2 gap-3">
           {(["Control", "Variant"] as const).map((label) => (
