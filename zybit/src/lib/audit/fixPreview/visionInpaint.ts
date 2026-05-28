@@ -75,13 +75,15 @@ function ruleSpecificGuidance(ruleId: string): string | null {
   switch (ruleId) {
     case 'proof-missing':
       return [
-        'CONCRETE EDIT: Draw a horizontal row of 4–5 grayscale (#666) wordmark',
-        'logos directly below the primary CTA button. Use plausible-looking',
-        'B2B company wordmarks (short fictional names in a clean sans-serif,',
-        'one of them lowercased, one with a small simple geometric mark beside',
-        'the name). Above the logo row add a small italic line of text reading',
-        '"Trusted by leading product teams". The logos should be visually',
-        'subtle (40–60% opacity) and evenly spaced. This is the ONLY change.',
+        'CONCRETE EDIT: Draw a horizontal row of 4–5 grayscale (#666) recognizable',
+        'SaaS / tech company wordmarks directly below the primary CTA button.',
+        'Pick from well-known names like: Slack, Notion, Linear, Shopify, HubSpot,',
+        'Figma, Airbnb, Atlassian, Asana, Webflow, Canva, Loom. Render them as their',
+        'actual wordmarks (not invented brand names — never output placeholder text',
+        'like "wordmark", "synergy", "nexus", "pivot", "atlas", or any made-up word).',
+        'Above the logo row add a small italic line: "Trusted by leading product teams".',
+        'Logos should be visually subtle (40–60% opacity) and evenly spaced. This is',
+        'the ONLY change.',
       ].join(' ');
     case 'cta-verb-mismatch':
     case 'link-text-generic':
