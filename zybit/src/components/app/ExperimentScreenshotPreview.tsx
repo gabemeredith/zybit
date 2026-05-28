@@ -23,9 +23,23 @@ const SECTION_LABEL = "text-[11px] font-bold uppercase tracking-[0.15em] text-[#
  */
 export default function ExperimentScreenshotPreview({
   experimentId,
+  proxyBaseUrl,
 }: {
   experimentId: string;
+  /**
+   * When the site is served through the Zybit proxy, link the live buttons at
+   * the real proxied page (`<slug>.zybit.run/...?_zb_force=<bucket>`) — the
+   * fully-styled actual site with the variant — instead of the locally-rendered
+   * `/api/preview` HTML (which loads without the origin's CSS/JS).
+   */
+  proxyBaseUrl?: string | null;
 }) {
+  const controlHref = proxyBaseUrl
+    ? `${proxyBaseUrl}?_zb_force=control`
+    : `/api/preview/${experimentId}?bucket=control`;
+  const variantHref = proxyBaseUrl
+    ? `${proxyBaseUrl}?_zb_force=variant`
+    : `/api/preview/${experimentId}?bucket=variant`;
   const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {
@@ -57,7 +71,7 @@ export default function ExperimentScreenshotPreview({
         </div>
         <div className="flex items-center gap-3">
           <a
-            href={`/api/preview/${experimentId}?bucket=control`}
+            href={controlHref}
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs text-[#6B6B6B] hover:text-[#111] transition-colors"
@@ -65,7 +79,7 @@ export default function ExperimentScreenshotPreview({
             Open live control ↗
           </a>
           <a
-            href={`/api/preview/${experimentId}?bucket=variant`}
+            href={variantHref}
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs font-medium text-[#111] hover:underline underline-offset-2"
