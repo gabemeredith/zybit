@@ -20,6 +20,7 @@
  */
 
 import { put } from '@vercel/blob';
+import { isVisiblyChanged, isLikelyBlankFrame } from './renderBeforeAfter';
 
 // Nano Banana 2 — Gemini 3.1 Flash Image Preview, released Feb 2026. 4K
 // output, faster than Nano Banana Pro, image-in / image-out via the
@@ -66,11 +67,51 @@ function sanitizeForPrompt(s: string): string {
   return s.replace(/[<>]/g, '');
 }
 
+// Rule-specific guidance that's far more concrete than the rule's
+// `whatToChange` copy. The default prescription strings are written for
+// the PM card; Nano Banana 2 needs concrete pixel-level instructions
+// (what to draw, where) or it tends to echo the input image unchanged.
+function ruleSpecificGuidance(ruleId: string): string | null {
+  switch (ruleId) {
+    case 'proof-missing':
+      return [
+        'CONCRETE EDIT: Draw a horizontal row of 4–5 grayscale (#666) wordmark',
+        'logos directly below the primary CTA button. Use plausible-looking',
+        'B2B company wordmarks (short fictional names in a clean sans-serif,',
+        'one of them lowercased, one with a small simple geometric mark beside',
+        'the name). Above the logo row add a small italic line of text reading',
+        '"Trusted by leading product teams". The logos should be visually',
+        'subtle (40–60% opacity) and evenly spaced. This is the ONLY change.',
+      ].join(' ');
+    case 'cta-verb-mismatch':
+    case 'link-text-generic':
+      return [
+        'CONCRETE EDIT: Locate the primary call-to-action button(s) and replace',
+        "their label text with a more descriptive verb-phrase from the site's",
+        'voice. Do not change the button geometry, colour, position, or any',
+        'surrounding copy. Keep the new label short (max 4 words).',
+      ].join(' ');
+    case 'vague-claim-detected':
+    case 'hero-hierarchy-inversion':
+      return [
+        'CONCRETE EDIT: Replace the existing hero headline text in place — paint',
+        "over the original headline so the OLD copy is no longer visible, then",
+        'render the new headline in the same position, font, and weight. Do NOT',
+        'render the new headline as an additional line above or below the',
+        'original. The visible result should look like a clean replacement, not',
+        'two overlapping headlines.',
+      ].join(' ');
+    default:
+      return null;
+  }
+}
+
 export function buildInpaintPrompt(args: {
   finding: VisionInpaintInput['finding'];
   designTokens: Record<string, unknown> | null;
 }): string {
   const tokensJson = JSON.stringify(args.designTokens ?? {});
+  const concrete = ruleSpecificGuidance(args.finding.ruleId);
   return [
     "Edit this website screenshot to address ONE specific issue. Output one edited",
     'PNG with all unrelated parts of the page kept pixel-identical to the input.',
@@ -84,10 +125,13 @@ export function buildInpaintPrompt(args: {
     `  what_to_change: ${sanitizeForPrompt(args.finding.whatToChange)}`,
     `  why_it_works: ${sanitizeForPrompt(args.finding.whyItWorks)}`,
     '',
+    ...(concrete ? [concrete, ''] : []),
     'Edit only the region implicated by the issue. Preserve typography choices,',
     "the site's existing colour palette, and the surrounding layout. Do not add",
     'watermarks, captions, callouts, or arrows. Do not draw outlines around the',
-    'changed region. Return the result as a single PNG.',
+    'changed region. When the edit involves replacing existing text, paint over',
+    'the old text so it is no longer visible — do not stack the new copy on top',
+    'of or beside the old copy. Return the result as a single PNG.',
   ].join('\n');
 }
 
@@ -193,6 +237,25 @@ export async function inpaintFixAfter(
       model: INPAINT_MODEL_NAME,
     });
     return null;
+  }
+
+  // Nano Banana 2's silent failure mode is to echo the input image when it
+  // can't synthesize the requested edit (most often on "add logos" /
+  // "insert a trust row" prompts). Catch the no-op + blank cases so we
+  // fall through to Tier 3 instead of mailing an identical pair.
+  if (edited.mimeType.startsWith('image/png')) {
+    if (isLikelyBlankFrame(edited.buffer)) {
+      console.warn('[visionInpaint] edited image is blank — declining', {
+        findingId: input.findingId,
+      });
+      return null;
+    }
+    if (!isVisiblyChanged(input.beforeBuffer, edited.buffer)) {
+      console.warn('[visionInpaint] edited image is perceptually identical to before — declining', {
+        findingId: input.findingId,
+      });
+      return null;
+    }
   }
 
   // Nano Banana sometimes returns JPEG even when given a PNG input — honor

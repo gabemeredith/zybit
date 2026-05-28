@@ -108,6 +108,17 @@ export const linkTextGeneric: AuditRule = {
 
       evidence.push({ label: 'Total links on page', value: links.length });
 
+      // Pick the most concrete offender we can hand to the AI fix-preview
+      // advisor. `whatToChange` defaults are too abstract — without an actual
+      // anchor + rewrite, the advisor invents a no-op selector and the
+      // "after" screenshot is identical to the before.
+      const firstGeneric = genericLinks[0]?.text.trim();
+      const firstFrequent = highFrequency[0]?.[0]?.text.trim();
+      const offendingText = firstGeneric ?? firstFrequent ?? null;
+      const whatToChange = offendingText
+        ? `Replace the "${offendingText}" link text on ${snapshot.pathRef} with anchor text that names the destination, e.g. "Read the pricing guide" or "Get started with the free plan". Each link should make sense out of context.`
+        : `Update anchor text to describe the link destination. Each link should make sense out of context.`;
+
       const totalFlagged = genericLinks.length + highFrequency.reduce((s, g) => s + g.length, 0);
       const rate = totalFlagged / Math.max(links.length, 1);
       // floorMultiplier > 1 (docs pages) means the rule needs a higher
@@ -132,7 +143,7 @@ export const linkTextGeneric: AuditRule = {
         ],
         evidence,
         prescription: {
-          whatToChange: `Update anchor text to describe the link destination. Each link should make sense out of context.`,
+          whatToChange,
           whyItWorks: `Descriptive link text improves keyboard and screen reader navigation. It also acts as anchor text for search engines, improving the destination page's relevance signals for the topic named in the link.`,
           experimentVariantDescription: `Variant replaces generic CTAs with destination-specific text. Measure click-through rate on flagged links and organic ranking of destination pages.`,
         },
