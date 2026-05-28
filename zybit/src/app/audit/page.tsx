@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { SiteNav } from '@/components/SiteNav';
 import { IntakeModal } from '@/components/IntakeModal';
 import { isPersonalEmail, isAllowlistedTestEmail, rejectionMessage } from '@/lib/audit/personalEmailDomains';
-import { PUBLIC_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
+import { PUBLIC_AUDIT_RULE_COUNT, PUBLIC_AUDIT_DEFERRED_RULE_COUNT, TOTAL_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 import type { IntakeFinding } from '@/lib/intake/structuralAudit';
 
 const INK = '#111';
@@ -247,9 +247,8 @@ function Hero() {
           maxWidth: 620,
         }}
       >
-        Give us your URL and we&rsquo;ll run {PUBLIC_AUDIT_RULE_COUNT} friction rules against your live site.
-        The same ones our customers run on their own products. You&rsquo;ll get a
-        one-page report by email: ranked findings, the evidence behind each, and what to change.
+        Give us your URL and we&rsquo;ll run {PUBLIC_AUDIT_RULE_COUNT}{' '}of our {TOTAL_AUDIT_RULE_COUNT}{' '}friction rules against your live site right now.
+        You&rsquo;ll get a one-page report by email: ranked findings, the evidence behind each, and what to change.
       </p>
       <p
         className="sans-text"
@@ -571,7 +570,7 @@ function TeaserPanel({
       >
         {teaserFinding
           ? 'The full ranked list is in the report, with evidence and suggested changes for each finding. Confirm below and it goes straight to your inbox.'
-          : `We ran ${PUBLIC_AUDIT_RULE_COUNT} friction rules against your homepage. The full report, with priority findings, evidence, and what to change, will arrive in your inbox once you confirm.`}
+          : `We ran ${PUBLIC_AUDIT_RULE_COUNT} of our ${TOTAL_AUDIT_RULE_COUNT} friction rules against your homepage. The full report, with priority findings, evidence, and what to change, will arrive in your inbox once you confirm.`}
       </p>
 
       {teaserFinding && <TeaserCard finding={teaserFinding} />}
@@ -816,7 +815,7 @@ function AwaitingPanel({ form, onReset }: { form: FormState; onReset: () => void
 function TrustStrip() {
   const items = useMemo(
     () => [
-      { k: '13', v: 'deterministic rules' },
+      { k: String(TOTAL_AUDIT_RULE_COUNT), v: 'friction rules' },
       { k: '~45s', v: 'audit runtime' },
       { k: '4', v: 'findings per report' },
       { k: 'Double', v: 'opt-in by email' },
@@ -879,7 +878,7 @@ function FAQ() {
     },
     {
       q: 'What does Zybit do beyond this audit?',
-      a: 'The audit is the static-crawl layer. The full product connects to your analytics (PostHog, Segment, GA4), watches real user sessions, and re-ranks findings based on what actually moves your metrics. A continuous loop rather than a one-shot snapshot.',
+      a: `The audit runs ${PUBLIC_AUDIT_RULE_COUNT} rules from your HTML right now. The other ${PUBLIC_AUDIT_DEFERRED_RULE_COUNT} rules need your session data to fire: rage-clicks, drop-offs, form abandonment, hesitation, and the patterns you only see in real visitor behaviour. The full product connects to your analytics (PostHog, Segment, GA4) and runs all ${TOTAL_AUDIT_RULE_COUNT} rules continuously.`,
     },
     {
       q: 'How are findings ranked?',
