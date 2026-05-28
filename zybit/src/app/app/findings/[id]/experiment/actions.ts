@@ -103,7 +103,24 @@ function briefToModifications(
       insertPosition && (INSERT_POSITIONS as readonly string[]).includes(insertPosition)
         ? insertPosition
         : "before";
-    return [{ type: "element-insert", selector, position, html: newValue }];
+    const mods: VariantModification[] = [
+      { type: "element-insert", selector, position, html: newValue },
+    ];
+    // The insert sanitizer strips inline styles, so a raw inserted block
+    // renders with browser defaults (ugly in the preview). Our scaffolds carry
+    // a `.zybit-insert` class; pair the insert with companion css-inject rules
+    // scoped to that class so the section renders as a styled card. Gated on
+    // the class being present, so a custom insert without it is untouched.
+    if (/\bzybit-insert\b/.test(newValue)) {
+      mods.push(
+        { type: "css-inject", selector: ".zybit-insert", css: "background:#fff;border:1px solid rgba(0,0,0,0.08);border-radius:16px;padding:20px 24px;margin:0 0 24px 0" },
+        { type: "css-inject", selector: ".zybit-insert h2", css: "margin:0 0 8px 0;font-size:18px;font-weight:700;line-height:1.3" },
+        { type: "css-inject", selector: ".zybit-insert p", css: "margin:0 0 12px 0;color:#555;font-size:14px;line-height:1.5" },
+        { type: "css-inject", selector: ".zybit-insert li", css: "margin:6px 0" },
+        { type: "css-inject", selector: ".zybit-insert a", css: "color:#4A2EAA;font-weight:600;text-decoration:none" },
+      );
+    }
+    return mods;
   }
   // style: use css-inject to force the variant visual. newValue may be class names
   // or raw CSS — the PM decides. We store the raw value; the manifest API

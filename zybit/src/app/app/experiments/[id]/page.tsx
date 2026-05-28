@@ -36,6 +36,24 @@ function lift(control: number, variant: number): string {
   return `${pp}pp (${Number(rel) >= 0 ? "+" : ""}${rel}% relative)`;
 }
 
+/** PM-facing change-type labels (the raw values are `copy|style|hide|insert`). */
+const CHANGE_TYPE_DISPLAY: Record<string, string> = {
+  copy: "Change text",
+  style: "Swap styles",
+  hide: "Hide element",
+  insert: "Add a section",
+};
+
+/** The bare site root reads as "Homepage" in PM-facing copy. */
+function pathLabel(p: string | null | undefined): string {
+  return !p || p === "/" ? "Homepage" : p;
+}
+
+/** Humanize a primary-metric string like "conversion rate on /". */
+function metricLabel(m: string): string {
+  return m.replace(/\son\s\/(?=\s|$)/g, " on the homepage");
+}
+
 export default async function ExperimentDetailPage({
   params,
 }: {
@@ -119,8 +137,8 @@ export default async function ExperimentDetailPage({
             {exp.status}
           </span>
           {exp.targetPath && (
-            <span className="font-mono text-xs text-[#6B6B6B] bg-black/[0.04] px-1.5 py-0.5 rounded">
-              {exp.targetPath}
+            <span className="text-xs text-[#6B6B6B] bg-black/[0.04] px-1.5 py-0.5 rounded">
+              {pathLabel(exp.targetPath)}
             </span>
           )}
           <span className="text-xs text-[#9B9B9B] ml-auto">
@@ -169,16 +187,18 @@ export default async function ExperimentDetailPage({
           </div>
 
           <div className="grid grid-cols-2 gap-x-8 gap-y-4">
-            {notes?.selector && (
-              <div>
-                <div className={SECTION_LABEL}>CSS selector</div>
-                <p className="text-sm font-mono text-[#111]">{notes.selector}</p>
-              </div>
-            )}
             {notes?.changeType && (
               <div>
-                <div className={SECTION_LABEL}>Change type</div>
-                <p className="text-sm text-[#111] capitalize">{notes.changeType}</p>
+                <div className={SECTION_LABEL}>Change</div>
+                <p className="text-sm text-[#111]">
+                  {CHANGE_TYPE_DISPLAY[notes.changeType] ?? notes.changeType}
+                </p>
+              </div>
+            )}
+            {notes?.selector && (
+              <div>
+                <div className={SECTION_LABEL}>Target element</div>
+                <p className="text-sm font-mono text-[#111]">{notes.selector}</p>
               </div>
             )}
             {notes?.newValue && notes.changeType !== "hide" && (
@@ -187,7 +207,7 @@ export default async function ExperimentDetailPage({
                   {notes.changeType === "copy"
                     ? "Variant copy"
                     : notes.changeType === "insert"
-                      ? `Inserted HTML (${notes.insertPosition ?? "before"} anchor)`
+                      ? "New section"
                       : "CSS value"}
                 </div>
                 <p className={`text-sm font-mono text-[#111] ${notes.changeType === "insert" ? "whitespace-pre-wrap break-words" : ""}`}>
@@ -207,7 +227,7 @@ export default async function ExperimentDetailPage({
             </div>
             <div className="col-span-2">
               <div className={SECTION_LABEL}>Primary metric</div>
-              <p className="text-sm text-[#111]">{exp.primaryMetric}</p>
+              <p className="text-sm text-[#111]">{metricLabel(exp.primaryMetric)}</p>
             </div>
             <div className="col-span-2">
               <div className={SECTION_LABEL}>Hypothesis</div>
@@ -217,9 +237,16 @@ export default async function ExperimentDetailPage({
 
           {modifications.length > 0 && (
             <div className="mt-5 pt-5 border-t border-black/[0.04]">
-              <div className={`${SECTION_LABEL} mb-3`}>Variant modifications (proxy path)</div>
+              <div className={`${SECTION_LABEL} mb-3`}>What the variant changes</div>
               {(() => {
-                const described = modifications.map(describeModification);
+                // Hide the cosmetic `.zybit-insert` styling companions — they're
+                // an implementation detail of how the inserted section is
+                // styled, not a distinct change the PM authored.
+                const visibleMods = modifications.filter(
+                  (m) =>
+                    !(m.type === "css-inject" && m.selector.startsWith(".zybit-insert")),
+                );
+                const described = visibleMods.map(describeModification);
                 const anyNoOp = described.some((d) => d.noOp);
                 const allNoOp = described.every((d) => d.noOp);
                 return (
@@ -233,7 +260,7 @@ export default async function ExperimentDetailPage({
                     )}
                     <div className="space-y-2">
                       {described.map((d, i) => {
-                        const mod = modifications[i];
+                        const mod = visibleMods[i];
                         return (
                           <div
                             key={i}

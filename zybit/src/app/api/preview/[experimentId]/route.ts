@@ -85,9 +85,15 @@ export async function GET(
   // just the host, and there's no TLS — so the standard `https://${domain}`
   // path won't resolve. Detect via the `lighthouse_site_<slug>` id convention
   // (from `lighthouse/lib/seeder/orgSite.ts`) and rewrite the origin URL.
-  const lighthouseSlug = experiment.siteId.startsWith('lighthouse_site_')
+  // `urlaudit-*` sites are real-domain audits (the public `/audit` funnel and
+  // `/demo`) that reuse the `lighthouse_site_*` id scheme — their pages live at
+  // the real domain, not at the Lighthouse dev server's `/fake-sites/<slug>/`
+  // path. Only genuine fake-site scenarios (manifest slugs) use that path.
+  const rawSlug = experiment.siteId.startsWith('lighthouse_site_')
     ? experiment.siteId.slice('lighthouse_site_'.length)
     : null;
+  const lighthouseSlug =
+    rawSlug !== null && !rawSlug.startsWith('urlaudit-') ? rawSlug : null;
   const originUrl = lighthouseSlug
     ? `http://${domain}/fake-sites/${lighthouseSlug}${targetPath}`
     : `https://${domain}${targetPath}`;

@@ -14,6 +14,7 @@ import { injectBridgeScript } from './bridgeScript';
 import { loadProxyConfig, type ProxyExperiment } from './config';
 import { logAssignment } from './assignmentLog';
 import { extractSlug } from './host';
+import { DEMO_SITE_ID } from '@/lib/demo/constants';
 
 export async function handleProxyRequest(
   req: NextRequest,
@@ -51,7 +52,7 @@ export async function handleProxyRequest(
   // preview can render both buckets without re-rolling visitor cookies.
   // Never trusted for real customer traffic.
   const forceParam = req.nextUrl.searchParams.get('_zb_force');
-  const isDemoSite = site.id === 'lighthouse_site_urlaudit-commitmint-app';
+  const isDemoSite = site.id === DEMO_SITE_ID;
   const forcedBucket: Bucket | null =
     isDemoSite && (forceParam === 'control' || forceParam === 'variant')
       ? forceParam

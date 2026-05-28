@@ -7,7 +7,7 @@ import { launchExperimentAction } from "@/app/app/findings/[id]/experiment/actio
 interface ExperimentBrief {
   experimentName: string;
   selector: string;
-  changeType: "copy" | "style" | "hide";
+  changeType: "copy" | "style" | "hide" | "insert";
   newValue: string;
   variantDescription: string;
   primaryMetric: string;
@@ -19,7 +19,14 @@ const CHANGE_TYPE_LABELS: Record<ExperimentBrief["changeType"], string> = {
   copy: "Change text copy",
   style: "Swap CSS classes",
   hide: "Hide element",
+  insert: "Add a section",
 };
+
+function valueLabelFor(changeType: ExperimentBrief["changeType"]): string {
+  if (changeType === "copy") return "Variant copy";
+  if (changeType === "insert") return "New section";
+  return "CSS classes";
+}
 
 function toBriefText(brief: ExperimentBrief): string {
   const lines = [
@@ -28,8 +35,7 @@ function toBriefText(brief: ExperimentBrief): string {
     `**Change:** ${CHANGE_TYPE_LABELS[brief.changeType]}`,
   ];
   if (brief.changeType !== "hide" && brief.newValue) {
-    const valueLabel = brief.changeType === "copy" ? "Variant copy" : "CSS classes";
-    lines.push(`**${valueLabel}:** ${brief.newValue}`);
+    lines.push(`**${valueLabelFor(brief.changeType)}:** ${brief.newValue}`);
   }
   lines.push(
     `**Variant B:** ${brief.variantDescription}`,
@@ -136,9 +142,9 @@ export default function ExperimentBriefCard({
 
         {brief.changeType !== "hide" && brief.newValue && (
           <BriefRow
-            label={brief.changeType === "copy" ? "Variant copy" : "CSS classes"}
+            label={valueLabelFor(brief.changeType)}
             value={brief.newValue}
-            mono={brief.changeType === "style"}
+            mono={brief.changeType === "style" || brief.changeType === "insert"}
           />
         )}
 

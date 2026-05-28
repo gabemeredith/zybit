@@ -17,7 +17,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { and, count, eq, like, sql } from 'drizzle-orm';
+import { and, count, eq, like, ne, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import {
   phase1Events,
@@ -27,6 +27,7 @@ import {
   zybitFindings,
 } from '@/lib/db/schema';
 import type { VariantModification } from '@/lib/experiments/types';
+import { formatCount, pct } from '@/lib/phase2/rules/helpers';
 import { runUrlAudit } from '../../../lighthouse/lib/runner/runUrlAudit';
 import { DirectEventSink } from '../../../lighthouse/lib/sinks/direct';
 import {
@@ -64,14 +65,28 @@ interface RuntimeStatus {
   error: string | null;
 }
 
-const STATUS: RuntimeStatus = {
-  stage: 'idle',
-  startedAt: null,
-  finishedAt: null,
-  error: null,
-};
+/**
+ * Seed status + in-flight guard are anchored on `globalThis` because Next
+ * compiles the `/demo` page and the `/api/demo/*` routes into separate
+ * module graphs — a plain module-level singleton gives each its own copy,
+ * so the page's `failed`/progress state would never reach the status
+ * endpoint the client polls. `globalThis` shares one copy per process.
+ * (Across cold serverless instances state still diverges; the durable
+ * `done` signal in `readSeedStatus` is DB-derived and stays correct there.)
+ */
+interface DemoSeedState {
+  status: RuntimeStatus;
+  inFlight: Promise<void> | null;
+}
 
-let inFlight: Promise<void> | null = null;
+const seedState: DemoSeedState = ((
+  globalThis as typeof globalThis & { __zybitDemoSeed?: DemoSeedState }
+).__zybitDemoSeed ??= {
+  status: { stage: 'idle', startedAt: null, finishedAt: null, error: null },
+  inFlight: null,
+});
+
+const STATUS = seedState.status;
 
 export function getSeedRuntimeStatus(): RuntimeStatus {
   return { ...STATUS };
@@ -99,8 +114,10 @@ export async function readSeedStatus(): Promise<SeedStatus> {
     .limit(1);
   const proxyWired = siteRows[0]?.proxySlug === DEMO_PROXY_SLUG;
 
+  // The curated demo stages a completed + a draft experiment (return-visit
+  // thrash is left un-experimented for the live launch), so 2 is fully seeded.
   const fullySeeded =
-    findingCount > 0 && experimentCount >= 3 && proxyWired;
+    findingCount > 0 && experimentCount >= 2 && proxyWired;
 
   return {
     stage: fullySeeded ? 'done' : STATUS.stage,
@@ -118,8 +135,8 @@ export async function readSeedStatus(): Promise<SeedStatus> {
  * same in-flight promise. Returns when the full seed is durable.
  */
 export async function seedDemo(opts: { force?: boolean } = {}): Promise<void> {
-  if (inFlight) return inFlight;
-  inFlight = (async () => {
+  if (seedState.inFlight) return seedState.inFlight;
+  seedState.inFlight = (async () => {
     STATUS.stage = 'audit-running';
     STATUS.startedAt = new Date().toISOString();
     STATUS.error = null;
@@ -160,6 +177,18 @@ export async function seedDemo(opts: { force?: boolean } = {}): Promise<void> {
       await sink.flush();
 
       STATUS.stage = 'wiring-proxy';
+      // `proxy_slug` is globally unique. Release it from any other row
+      // (e.g. a stale demo site from an earlier id scheme) before claiming
+      // it for the current demo site, so re-runs don't hit the unique index.
+      await db
+        .update(phase1Sites)
+        .set({ proxySlug: null })
+        .where(
+          and(
+            eq(phase1Sites.proxySlug, DEMO_PROXY_SLUG),
+            ne(phase1Sites.id, DEMO_SITE_ID),
+          ),
+        );
       await db
         .update(phase1Sites)
         .set({ proxySlug: DEMO_PROXY_SLUG })
@@ -190,6 +219,8 @@ export async function seedDemo(opts: { force?: boolean } = {}): Promise<void> {
 
       STATUS.stage = 'creating-experiments';
       await provisionDemoExperiments({ runningExperimentId });
+      await tuneDemoFlowDropoff();
+      await curateDemoThrashFinding();
 
       STATUS.stage = 'done';
       STATUS.finishedAt = new Date().toISOString();
@@ -199,10 +230,107 @@ export async function seedDemo(opts: { force?: boolean } = {}): Promise<void> {
       STATUS.finishedAt = new Date().toISOString();
       throw err;
     } finally {
-      inFlight = null;
+      seedState.inFlight = null;
     }
   })();
-  return inFlight;
+  return seedState.inFlight;
+}
+
+/**
+ * Fast reset of the curated demo layer, run on every `/demo` entry so each
+ * presentation starts from the same clean state. Re-provisions the three demo
+ * experiments (wiping any the presenter created) and re-applies the sign-up
+ * drop-off tune. Deliberately does NOT re-run the audit or re-insert the 14-day
+ * overlay — those are deterministic and the presenter can't mutate them, so
+ * skipping keeps the reset sub-second. Assumes the first-run seed already ran
+ * (findings + overlay + proxy in place); callers gate on `findingCount > 0`.
+ */
+export async function resetDemoCuratedState(): Promise<void> {
+  const runningExperimentId = `demo_exp_running_${DEMO_SITE_ID}`;
+  await provisionDemoExperiments({ runningExperimentId });
+  await tuneDemoFlowDropoff();
+  await curateDemoThrashFinding();
+}
+
+/**
+ * Curate the return-visit thrash finding for the demo: pin it as the open
+ * critical #1 (top of the backlog, which orders by `priorityScore desc`) and
+ * rewrite its copy in plain language with "homepage" instead of a bare "/".
+ * It's intentionally left un-experimented — it's the finding the presenter
+ * launches live during the demo, so its status must be `open` (an earlier
+ * completed-experiment association had flipped it to `shipped`).
+ */
+async function curateDemoThrashFinding(): Promise<void> {
+  const db = getDb();
+  await db
+    .update(zybitFindings)
+    .set({
+      status: 'open',
+      severity: 'critical',
+      priorityScore: 1,
+      summary:
+        '853 sessions came back to the homepage 3+ times without moving ' +
+        'forward. 61% get stuck in a loop — the page doesn’t surface what ' +
+        'they’re looking for.',
+      recommendation: [
+        'Visitors loop back because they leave, don’t find what they ' +
+          'expected, and return. Add a “Quick answer” section or anchor ' +
+          'links at the top of the homepage that point to what they keep ' +
+          'coming back for.',
+      ],
+      prescription: {
+        whatToChange:
+          'Add a “Quick answer” section at the top of the homepage that ' +
+          'surfaces the destinations returning visitors keep looking for, so ' +
+          'they find the answer on the first visit.',
+        whyItWorks:
+          '853 sessions hit the homepage 3+ times without progressing — 61% ' +
+          'of all sessions. They keep returning because they haven’t found ' +
+          'what they need. Surfacing the answer up front breaks the loop.',
+        experimentVariantDescription:
+          'Variant B adds a top-of-page quick-answer section to the homepage, ' +
+          'pointing visitors to what they keep returning for. Primary metric: ' +
+          'funnel progression from the homepage.',
+      },
+      // Pre-stage a ready-to-launch brief so the presenter can launch the
+      // experiment live in one click. The `zybit-insert` class pairs with the
+      // companion css-inject styling at launch (see `briefToModifications`) so
+      // the variant renders as a polished card, not raw markup.
+      experimentBrief: {
+        experimentName: 'Add a quick-answer section to the homepage',
+        selector: 'h1:nth-of-type(1)',
+        changeType: 'insert',
+        newValue:
+          '<section class="zybit-insert zybit-quick-answer">\n' +
+          '  <h2>Looking for something specific?</h2>\n' +
+          '  <p>Most visitors who keep coming back are trying to:</p>\n' +
+          '  <ul>\n' +
+          '    <li><a href="#how-it-works">See how staking on goals works</a></li>\n' +
+          '    <li><a href="#pricing">Check pricing &amp; fees</a></li>\n' +
+          '    <li><a href="#signup">Start your first commitment</a></li>\n' +
+          '  </ul>\n' +
+          '</section>',
+        variantDescription:
+          'Variant B adds a top-of-page quick-answer section to the homepage, ' +
+          'pointing returning visitors to the destinations they keep coming ' +
+          'back for.',
+        primaryMetric: 'conversion rate on the homepage',
+        hypothesis:
+          'Returning visitors loop because they can’t find what they came ' +
+          'for. Surfacing the top destinations at the top of the homepage ' +
+          'lets them progress on the first visit instead of bouncing and ' +
+          'coming back.',
+        insertPosition: 'before',
+        createdAt: new Date().toISOString(),
+      },
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(zybitFindings.siteId, DEMO_SITE_ID),
+        eq(zybitFindings.ruleId, 'return-visit-thrash'),
+      ),
+    );
 }
 
 async function wipeOverlayEvents(siteId: string): Promise<void> {
@@ -254,6 +382,7 @@ async function provisionDemoExperiments(args: {
   const topFindings = await db
     .select({
       id: zybitFindings.id,
+      ruleId: zybitFindings.ruleId,
       title: zybitFindings.title,
       pathRef: zybitFindings.pathRef,
       prescription: zybitFindings.prescription,
@@ -265,45 +394,54 @@ async function provisionDemoExperiments(args: {
 
   if (topFindings.length === 0) return;
 
-  const [primary, secondary, tertiary] = [topFindings[0], topFindings[1] ?? topFindings[0], topFindings[2] ?? topFindings[0]];
+  // Wipe any prior experiments for the demo site before re-provisioning — the
+  // curated trio from earlier seeds plus any the presenter created while
+  // clicking around the cockpit — so each seed yields exactly these three.
+  await db.delete(zybitExperiments).where(eq(zybitExperiments.siteId, DEMO_SITE_ID));
+
+  // Curate the demo narrative by rule rather than raw DB order:
+  //   - completed ("shipped") = the sign-up drop-off win,
+  //   - draft = the canonical-URL fix queued up.
+  // Return-visit thrash is deliberately left OUT of the experiments — it's the
+  // critical #1 finding (see `curateDemoThrashFinding`) the presenter
+  // launches live during the demo, so it must stay un-experimented on reset.
+  const byRule = (ruleId: string) => topFindings.find((f) => f.ruleId === ruleId);
+  const nonThrash = topFindings.filter((f) => f.ruleId !== 'return-visit-thrash');
+  const completed = byRule('flow-inter-step-dropoff') ?? nonThrash[0];
+  if (!completed) return;
+  const draft =
+    byRule('missing-canonical-url') ?? nonThrash.find((f) => f.id !== completed.id);
 
   const now = new Date();
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 86_400_000);
 
   const seedRows = [
     {
-      id: `demo_exp_draft_${DEMO_SITE_ID}`,
-      status: 'draft' as const,
-      finding: primary,
-      hypothesis: prescriptionHypothesis(primary, 'Variant proposes the AI-recommended change. Expecting +5–10% lift on primary CTA conversion.'),
-      modifications: extractMods(primary.fixModifications),
-      startedAt: null,
-      completedAt: null,
-      results: null,
-      notes: JSON.stringify({ name: shortExperimentName(primary, 'Sharpen primary CTA copy') }),
-    },
-    {
-      id: args.runningExperimentId,
-      status: 'running' as const,
-      finding: secondary,
-      hypothesis: prescriptionHypothesis(secondary, 'Variant addresses the friction surfaced by the audit. Tracking sign-up conversion vs control.'),
-      modifications: extractMods(secondary.fixModifications),
-      startedAt: new Date(now.getTime() - 6 * 86_400_000),
-      completedAt: null,
-      results: null,
-      notes: JSON.stringify({ name: shortExperimentName(secondary, 'Above-the-fold hierarchy fix') }),
-    },
-    {
       id: `demo_exp_completed_${DEMO_SITE_ID}`,
       status: 'completed' as const,
-      finding: tertiary,
-      hypothesis: prescriptionHypothesis(tertiary, 'Variant replaced the generic CTA copy with action-verb framing.'),
-      modifications: extractMods(tertiary.fixModifications),
+      finding: completed,
+      hypothesis: prescriptionHypothesis(completed, 'Variant addressed the sign-up drop-off the audit surfaced.'),
+      modifications: extractMods(completed.fixModifications),
       startedAt: fourteenDaysAgo,
       completedAt: new Date(now.getTime() - 2 * 86_400_000),
       results: DEMO_COMPLETED_RESULT,
-      notes: JSON.stringify({ name: shortExperimentName(tertiary, 'CTA verb alignment') }),
+      notes: JSON.stringify({ name: shortExperimentName(completed, 'Sign-up drop-off fix') }),
     },
+    ...(draft
+      ? [
+          {
+            id: `demo_exp_draft_${DEMO_SITE_ID}`,
+            status: 'draft' as const,
+            finding: draft,
+            hypothesis: prescriptionHypothesis(draft, 'Variant proposes the AI-recommended change.'),
+            modifications: extractMods(draft.fixModifications),
+            startedAt: null,
+            completedAt: null,
+            results: null as typeof DEMO_COMPLETED_RESULT | null,
+            notes: JSON.stringify({ name: shortExperimentName(draft, 'Queued fix') }),
+          },
+        ]
+      : []),
   ];
 
   for (const row of seedRows) {
@@ -340,6 +478,12 @@ async function provisionDemoExperiments(args: {
       .onConflictDoUpdate({
         target: zybitExperiments.id,
         set: {
+          // Re-map the curated fields too, so changing which finding fills a
+          // slot takes effect on re-seed instead of sticking to the first run.
+          findingId: row.finding.id,
+          hypothesis: row.hypothesis,
+          targetPath: row.finding.pathRef ?? '/',
+          notes: row.notes,
           status: row.status,
           modifications: row.modifications,
           startedAt: row.startedAt,
@@ -367,7 +511,7 @@ async function provisionDemoExperiments(args: {
           siteId: DEMO_SITE_ID,
           sessionId: `demo_assign_${bucket}_${i}`,
           type: 'experiment_assignment',
-          path: secondary.pathRef ?? '/',
+          path: completed.pathRef ?? '/',
           source: 'posthog' as const,
           sourceEventId: `demo_as_${args.runningExperimentId}_${bucket}_${i}`,
           occurredAt: new Date(now.getTime() - (i + 1) * 3_600_000),
@@ -376,6 +520,131 @@ async function provisionDemoExperiments(args: {
       ),
     )
     .onConflictDoNothing();
+}
+
+/**
+ * The grounded synthetic layer makes the last-crawled page a terminal node, so
+ * `flow-inter-step-dropoff` lands on `/signup` at a 100% exit rate — every
+ * arriving session "leaves" because nothing in the layer comes after it. That
+ * reads as obviously fake on the demo. Rewrite that one finding to a realistic
+ * exit rate (96 of 120 leave, 24 continue) by reconstructing the rule's own
+ * copy with the new numbers. Demo-scoped: only touches the `lighthouse_site_*`
+ * demo site, never the public `/audit` funnel. Idempotent — recomputes from the
+ * stored "Sessions reaching the step" count, which this patch leaves untouched.
+ */
+const DEMO_FLOW_EXIT_RATE = 0.8;
+
+interface FindingEvidence {
+  label: string;
+  value: string | number;
+  context?: string;
+}
+
+async function tuneDemoFlowDropoff(): Promise<void> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: zybitFindings.id,
+      pathRef: zybitFindings.pathRef,
+      severity: zybitFindings.severity,
+      evidence: zybitFindings.evidence,
+      prescription: zybitFindings.prescription,
+    })
+    .from(zybitFindings)
+    .where(
+      and(
+        eq(zybitFindings.siteId, DEMO_SITE_ID),
+        eq(zybitFindings.ruleId, 'flow-inter-step-dropoff'),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row || !row.pathRef) return;
+
+  const evidence = (row.evidence as FindingEvidence[] | null) ?? [];
+  const reachedEv = evidence.find((e) => e.label === 'Sessions reaching the step');
+  const inboundEv = evidence.find((e) => e.label === 'Top inbound path');
+  const sessions = Number(reachedEv?.value ?? 0);
+  if (!Number.isFinite(sessions) || sessions <= 0) return;
+
+  const route = row.pathRef;
+  const predecessor =
+    typeof inboundEv?.value === 'string' ? inboundEv.value.split('→')[0].trim() : null;
+  const exits = Math.round(sessions * DEMO_FLOW_EXIT_RATE);
+  const continued = sessions - exits;
+  const exitPct = pct(exits / sessions);
+
+  const summary =
+    `${formatCount(exits)} of ${formatCount(sessions)} sessions that reach ${route} ` +
+    `(${exitPct}%) leave the product there instead of continuing` +
+    `${predecessor ? `, most arriving from ${predecessor}` : ''}. ` +
+    `This is the single step in the flow losing the most users.`;
+
+  const recommendation = [
+    `${route} is a mid-flow step — users navigate to it${
+      predecessor ? ` (most from ${predecessor})` : ''
+    } rather than landing on it cold — yet ${exitPct}% of the sessions that ` +
+      `reach it end there. That is drop-off the page-level audit cannot see, ` +
+      `because the problem is the transition, not the page in isolation.`,
+    `Look at what this step asks of the user relative to the steps that retain ` +
+      `them: a form, a decision, a price, a dead end with no obvious next action. ` +
+      `Only ${formatCount(continued)} of the arriving sessions continued anywhere ` +
+      `in the product. Reducing the friction here compounds across every flow ` +
+      `that routes through it.`,
+  ];
+
+  const existingPrescription =
+    (row.prescription as {
+      whyItMatters?: string;
+      whyItWorks?: string;
+      experimentVariantDescription?: string;
+    } | null) ?? {};
+  const prescription = {
+    whyItWorks: existingPrescription.whyItWorks ?? '',
+    experimentVariantDescription: existingPrescription.experimentVariantDescription ?? '',
+    ...(existingPrescription.whyItMatters
+      ? { whyItMatters: existingPrescription.whyItMatters }
+      : {}),
+    whatToChange:
+      `Reduce drop-off at ${route} — the mid-flow step ${exitPct}% of ` +
+      `arriving sessions abandon. Give it one unambiguous next action and ` +
+      `remove anything that competes with it.`,
+  };
+
+  const nextEvidence: FindingEvidence[] = evidence.map((e) => {
+    if (e.label === 'Sessions that left here') return { ...e, value: exits };
+    if (e.label === 'Continued past the step') return { ...e, value: continued };
+    if (e.label === 'Exit rate') return { ...e, value: `${exitPct}%` };
+    return e;
+  });
+
+  const snapshotDiagram = {
+    type: 'flow-funnel' as const,
+    pathRef: route,
+    funnelSteps: [
+      ...(predecessor && inboundEv
+        ? [{ label: `Arrived from ${predecessor}`, value: sessions }]
+        : []),
+      { label: `Reached ${route}`, value: sessions, isFlagged: true },
+      { label: 'Continued in the product', value: continued },
+    ],
+    proposedFix:
+      `Give ${route} one clear next action so the ${exitPct}% who ` +
+      `abandon it continue through the flow instead.`,
+  };
+
+  await db
+    .update(zybitFindings)
+    .set({
+      summary,
+      recommendation,
+      prescription,
+      evidence: nextEvidence,
+      snapshotDiagram,
+      severity: exits / sessions >= 0.75 ? 'critical' : 'warn',
+      updatedAt: new Date(),
+    })
+    .where(eq(zybitFindings.id, row.id));
 }
 
 function prescriptionHypothesis(
