@@ -37,5 +37,14 @@ export interface FixPreview {
 export interface FixPreviewOutcome {
   findingId: string;
   preview: FixPreview | null;
-  reason: 'ok' | 'no-html' | 'no-mods' | 'render-failed' | 'inpaint-failed' | 'tier3-fallback' | 'rule-skipped';
+  reason:
+    | 'ok'
+    | 'no-html'
+    | 'no-mods'
+    | 'render-failed'
+    | 'inpaint-failed'
+    | 'tier3-fallback'
+    | 'rule-skipped'
+    /** The before render was login-gated / blank / loading / broken, per the Gemini quality gate. */
+    | 'screenshot-unusable';
 }
