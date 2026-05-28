@@ -42,6 +42,7 @@ function makeDeps(overrides: Partial<FixPreviewDeps> = {}): FixPreviewDeps {
       afterUrl: 'https://blob/after-inpaint.png',
       rationale: 'AI-edited the hero.',
     })),
+    assessScreenshotQuality: vi.fn(async () => ({ render: true, issue: 'ok' as const })),
     lookupDomain: vi.fn(async () => 'example.com'),
     lookupDesign: vi.fn(async () => ({ designTokens: { primaryColor: '#1A73E8' }, cssSystem: 'tailwind' })),
     lookupCtaVocabulary: vi.fn(async () => ['Get started', 'Book a demo']),
@@ -221,6 +222,30 @@ describe('generateFixPreviews — tier ladder', () => {
     expect(deps.suggestAuditFix).not.toHaveBeenCalled();
     expect(deps.renderBeforeAfter).not.toHaveBeenCalled();
     expect(deps.inpaintFixAfter).not.toHaveBeenCalled();
+  });
+
+  it('screenshot-unusable: quality gate rejects the before render → skip without advisor or inpaint', async () => {
+    const deps = makeDeps({
+      assessScreenshotQuality: vi.fn(async () => ({ render: false, issue: 'login_gated' as const })),
+    });
+    const [outcome] = await generateFixPreviews(
+      {
+        organizationId: 'org_1',
+        siteId: 'site_1',
+        auditUrl: 'https://example.com',
+        findings: [FINDING],
+      },
+      deps,
+    );
+    expect(outcome.preview).toBeNull();
+    expect(outcome.reason).toBe('screenshot-unusable');
+    // Before render runs (it's the gate's input), but nothing downstream does.
+    expect(deps.renderBeforeOnly).toHaveBeenCalledTimes(1);
+    expect(deps.assessScreenshotQuality).toHaveBeenCalledTimes(1);
+    expect(deps.suggestAuditFix).not.toHaveBeenCalled();
+    expect(deps.renderBeforeAfter).not.toHaveBeenCalled();
+    expect(deps.inpaintFixAfter).not.toHaveBeenCalled();
+    expect(deps.persist).not.toHaveBeenCalled();
   });
 
   it('caps at maxFindings', async () => {
