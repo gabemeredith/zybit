@@ -407,7 +407,7 @@ function AuditStatusPageInner() {
             <Dots />
           </h1>
           <p style={{ margin: '0 0 16px', fontSize: 15, lineHeight: 1.6, color: INK }}>
-            We&rsquo;re crawling your pages and running the {PUBLIC_AUDIT_RULE_COUNT} friction rules now.
+            We&rsquo;re crawling your pages and running the {PUBLIC_AUDIT_RULE_COUNT}{' '}friction rules now.
             This takes 45&ndash;90 seconds. The full report will arrive in your inbox
             as soon as it&rsquo;s done.
           </p>

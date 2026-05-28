@@ -194,7 +194,7 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
             <span className="md:block">fixes on your site.</span>
           </h2>
           <p className="sans-text mb-0 mx-auto text-sm text-[#6B6B6B] md:text-lg leading-relaxed">
-            Submit your URL and a work email. Zybit crawls the site, runs {PUBLIC_AUDIT_RULE_COUNT} friction rules, and emails the report &mdash; ranked findings with evidence and what to change.
+            Submit your URL and a work email. Zybit crawls the site, runs {PUBLIC_AUDIT_RULE_COUNT}{' '}friction rules, and emails the report &mdash; ranked findings with evidence and what to change.
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-4 mt-8 pointer-events-auto">
