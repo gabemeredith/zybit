@@ -140,12 +140,9 @@ export const navDispersion: AuditRule = {
     ];
 
     const topFour = ordered.slice(0, 4).map((e) => quote(e[0])).join(', ');
-    const bottomDestinations = ordered.slice(4).map((e) => quote(e[0])).join(', ');
 
     const prescription = {
-      whatToChange:
-        `Reduce the top-level navigation to 4 entries: ${topFour}. ` +
-        `Move ${demoteCount > 0 ? `${bottomDestinations || 'the remaining items'}` : 'lower-traffic items'} to a secondary dropdown, footer, or contextual surface.`,
+      whatToChange: `Reduce the top nav to 4 entries: ${topFour}.`,
       whyItWorks:
         `Navigation with Gini ${round(giniValue, 3)} means clicks are spread almost uniformly across ${distinctDests} items — ` +
         `visitors have no clear signal about where to start. Reducing to 4 items creates visual hierarchy and guides intent.`,

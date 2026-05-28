@@ -116,6 +116,11 @@ const SKIP_FIX_PREVIEW_RULE_IDS = new Set<string>([
   'missing-canonical-url',
   'form-label-missing',
   'image-alt-text-missing',
+  // nav-dispersion's fix is an information-architecture change (collapse the
+  // top nav to 4 entries, demote the rest). There's no single-page CSS edit
+  // that renders a meaningful before/after, so a screenshot pair would be
+  // visually identical or misleading.
+  'nav-dispersion',
 ]);
 
 export async function generateFixPreviews(
