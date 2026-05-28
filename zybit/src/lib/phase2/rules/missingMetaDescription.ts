@@ -12,7 +12,11 @@
 import type { AuditFinding, AuditRule, AuditRuleContext } from './types';
 import { pageTypeFromSnapshot, pageTypeModulation } from './pageTypeModulation';
 
-const MIN_DESCRIPTION_LENGTH = 50;
+// Below 40 characters a description rarely communicates enough to earn a
+// click. The old 50-char floor triggered on descriptions that were
+// marginally short (49 chars) with no real SEO impact — pedantic for
+// a prospect-facing audit report.
+const MIN_DESCRIPTION_LENGTH = 40;
 
 export const missingMetaDescription: AuditRule = {
   id: 'missing-meta-description',
@@ -55,7 +59,7 @@ export const missingMetaDescription: AuditRule = {
           : `Meta description too short on ${snapshot.pathRef}`,
         summary: isMissing
           ? `${snapshot.pathRef} has no <meta name="description">. Search engines will generate a snippet from arbitrary body copy, which typically underperforms a curated description by 5–30% CTR.`
-          : `The meta description on ${snapshot.pathRef} is only ${desc!.trim().length} characters. Most search engines truncate at 155–160 characters; descriptions under 50 characters rarely communicate enough to earn a click.`,
+          : `The meta description on ${snapshot.pathRef} is only ${desc!.trim().length} characters. Most search engines truncate at 155–160 characters; descriptions under 40 characters rarely communicate enough to earn a click.`,
         recommendation: [
           isMissing
             ? `Add a <meta name="description"> tag to ${snapshot.pathRef} that summarises the page value in 120–155 characters.`

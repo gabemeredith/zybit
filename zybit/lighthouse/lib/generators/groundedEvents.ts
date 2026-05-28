@@ -74,6 +74,21 @@ function isNavCta(cta: CtaCandidate): boolean {
   return NAV_LANDMARKS.has(cta.landmark) && cta.text.trim().length > 0;
 }
 
+// Matches the dead-link patterns in deadClickTarget.ts. Dead links (href="#",
+// javascript:void(0), empty) must not receive synthetic click pressure —
+// they're not real conversion CTAs, and a cookie-consent or footer link that
+// happens to appear first in the DOM would otherwise win the topmost-CTA slot
+// and produce a nonsense hero-hierarchy-inversion finding.
+function isDeadLink(cta: CtaCandidate): boolean {
+  if (cta.tag !== 'a') return false;
+  const href = cta.href;
+  if (href === null) return true;
+  if (/^\s*$/.test(href)) return true;
+  if (/^#!?\s*$/.test(href)) return true;
+  if (/^javascript:\s*(?:void\s*(?:\(\s*0?\s*\)|0)\s*)?;?\s*$/i.test(href)) return true;
+  return false;
+}
+
 /**
  * Build a deterministic, page-grounded event layer. Returns canonical event
  * inputs ready to push straight into an `EventSink`.
@@ -93,7 +108,7 @@ export function generateGroundedEvents(
     const rng = seededRng(`grounded|${siteId}|${pathRef}`);
     const pageSlug = sanitize(pathRef);
 
-    const contentCtas = data.ctas.filter((c) => !c.disabled && !isNavCta(c));
+    const contentCtas = data.ctas.filter((c) => !c.disabled && !isNavCta(c) && !isDeadLink(c));
     const navCtas = data.ctas.filter((c) => !c.disabled && isNavCta(c));
 
     // Topmost-CTA click pressure: weight ∝ 1/(documentIndex+1).

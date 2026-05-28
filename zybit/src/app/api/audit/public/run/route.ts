@@ -108,7 +108,17 @@ async function collectBrandDna(args: {
     if (data) {
       cssSystemFromSnapshot = (data.cssSystem ?? null) as string | null;
       const candidates = (data.ctas ?? [])
-        .filter((c) => c.landmark !== 'nav' && c.landmark !== 'header')
+        .filter((c) => {
+          if (c.landmark === 'nav' || c.landmark === 'header') return false;
+          // Dead links (href="#", javascript:void(0), empty href) are not
+          // real conversion CTAs — exclude from brand-DNA vocabulary so
+          // cookie-consent placeholders don't appear as "conversion copy".
+          if (c.tag === 'a') {
+            const h = c.href ?? '';
+            if (!h || /^#!?\s*$/.test(h) || /^javascript:/i.test(h)) return false;
+          }
+          return true;
+        })
         .slice()
         // Rank by visualWeight so a hero "Start now" beats a footer link.
         .sort((a, b) => (b.visualWeight ?? 0) - (a.visualWeight ?? 0));
