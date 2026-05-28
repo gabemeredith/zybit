@@ -112,9 +112,12 @@ function briefToModifications(
     // scoped to that class so the section renders as a styled card. Gated on
     // the class being present, so a custom insert without it is untouched.
     if (/\bzybit-insert\b/.test(newValue)) {
+      // Force dark text on the white card — the host page may set a light body
+      // color (commitmint's hero is dark-themed), which the inserted markup
+      // would otherwise inherit and render invisible on white.
       mods.push(
-        { type: "css-inject", selector: ".zybit-insert", css: "background:#fff;border:1px solid rgba(0,0,0,0.08);border-radius:16px;padding:20px 24px;margin:0 0 24px 0" },
-        { type: "css-inject", selector: ".zybit-insert h2", css: "margin:0 0 8px 0;font-size:18px;font-weight:700;line-height:1.3" },
+        { type: "css-inject", selector: ".zybit-insert", css: "background:#fff;color:#111;border:1px solid rgba(0,0,0,0.08);border-radius:16px;padding:20px 24px;margin:0 0 24px 0" },
+        { type: "css-inject", selector: ".zybit-insert h2", css: "margin:0 0 8px 0;color:#111;font-size:18px;font-weight:700;line-height:1.3" },
         { type: "css-inject", selector: ".zybit-insert p", css: "margin:0 0 12px 0;color:#555;font-size:14px;line-height:1.5" },
         { type: "css-inject", selector: ".zybit-insert li", css: "margin:6px 0" },
         { type: "css-inject", selector: ".zybit-insert a", css: "color:#4A2EAA;font-weight:600;text-decoration:none" },

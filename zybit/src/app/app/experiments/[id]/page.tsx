@@ -7,6 +7,7 @@ import { getServerAuth } from "@/lib/auth/serverAuth";
 import { getDb } from "@/lib/db/client";
 import { phase1Sites, zybitExperiments, zybitFindings } from "@/lib/db/schema";
 import ExperimentControls from "@/components/app/ExperimentControls";
+import ExperimentScreenshotPreview from "@/components/app/ExperimentScreenshotPreview";
 import type { VariantModification } from "@/lib/experiments/types";
 import { describeModification } from "@/lib/experiments/describeModification";
 
@@ -294,33 +295,10 @@ export default async function ExperimentDetailPage({
                 );
               })()}
 
-              {/* Side-by-side preview iframes — control left, variant right */}
-              <div className="mt-4">
-                <div className={`${SECTION_LABEL} mb-2`}>Preview</div>
-                <div className="grid grid-cols-2 gap-3">
-                  {(["control", "variant"] as const).map((bucket) => (
-                    <div key={bucket}>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-[#9B9B9B] mb-1.5">
-                        {bucket}
-                      </p>
-                      <div className="rounded-xl overflow-hidden border border-black/[0.07] bg-[#F5F5F3]"
-                           style={{ height: 360 }}>
-                        <iframe
-                          src={`/api/preview/${id}?bucket=${bucket}`}
-                          className="w-full h-full border-0"
-                          title={`${bucket} preview`}
-                          sandbox="allow-scripts allow-same-origin"
-                          loading="lazy"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-[#9B9B9B] mt-2">
-                  Preview fetches the live page — SPA-rendered content will not reflect modifications until
-                  the Browserless integration is complete.
-                </p>
-              </div>
+              {/* Before/after screenshots rendered via Browserless (scripts
+                  stripped, so the variant survives on SPA pages — unlike the
+                  old live-iframe preview). */}
+              <ExperimentScreenshotPreview experimentId={id} />
             </div>
           )}
         </div>
