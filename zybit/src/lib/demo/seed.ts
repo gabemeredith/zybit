@@ -28,6 +28,7 @@ import {
 } from '@/lib/db/schema';
 import type { VariantModification } from '@/lib/experiments/types';
 import { formatCount, pct } from '@/lib/phase2/rules/helpers';
+import { generateFixPreviews } from '@/lib/audit/fixPreview/generateFixPreviews';
 import { runUrlAudit } from '../../../lighthouse/lib/runner/runUrlAudit';
 import { DirectEventSink } from '../../../lighthouse/lib/sinks/direct';
 import {
@@ -331,6 +332,64 @@ async function curateDemoThrashFinding(): Promise<void> {
         eq(zybitFindings.ruleId, 'return-visit-thrash'),
       ),
     );
+
+  await ensureDemoThrashFixPreview();
+}
+
+/**
+ * Generate the brand-matched fix-preview (Gemini vision advisor → Browserless
+ * before/after) for the thrash finding once and cache it on the row. The launch
+ * path reuses these `fixModifications` + screenshots so the demo experiment
+ * preview is on-brand and instant. Idempotent (skips when already present) and
+ * fail-soft — if generation is disabled or errors, the launch falls back to the
+ * theme-adaptive scaffold card.
+ */
+async function ensureDemoThrashFixPreview(): Promise<void> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: zybitFindings.id,
+      ruleId: zybitFindings.ruleId,
+      title: zybitFindings.title,
+      pathRef: zybitFindings.pathRef,
+      prescription: zybitFindings.prescription,
+      fixModifications: zybitFindings.fixModifications,
+    })
+    .from(zybitFindings)
+    .where(
+      and(
+        eq(zybitFindings.siteId, DEMO_SITE_ID),
+        eq(zybitFindings.ruleId, 'return-visit-thrash'),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return;
+  if (Array.isArray(row.fixModifications) && row.fixModifications.length > 0) return;
+
+  try {
+    await generateFixPreviews({
+      organizationId: DEMO_ORG_ID,
+      siteId: DEMO_SITE_ID,
+      auditUrl: DEMO_TARGET_URL,
+      findings: [
+        {
+          id: row.id,
+          ruleId: row.ruleId,
+          title: row.title,
+          pathRef: row.pathRef,
+          prescription: row.prescription as {
+            whatToChange: string;
+            whyItWorks: string;
+            experimentVariantDescription: string;
+          } | null,
+        },
+      ],
+      maxFindings: 1,
+    });
+  } catch (err) {
+    console.error('[demo] thrash fix-preview generation failed (non-fatal)', err);
+  }
 }
 
 async function wipeOverlayEvents(siteId: string): Promise<void> {

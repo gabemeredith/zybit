@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db/client";
 import { phase1Sites, zybitExperiments, zybitFindings } from "@/lib/db/schema";
 import type { VariantModification, InsertPosition } from "@/lib/experiments/types";
 import { targetPageIsSpaShell } from "@/lib/experiments/spaGuard";
+import { DEMO_ORG_ID } from "@/lib/demo/constants";
 import {
   validateBriefShape,
   INSERT_POSITIONS,
@@ -249,6 +250,31 @@ export async function launchExperimentAction(
   const now = new Date();
   const experimentId = randomUUID();
 
+  // Demo polish: when the audit fix-preview already produced a brand-matched,
+  // vision-validated variant (`fixModifications`) for this finding, launch with
+  // THAT instead of the brief scaffold, and reuse its cached before/after
+  // screenshots so the experiment preview is instant + on-brand. Scoped to the
+  // demo org so real customers' launches stay driven by the brief they authored.
+  const fixMods =
+    auth.orgId === DEMO_ORG_ID && Array.isArray(finding.fixModifications)
+      ? (finding.fixModifications as VariantModification[])
+      : [];
+  const useFix = fixMods.length > 0;
+  const fixInsert = fixMods.find((m) => m.type === "element-insert");
+
+  const notes: Record<string, unknown> = {
+    name: brief.experimentName,
+    // Surface the variant that actually launches in the Configuration panel.
+    selector: useFix && fixInsert ? fixInsert.selector : brief.selector,
+    changeType: useFix && fixInsert ? "insert" : brief.changeType,
+    newValue: useFix && fixInsert ? fixInsert.html : brief.newValue,
+    insertPosition: useFix && fixInsert ? fixInsert.position : brief.insertPosition ?? null,
+  };
+  if (useFix && finding.screenshotBeforeUrl && finding.screenshotAfterUrl) {
+    notes.screenshotBeforeUrl = finding.screenshotBeforeUrl;
+    notes.screenshotAfterUrl = finding.screenshotAfterUrl;
+  }
+
   await db.insert(zybitExperiments).values({
     id: experimentId,
     organizationId: auth.orgId,
@@ -261,21 +287,16 @@ export async function launchExperimentAction(
     durationDays: 14,
     status: "running",
     targetPath: finding.pathRef ?? null,
-    modifications: briefToModifications(
-      brief.changeType,
-      brief.selector,
-      brief.newValue,
-      brief.insertPosition ?? undefined,
-    ),
+    modifications: useFix
+      ? fixMods
+      : briefToModifications(
+          brief.changeType,
+          brief.selector,
+          brief.newValue,
+          brief.insertPosition ?? undefined,
+        ),
     overlappingExperimentIds: runningOnSite.length > 0 ? runningOnSite.map((e) => e.id) : null,
-    // Store original brief fields so the client-side manifest can serve them directly
-    notes: JSON.stringify({
-      name: brief.experimentName,
-      selector: brief.selector,
-      changeType: brief.changeType,
-      newValue: brief.newValue,
-      insertPosition: brief.insertPosition ?? null,
-    }),
+    notes: JSON.stringify(notes),
     startedAt: now,
     createdAt: now,
     updatedAt: now,

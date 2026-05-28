@@ -240,12 +240,13 @@ export default async function ExperimentDetailPage({
             <div className="mt-5 pt-5 border-t border-black/[0.04]">
               <div className={`${SECTION_LABEL} mb-3`}>What the variant changes</div>
               {(() => {
-                // Hide the cosmetic `.zybit-insert` styling companions — they're
-                // an implementation detail of how the inserted section is
-                // styled, not a distinct change the PM authored.
+                // Hide the cosmetic css-inject companions that style an inserted
+                // section — they're an implementation detail of how the new
+                // block looks, not a distinct change the PM authored. (Pure
+                // "style" experiments with no insert still show their css.)
+                const hasInsert = modifications.some((m) => m.type === "element-insert");
                 const visibleMods = modifications.filter(
-                  (m) =>
-                    !(m.type === "css-inject" && m.selector.startsWith(".zybit-insert")),
+                  (m) => !(hasInsert && m.type === "css-inject"),
                 );
                 const described = visibleMods.map(describeModification);
                 const anyNoOp = described.some((d) => d.noOp);
