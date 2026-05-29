@@ -16,11 +16,13 @@
  *     claimed, a second launch is blocked and the caller shows the upgrade
  *     moment.
  *
- * NOT YET WIRED: the launch path does not call this yet, and nothing sets
- * `freeExperimentUsedAt`. Wiring (the launch-time check + the atomic claim) is
- * the follow-up, pending confirmation of how "paid" is detected — see
- * `hasActiveSubscription` below.
+ * Paid is detected by the presence of a Stripe subscription
+ * (`organizations.stripe_subscription_id`); see `loadFreeExperimentGate`.
  */
+
+import { and, eq, isNull } from 'drizzle-orm';
+import { getDb } from '@/lib/db/client';
+import { organizations } from '@/lib/db/schema';
 
 export interface FreeExperimentGateInput {
   /**
@@ -55,4 +57,46 @@ export function checkFreeExperimentGate(
     return { allowed: true, reason: 'free-slot-available' };
   }
   return { allowed: false, reason: 'free-slot-used' };
+}
+
+/**
+ * Read an org's payment + free-slot state and evaluate the gate. "Paid" = the
+ * org has a Stripe subscription id (written by the billing webhook). A missing
+ * org row fails open to unpaid/available so a data glitch never hard-blocks a
+ * launch. No side effects — call before claiming.
+ */
+export async function loadFreeExperimentGate(
+  orgId: string,
+): Promise<FreeExperimentGateResult> {
+  const db = getDb();
+  const [org] = await db
+    .select({
+      stripeSubscriptionId: organizations.stripeSubscriptionId,
+      freeExperimentUsedAt: organizations.freeExperimentUsedAt,
+    })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .limit(1);
+
+  return checkFreeExperimentGate({
+    hasActiveSubscription: Boolean(org?.stripeSubscriptionId),
+    freeExperimentUsedAt: org?.freeExperimentUsedAt ?? null,
+  });
+}
+
+/**
+ * Atomically claim the org's single free-experiment slot. Returns true iff THIS
+ * call won the claim. The `IS NULL` guard makes concurrent launches race-safe:
+ * only the first UPDATE flips the column; the rest match 0 rows and return
+ * false. Only call for an unpaid org whose gate reason is 'free-slot-available'
+ * — a paid org must never have its slot consumed.
+ */
+export async function claimFreeExperimentSlot(orgId: string, at: Date): Promise<boolean> {
+  const db = getDb();
+  const claimed = await db
+    .update(organizations)
+    .set({ freeExperimentUsedAt: at })
+    .where(and(eq(organizations.id, orgId), isNull(organizations.freeExperimentUsedAt)))
+    .returning({ id: organizations.id });
+  return claimed.length > 0;
 }

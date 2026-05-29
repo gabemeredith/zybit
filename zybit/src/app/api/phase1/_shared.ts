@@ -76,6 +76,19 @@ export function planLimitExceeded(
   );
 }
 
+export function freeExperimentUsed(): NextResponse<ApiEnvelope<never>> {
+  return NextResponse.json(
+    {
+      success: false,
+      error: {
+        code: 'FREE_EXPERIMENT_USED',
+        message: 'Your free experiment has been used. Upgrade to launch more.',
+      },
+    },
+    { status: 402 }
+  );
+}
+
 export function serverError(message = 'Internal server error.'): NextResponse<ApiEnvelope<never>> {
   return NextResponse.json(
     {

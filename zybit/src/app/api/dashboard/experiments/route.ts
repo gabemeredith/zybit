@@ -7,13 +7,15 @@
 
 import { randomUUID } from 'crypto';
 import { and, desc, eq } from 'drizzle-orm';
-import { badRequest, mapRouteError, parseJsonObject, parseString, planLimitExceeded, success } from '@/app/api/phase1/_shared';
+import { badRequest, freeExperimentUsed, mapRouteError, parseJsonObject, parseString, planLimitExceeded, success } from '@/app/api/phase1/_shared';
 import { checkPlanLimit } from '@/lib/billing/checkPlanLimit';
+import { loadFreeExperimentGate, claimFreeExperimentSlot } from '@/lib/billing/freeExperimentGate';
 import { resolveZybitActor } from '@/lib/auth/actor';
 import { getDb } from '@/lib/db/client';
 import { zybitExperiments, zybitFindings } from '@/lib/db/schema';
 import { assertSiteInOrganization } from '@/lib/auth/tenantScope';
 import { createPhase1Repository } from '@/lib/phase1';
+import { DEMO_ORG_ID } from '@/lib/demo/constants';
 import type { VariantModification } from '@/lib/experiments/types';
 import { validateModifications } from '@/lib/experiments/types';
 
@@ -125,10 +127,24 @@ export async function POST(request: Request) {
     const now = new Date();
     const startNow = body.startImmediately === true;
 
-    // Concurrent-experiment plan limit only applies to experiments that
-    // start running immediately; drafts don't consume a running slot.
+    // Gating only applies to experiments that start running immediately;
+    // drafts don't consume a slot.
     if (startNow) {
-      const limit = await checkPlanLimit(actorResult.actor.organizationId, 'experiments');
+      const orgId = actorResult.actor.organizationId;
+
+      // Free-experiment gate (§6): an unpaid org gets exactly one experiment,
+      // then must upgrade. Checked + claimed before the insert so two
+      // concurrent launches can't both consume the single free slot. The demo
+      // org is exempt — it stages several experiments by design.
+      if (orgId !== DEMO_ORG_ID) {
+        const gate = await loadFreeExperimentGate(orgId);
+        if (!gate.allowed) return freeExperimentUsed();
+        if (gate.reason === 'free-slot-available' && !(await claimFreeExperimentSlot(orgId, now))) {
+          return freeExperimentUsed();
+        }
+      }
+
+      const limit = await checkPlanLimit(orgId, 'experiments');
       if (!limit.allowed) {
         return planLimitExceeded('concurrent experiments', limit);
       }
