@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import { accessRequests, appUsers } from '@/lib/db/schema';
@@ -9,6 +9,7 @@ import {
   OAUTH_STATE_COOKIE,
 } from '@/lib/auth/google';
 import { createSession, sessionCookieOptions } from '@/lib/auth/session';
+import { Resend } from 'resend';
 
 export const runtime = 'nodejs';
 
@@ -114,6 +115,19 @@ export async function GET(request: NextRequest) {
     sameSite: sessionCookieOptions.sameSite,
     path: sessionCookieOptions.path,
     maxAge: sessionCookieOptions.maxAge,
+  });
+  after(async () => {
+    const key = process.env.RESEND_API_KEY;
+    const to = process.env.INTAKE_NOTIFY_EMAIL ?? 'asad@getzybit.com';
+    if (!key) return;
+    try {
+      await new Resend(key).emails.send({
+        from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@mail.getzybit.com>',
+        to,
+        subject: `[Zybit] Google login — ${info.email}`,
+        html: `<p style="font-family:sans-serif;font-size:15px"><strong>${info.email}</strong> just signed in via Google.</p>`,
+      });
+    } catch { /* best-effort */ }
   });
   return clearState(response);
 }
