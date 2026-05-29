@@ -1,10 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import { appUsers } from '@/lib/db/schema';
 import { hashPassword, isAcceptablePassword } from '@/lib/auth/password';
 import { verifySetPasswordToken } from '@/lib/auth/setPasswordToken';
 import { createSession, sessionCookieOptions } from '@/lib/auth/session';
+import { Resend } from 'resend';
 
 // node:crypto (scrypt) + drizzle require the Node runtime.
 export const runtime = 'nodejs';
@@ -73,6 +74,21 @@ export async function POST(request: Request) {
     .update(appUsers)
     .set({ passwordHash: await hashPassword(password), authProvider: 'password' })
     .where(eq(appUsers.id, user.id));
+
+  // Notify founder — fire-and-forget after response is sent.
+  after(async () => {
+    const key = process.env.RESEND_API_KEY;
+    const to = process.env.INTAKE_NOTIFY_EMAIL ?? 'asad@getzybit.com';
+    if (!key) return;
+    try {
+      await new Resend(key).emails.send({
+        from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@mail.getzybit.com>',
+        to,
+        subject: `[Zybit] New signup — ${email}`,
+        html: `<p style="font-family:sans-serif;font-size:15px"><strong>${email}</strong> just set their password and signed up.</p>`,
+      });
+    } catch { /* best-effort */ }
+  });
 
   // Sign them straight in — first password set should land in /app, not bounce
   // back to a login screen.

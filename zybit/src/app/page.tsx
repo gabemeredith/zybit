@@ -101,8 +101,8 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
             {/* Left: product screenshot in browser frame — desktop only */}
             <div className="hidden lg:block w-full lg:flex-1">
               <div
-                className="border-2 border-[#111] overflow-hidden"
-                style={{ boxShadow: '8px 8px 0px #111' }}
+                className="border-2 border-[#111]/50 overflow-hidden"
+                style={{ boxShadow: '8px 8px 0px rgba(17,17,17,0.35)', borderRadius: '2px' }}
               >
                 <div className="bg-[#111] flex items-center gap-1.5 px-4 py-2.5">
                   <div className="w-2 h-2 rounded-full bg-[#3a3a3a]" />
@@ -185,7 +185,12 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
           A single solid backdrop (instead of per-element chiclets) so the type
           breathes against the particle field. */}
       <section className="h-screen w-full flex flex-col items-center justify-center text-center px-6">
-        <div className="w-full max-w-2xl bg-[#FAFAF8] px-6 py-8 md:px-8 md:py-10 pointer-events-none">
+        <div
+          className="w-full max-w-2xl px-6 py-8 md:px-8 md:py-10 pointer-events-none"
+          style={{
+            background: 'radial-gradient(ellipse at center, rgba(250,250,248,0.92) 30%, rgba(250,250,248,0.55) 70%, transparent 100%)',
+          }}
+        >
           <div className="sans-text text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-5">
             Closed rollout · onboarded 1:1
           </div>

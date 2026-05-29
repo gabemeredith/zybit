@@ -1,10 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 import { accessRequests, appUsers } from '@/lib/db/schema';
 import { verifyPassword } from '@/lib/auth/password';
 import { createSession, sessionCookieOptions } from '@/lib/auth/session';
 import { checkAuthRateLimit, LOGIN_EMAIL_LIMIT } from '@/lib/auth/rateLimit';
+import { Resend } from 'resend';
 
 // node:crypto (scrypt) + drizzle require the Node runtime.
 export const runtime = 'nodejs';
@@ -76,6 +77,20 @@ export async function POST(request: Request) {
         sameSite: sessionCookieOptions.sameSite,
         path: sessionCookieOptions.path,
         maxAge: sessionCookieOptions.maxAge,
+      });
+      // Notify founder — fire-and-forget after response is sent.
+      after(async () => {
+        const key = process.env.RESEND_API_KEY;
+        const to = process.env.INTAKE_NOTIFY_EMAIL ?? 'asad@getzybit.com';
+        if (!key) return;
+        try {
+          await new Resend(key).emails.send({
+            from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@mail.getzybit.com>',
+            to,
+            subject: `[Zybit] Login — ${email}`,
+            html: `<p style="font-family:sans-serif;font-size:15px"><strong>${email}</strong> just signed in.</p>`,
+          });
+        } catch { /* best-effort */ }
       });
       return response;
     }
