@@ -11,6 +11,7 @@ import type { LayerBRunTelemetry } from '../orchestrator';
 import { runJudge, type JudgeOpts, type JudgeProse } from './judge';
 
 export interface EvalFinding {
+  findingId: string;
   ruleId: string;
   pathRef: string | null;
   winner: 'llm' | 'template' | 'tie';
@@ -52,7 +53,7 @@ export async function runEval(
     pairs.map(async (f): Promise<EvalFinding> => {
       const template = proseOf(f.prose.template);
       const llm = proseOf(f.prose.llm!);
-      const base = { ruleId: f.ruleId, pathRef: f.pathRef };
+      const base = { findingId: f.findingId, ruleId: f.ruleId, pathRef: f.pathRef };
 
       // Order 1: A=template, B=llm. Order 2: A=llm, B=template.
       const [v1, v2] = await Promise.all([

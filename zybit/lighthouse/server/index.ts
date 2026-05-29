@@ -9,6 +9,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { getMe, postAuth, postLogout } from './routes/auth';
 import { postAuditUrl } from './routes/auditUrl';
 import { getRunById, postGenerate } from './routes/generate';
+import { postEval } from './routes/evalRun';
 import { postImpersonateStart } from './routes/impersonate';
 import { getScenarios } from './routes/scenarios';
 import { resolveStaticPath, serveStatic } from './static';
@@ -35,6 +36,7 @@ const routes: Record<string, Handler> = {
   'GET /lighthouse/api/me': getMe,
   'GET /lighthouse/api/scenarios': getScenarios,
   'POST /lighthouse/api/generate': postGenerate,
+  'POST /lighthouse/api/eval': postEval,
   'POST /lighthouse/api/audit-url': postAuditUrl,
   'POST /lighthouse/api/impersonate/start': postImpersonateStart,
 };
