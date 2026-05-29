@@ -156,9 +156,9 @@ export function buildLayerBPrompt(input: LayerBInput): string {
     `  "recommendation": ["1 to ${RECOMMENDATION_COUNT_MAX} short paragraphs of designer-/researcher-voiced explanation, each max ${RECOMMENDATION_PARA_MAX} chars"],`,
     '  "prescription": {',
     `    "whyItMatters": "optional, 1-2 sentence business framing (activation/conversion/revenue), max ${PRESCRIPTION_FIELD_MAX} chars",`,
-    `    "whatToChange": "one concrete action sentence starting with a verb, max ${PRESCRIPTION_FIELD_MAX} chars",`,
+    `    "whatToChange": "the specific on-page change to ship — name the element and what it becomes (e.g. 'Add a quick-answer block above the hero on /pricing listing the 3 plans'). Max ${PRESCRIPTION_FIELD_MAX} chars",`,
     `    "whyItWorks": "one causal paragraph, max ${PRESCRIPTION_FIELD_MAX} chars",`,
-    `    "experimentVariantDescription": "one paragraph describing the A/B variant to run, max ${PRESCRIPTION_FIELD_MAX} chars"`,
+    `    "experimentVariantDescription": "the A/B variant as a concrete page diff: what the variant adds/changes/moves vs the current page, max ${PRESCRIPTION_FIELD_MAX} chars"`,
     '  }',
     '}',
     '',
@@ -173,6 +173,12 @@ export function buildLayerBPrompt(input: LayerBInput): string {
     '  is in FACTS, OMIT it rather than guess — an ungrounded number is rejected',
     '  and your whole answer is discarded. Never invent dollar amounts, percentages,',
     '  counts, or ratios.',
+    '- The prescription is a CHANGE TO SHIP, not homework. whatToChange and',
+    '  experimentVariantDescription must be a deployable on-page edit a PM can run',
+    '  as an A/B variant: copy/headline wording, a CTA label or its placement, a new',
+    '  section or block, layout / visual hierarchy, or navigation. NEVER recommend',
+    '  research or process ("conduct user interviews", "run session replays",',
+    '  "analyze", "investigate", "gather data") — that is not a variant and is useless.',
   ].join('\n');
 }
 
