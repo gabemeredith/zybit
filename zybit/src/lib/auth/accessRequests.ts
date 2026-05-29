@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
 
-export type AccessRequestSource = 'request_form' | 'public_audit';
+export type AccessRequestSource = 'request_form' | 'public_audit' | 'google_oauth';
 
 export interface UpsertAccessRequestInput {
   email: string;

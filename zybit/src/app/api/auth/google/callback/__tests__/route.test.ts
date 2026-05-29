@@ -1,10 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// `after` requires a Next.js request context; stub it so tests don't throw.
+vi.mock('next/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('next/server')>();
+  return { ...actual, after: vi.fn((fn: () => void) => fn()) };
+});
+
+// Resend is imported by the route for the founder notification; no-op in tests.
+vi.mock('resend', () => ({ Resend: vi.fn(() => ({ emails: { send: vi.fn() } })) }));
+
 import { NextRequest } from 'next/server';
 
 const getGoogleConfig = vi.fn();
 const exchangeGoogleCode = vi.fn();
 const fetchGoogleUserInfo = vi.fn();
 const createSession = vi.fn();
+const upsertAccessRequest = vi.fn();
 
 let limitResults: unknown[][] = [];
 
@@ -20,6 +31,10 @@ vi.mock('@/lib/auth/session', () => ({
   sessionCookieOptions: {
     name: 'zb_session', httpOnly: true, secure: false, sameSite: 'lax', path: '/', maxAge: 100,
   },
+}));
+
+vi.mock('@/lib/auth/accessRequests', () => ({
+  upsertAccessRequest: (...a: unknown[]) => upsertAccessRequest(...a),
 }));
 
 vi.mock('@/lib/db/client', () => ({
@@ -48,6 +63,8 @@ beforeEach(() => {
   exchangeGoogleCode.mockReset();
   fetchGoogleUserInfo.mockReset();
   createSession.mockReset();
+  upsertAccessRequest.mockReset();
+  upsertAccessRequest.mockResolvedValue('req-id');
   limitResults = [];
   getGoogleConfig.mockReturnValue({ clientId: 'c', clientSecret: 's', redirectUrl: 'r' });
 });
@@ -68,18 +85,37 @@ describe('GET /api/auth/google/callback', () => {
     expect(res.headers.get('location')).toContain('error=google-unavailable');
   });
 
-  it('bounces a pending lead to the pending notice', async () => {
+  it('bounces an existing pending lead to the pending notice without re-queueing', async () => {
     exchangeGoogleCode.mockResolvedValueOnce('access-token');
     fetchGoogleUserInfo.mockResolvedValueOnce({
       sub: 'g-sub', email: 'lead@co.com', emailVerified: true,
     });
-    // appUsers by sub → miss, by email → miss, access_requests → pending hit
+    // appUsers by sub → miss, by email → miss, access_requests → existing row
     limitResults = [[], [], [{ status: 'pending' }]];
 
     const res = await GET(makeRequest({ code: 'abc', state: 's' }, 'zb_oauth_state=s'));
 
     expect(res.headers.get('location')).toContain('/sign-in?notice=pending');
     expect(createSession).not.toHaveBeenCalled();
+    expect(upsertAccessRequest).not.toHaveBeenCalled();
+  });
+
+  it('queues a brand-new Google sign-in as a google_oauth lead', async () => {
+    exchangeGoogleCode.mockResolvedValueOnce('access-token');
+    fetchGoogleUserInfo.mockResolvedValueOnce({
+      sub: 'g-sub', email: 'newbie@co.com', emailVerified: true, name: 'Newbie',
+    });
+    // No approved user, no existing access_request row.
+    limitResults = [[], [], []];
+
+    const res = await GET(makeRequest({ code: 'abc', state: 's' }, 'zb_oauth_state=s'));
+
+    expect(res.headers.get('location')).toContain('/sign-in?notice=pending');
+    expect(createSession).not.toHaveBeenCalled();
+    expect(upsertAccessRequest).toHaveBeenCalledWith({
+      email: 'newbie@co.com',
+      source: 'google_oauth',
+    });
   });
 
   it('rejects when the email is already bound to a different google_sub', async () => {

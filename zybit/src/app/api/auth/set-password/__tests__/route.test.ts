@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// `after` requires a Next.js request context; stub it so tests don't throw.
+vi.mock('next/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('next/server')>();
+  return { ...actual, after: vi.fn((fn: () => void) => fn()) };
+});
+
+// Resend is imported by the route for the founder notification; no-op in tests.
+vi.mock('resend', () => ({ Resend: vi.fn(() => ({ emails: { send: vi.fn() } })) }));
+
 const verifySetPasswordToken = vi.fn();
 const hashPassword = vi.fn();
 const createSession = vi.fn();
