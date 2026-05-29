@@ -47,7 +47,15 @@ body {
  * language with the marketing site: ink-on-cream, square corners, 1.5px ink
  * borders, hard offset shadows instead of soft blur. These utilities replace
  * the default "SaaS" round-card / soft-shadow look across the dashboard.
+ *
+ * Wrapped in `@layer components` so Tailwind utilities (which live in the
+ * later `utilities` layer) win over these base styles. Without the layer
+ * these rules are unlayered and beat layered utilities regardless of
+ * specificity, so `bg-*`/`text-*` modifiers on a `.brut-badge` (etc.) would
+ * be silently ignored and every badge would render with the default
+ * white-bg / ink-text below.
  */
+@layer components {
 .brut-label {
   font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 10px;
@@ -186,6 +194,7 @@ body {
 }
 .brut-input::placeholder {
   color: var(--color-text-muted);
+}
 }
 
 

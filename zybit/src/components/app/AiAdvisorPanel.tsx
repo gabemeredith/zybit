@@ -269,7 +269,7 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
                       {TYPE_LABELS[displayMod?.type ?? "text-replace"]}
                     </span>
                     {option.confidence === "low" && (
-                      <span className="brut-badge shrink-0 bg-amber-50 text-amber-700 px-1.5 py-0.5 text-[9px]">
+                      <span className="brut-badge shrink-0 bg-amber-300 text-[#111] px-1.5 py-0.5 text-[9px]">
                         Low confidence
                       </span>
                     )}

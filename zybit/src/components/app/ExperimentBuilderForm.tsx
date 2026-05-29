@@ -85,7 +85,7 @@ function SelectorBadge({ result, loading }: { result: ValidateResult | null; loa
   if (!result || result.status === 'empty') return null;
   if (result.status === 'invalid_selector') {
     return (
-      <span className="brut-badge bg-red-50 text-red-600">
+      <span className="brut-badge bg-[#FF4A5A] text-[#111]">
         Invalid selector
       </span>
     );
@@ -100,16 +100,16 @@ function SelectorBadge({ result, loading }: { result: ValidateResult | null; loa
   const count = result.count ?? 0;
   if (count === 0) {
     return (
-      <span className="brut-badge bg-red-50 text-red-600">
-        <span className="w-1.5 h-1.5 bg-red-400" />
+      <span className="brut-badge bg-[#FF4A5A] text-[#111]">
+        <span className="w-1.5 h-1.5 bg-[#111]" />
         No matches
       </span>
     );
   }
   if (count === 1) {
     return (
-      <span className="brut-badge bg-emerald-50 text-emerald-700">
-        <span className="w-1.5 h-1.5 bg-emerald-400" />
+      <span className="brut-badge bg-emerald-300 text-[#111]">
+        <span className="w-1.5 h-1.5 bg-[#111]" />
         1 match
       </span>
     );
