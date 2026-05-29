@@ -207,7 +207,7 @@ export default function AnnotatedFindingPreview({
     state.kind !== "fallback" && !(state.kind === "ready" && state.annotationsCount === 0);
 
   return (
-    <section className="mt-6 bg-white border border-black/[0.05] rounded-2xl px-6 py-5">
+    <section className="mt-6 brut-card px-6 py-5">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-[#111]">Where on {pageName}</h2>
         {state.kind === "ready" && (
@@ -221,7 +221,7 @@ export default function AnnotatedFindingPreview({
         )}
       </div>
 
-      <div className="relative rounded-lg overflow-hidden border border-black/[0.05] bg-[#FAFAF8]">
+      <div className="relative overflow-hidden border-[1.5px] border-[#111] bg-[#FAFAF8]">
         {state.kind === "generating" && (
           <div className="aspect-[1280/900] w-full flex items-center justify-center text-xs text-[#6B6B6B]">
             Generating preview…
@@ -250,7 +250,7 @@ export default function AnnotatedFindingPreview({
             <button
               type="button"
               onClick={() => setModalOpen(true)}
-              className="px-3 py-1 rounded-md border border-black/10 text-[#111] hover:bg-black/[0.03] transition-colors"
+              className="px-3 py-1 border-[1.5px] border-[#111] text-[#111] mono-text text-[11px] uppercase tracking-[0.08em] hover:bg-black/[0.03] transition-colors"
             >
               Open live preview
             </button>
@@ -259,8 +259,8 @@ export default function AnnotatedFindingPreview({
       </div>
 
       {intent && hasAnnotations && (
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+        <div className="mt-3 border-l-4 border-amber-300 bg-amber-50 px-3 py-2">
+          <p className="brut-label !text-amber-800">
             Why this is highlighted
           </p>
           <p className="mt-1 text-xs leading-relaxed text-[#3F2D08]">{intent}</p>
@@ -272,7 +272,7 @@ export default function AnnotatedFindingPreview({
             {legend.map((l) => (
               <li key={l.label} className="flex items-start gap-2 text-xs text-[#6B6B6B]">
                 <span
-                  className="mt-1 inline-block w-3 h-3 rounded-sm border-2 border-dashed flex-shrink-0"
+                  className="mt-1 inline-block w-3 h-3 border-2 border-dashed flex-shrink-0"
                   style={{ borderColor: l.color }}
                   aria-hidden
                 />
@@ -300,9 +300,9 @@ export default function AnnotatedFindingPreview({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden"
+            className="bg-white border-[1.5px] border-[#111] shadow-[8px_8px_0_#111] w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden"
           >
-            <div className="flex items-center justify-between px-4 py-2 border-b border-black/[0.05]">
+            <div className="flex items-center justify-between px-4 py-2 border-b-[1.5px] border-[#111]">
               <span
                 id={`finding-preview-modal-title-${findingId}`}
                 className="text-sm font-medium text-[#111]"

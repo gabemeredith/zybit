@@ -52,8 +52,8 @@ function ImpactBanner({ estimate }: { estimate: AuditFindingImpactEstimate }) {
 
   if (isRevenue) {
     return (
-      <div className="bg-[#111] rounded-2xl px-6 py-5 mb-6">
-        <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/50 mb-1">
+      <div className="bg-[#111] px-6 py-5 mb-6">
+        <div className="brut-label !text-white/50 mb-1">
           Estimated impact
         </div>
         <div className="text-3xl font-bold tracking-tighter text-[#FAFAF8] leading-none mb-2">
@@ -65,8 +65,8 @@ function ImpactBanner({ estimate }: { estimate: AuditFindingImpactEstimate }) {
   }
 
   return (
-    <div className="bg-amber-50 border border-amber-100 rounded-2xl px-6 py-5 mb-6">
-      <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-700/70 mb-1">
+    <div className="bg-amber-50 border-l-4 border-amber-300 px-6 py-5 mb-6">
+      <div className="brut-label !text-amber-700/70 mb-1">
         Estimated impact
       </div>
       <div className="text-3xl font-bold tracking-tighter text-amber-900 leading-none mb-2">
@@ -98,7 +98,7 @@ function EvidenceValue({ value }: { value: string | number }) {
   }
   if (isPath(value)) {
     return (
-      <span className="font-mono text-sm text-[#111] bg-black/[0.04] px-1.5 py-0.5 rounded">
+      <span className="font-mono text-sm text-[#111] bg-black/[0.04] px-1.5 py-0.5">
         {value}
       </span>
     );
@@ -113,8 +113,8 @@ function EvidenceValue({ value }: { value: string | number }) {
 
 function EvidenceItem({ item }: { item: AuditFindingEvidence }) {
   return (
-    <div className="bg-white border border-black/[0.05] rounded-xl p-4">
-      <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-2">
+    <div className="brut-card p-4">
+      <div className="brut-label mb-2">
         {item.label}
       </div>
       <div className="mb-1">
@@ -133,10 +133,10 @@ function MetadataRow({ items }: { items: AuditFindingEvidence[] }) {
     <div className="flex flex-wrap gap-3 mt-3">
       {items.map((item, i) => (
         <div key={i} className="flex items-center gap-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#9B9B9B]">
+          <span className="brut-label !text-[#9B9B9B]">
             {item.label}:
           </span>
-          <span className="font-mono text-xs text-[#6B6B6B] bg-black/[0.04] px-1.5 py-0.5 rounded">
+          <span className="font-mono text-xs text-[#6B6B6B] bg-black/[0.04] px-1.5 py-0.5">
             {item.value}
           </span>
           {item.context && (
@@ -158,8 +158,8 @@ function CtaComparisonBlock({
 }) {
   return (
     <div className="col-span-full grid grid-cols-2 gap-3 mb-0">
-      <div className="bg-white border border-black/[0.05] rounded-xl p-4">
-        <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-2">
+      <div className="brut-card p-4">
+        <div className="brut-label mb-2">
           {clicked.label}
         </div>
         <div className="text-base font-semibold text-[#111] leading-snug mb-1">
@@ -171,11 +171,11 @@ function CtaComparisonBlock({
       </div>
       {/* vs divider */}
       <div className="relative">
-        <div className="absolute -left-1.5 top-1/2 -translate-y-1/2 z-10 w-3 h-3 rounded-full bg-[#FAFAF8] border border-black/[0.08] flex items-center justify-center">
-          <span className="text-[8px] font-bold text-[#6B6B6B]">vs</span>
+        <div className="absolute -left-2.5 top-1/2 -translate-y-1/2 z-10 w-5 h-5 bg-[#FAFAF8] border-[1.5px] border-[#111] flex items-center justify-center">
+          <span className="text-[8px] font-bold text-[#111] mono-text">vs</span>
         </div>
-        <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 h-full">
-          <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-amber-700/70 mb-2">
+        <div className="bg-amber-50 border-l-4 border-amber-300 p-4 h-full">
+          <div className="brut-label !text-amber-700/70 mb-2">
             {heavy.label}
           </div>
           <div className="text-base font-semibold text-amber-900 leading-snug mb-1">
@@ -257,8 +257,8 @@ function EvidenceGrid({ evidence }: { evidence: AuditFindingEvidence[] }) {
 
 function PrescriptionCard({ prescription }: { prescription: AuditFindingPrescription }) {
   return (
-    <div className="bg-white border border-black/[0.05] rounded-2xl p-6">
-      <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-4">
+    <div className="brut-card p-6">
+      <div className="brut-label mb-4">
         Recommended fix
       </div>
       <p className="text-sm text-[#111] leading-relaxed mb-3">
@@ -267,11 +267,11 @@ function PrescriptionCard({ prescription }: { prescription: AuditFindingPrescrip
       <p className="text-sm text-[#6B6B6B] leading-relaxed mb-4">
         {prescription.whyItWorks}
       </p>
-      <div className="border-t border-black/[0.04] pt-4">
-        <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#9B9B9B] mb-2">
+      <div className="border-t-[1.5px] border-black/[0.08] pt-4">
+        <div className="brut-label mb-2">
           A/B variant
         </div>
-        <div className="bg-[#F5F5F3] rounded-xl px-4 py-3 font-mono text-xs text-[#333] leading-relaxed">
+        <div className="bg-[#F5F5F3] border-l-4 border-[#111] px-4 py-3 font-mono text-xs text-[#333] leading-relaxed">
           {prescription.experimentVariantDescription}
         </div>
       </div>
@@ -282,8 +282,8 @@ function PrescriptionCard({ prescription }: { prescription: AuditFindingPrescrip
 function RecommendationFallback({ recommendation }: { recommendation: string[] }) {
   if (recommendation.length === 0) return null;
   return (
-    <div className="bg-white border border-black/[0.05] rounded-2xl p-6">
-      <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-4">
+    <div className="brut-card p-6">
+      <div className="brut-label mb-4">
         Recommendation
       </div>
       <div className="space-y-3">
@@ -312,8 +312,8 @@ function FormFunnel({ diagram }: { diagram: SnapshotDiagram }) {
   const fields = diagram.items ?? [];
 
   return (
-    <div className="bg-white border border-black/[0.05] rounded-2xl p-6">
-      <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-5">
+    <div className="brut-card p-6">
+      <div className="brut-label mb-5">
         Form funnel
       </div>
 
@@ -322,9 +322,9 @@ function FormFunnel({ diagram }: { diagram: SnapshotDiagram }) {
         {steps.map((step: SnapshotFunnelStep, i: number) => (
           <div key={i} className="flex items-center gap-3">
             <div className="w-28 text-xs text-[#6B6B6B] shrink-0 text-right">{step.label}</div>
-            <div className="flex-1 h-7 bg-black/[0.04] rounded-lg overflow-hidden">
+            <div className="flex-1 h-7 bg-black/[0.04] border-[1.5px] border-[#111] overflow-hidden">
               <div
-                className={`h-full rounded-lg transition-all ${
+                className={`h-full transition-all ${
                   step.isFlagged ? "bg-amber-400/70" : "bg-[#111]"
                 }`}
                 style={{ width: `${maxValue > 0 ? (step.value / maxValue) * 100 : 0}%` }}
@@ -340,7 +340,7 @@ function FormFunnel({ diagram }: { diagram: SnapshotDiagram }) {
       {/* Drop-off callout — percentage only, matching engine framing */}
       {dropPct > 0 && (
         <div className="flex items-center gap-2 mb-5">
-          <div className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+          <div className="w-2 h-2 bg-amber-400 shrink-0" />
           <span className="text-sm font-medium text-amber-700">
             {dropPct}% didn&rsquo;t finish
           </span>
@@ -350,17 +350,17 @@ function FormFunnel({ diagram }: { diagram: SnapshotDiagram }) {
       {/* Field pills */}
       {fields.length > 0 && (
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-2">
+          <div className="brut-label mb-2">
             Form fields
           </div>
           <div className="flex flex-wrap gap-2 mb-4">
             {fields.map((field, i) => (
               <span
                 key={i}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium font-mono border-[1.5px] ${
                   field.isFlagged
-                    ? "bg-amber-50 text-amber-800 border border-amber-200"
-                    : "bg-black/[0.04] text-[#6B6B6B]"
+                    ? "bg-amber-50 text-amber-800 border-amber-300"
+                    : "bg-black/[0.04] text-[#6B6B6B] border-black/[0.12]"
                 }`}
               >
                 {field.text}
@@ -375,7 +375,7 @@ function FormFunnel({ diagram }: { diagram: SnapshotDiagram }) {
 
       {/* Proposed fix */}
       {diagram.proposedFix && (
-        <p className="text-sm text-[#6B6B6B] leading-relaxed border-t border-black/[0.04] pt-4">
+        <p className="text-sm text-[#6B6B6B] leading-relaxed border-t-[1.5px] border-black/[0.08] pt-4">
           {diagram.proposedFix}
         </p>
       )}
@@ -401,7 +401,7 @@ export default function EvidencePanel({
 
       {/* 2. Evidence grid */}
       <div>
-        <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-3">
+        <div className="brut-label mb-3">
           Why we flagged this
         </div>
         <EvidenceGrid evidence={evidence} />

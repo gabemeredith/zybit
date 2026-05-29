@@ -24,7 +24,7 @@ function timeAgo(isoDate: string): string {
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-4">
+    <h2 className="brut-label mb-4">
       {children}
     </h2>
   );
@@ -32,7 +32,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-white border border-black/[0.05] rounded-2xl p-6 ${className}`}>
+    <div className={`brut-card p-6 ${className}`}>
       {children}
     </div>
   );
@@ -44,10 +44,10 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 
 function IntegrationRow({ integration }: { integration: IntegrationRecord }) {
   return (
-    <div className="flex items-center justify-between py-3 border-b border-black/[0.04] last:border-0">
+    <div className="flex items-center justify-between py-3 border-b border-t-0 border-l-0 border-r-0 border-[1.5px] border-black/[0.08] last:border-0">
       <div className="flex items-center gap-3">
         <span
-          className={`w-2 h-2 rounded-full shrink-0 ${
+          className={`w-2 h-2 shrink-0 ${
             integration.lastErrorCode ? "bg-red-400" : "bg-emerald-400"
           }`}
         />
@@ -111,7 +111,7 @@ function RevenueSection({
       </p>
       <div className="space-y-4 max-w-xs">
         <div>
-          <label className="block text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1.5">
+          <label className="brut-label block mb-1.5">
             Monthly revenue (MRR or GMV)
           </label>
           <div className="relative">
@@ -122,12 +122,12 @@ function RevenueSection({
               onChange={(e) => { setMrr(e.target.value); setSaved(false); }}
               placeholder="50,000"
               min="0"
-              className="w-full border border-black/[0.12] rounded-lg pl-7 pr-3 py-2.5 text-sm text-[#111] placeholder:text-[#9B9B9B] focus:outline-none focus:ring-2 focus:ring-[#111]/20 focus:border-[#111]/30 transition-all"
+              className="brut-input pl-7 pr-3 py-2.5 text-sm text-[#111] placeholder:text-[#9B9B9B]"
             />
           </div>
         </div>
         <div>
-          <label className="block text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1.5">
+          <label className="brut-label block mb-1.5">
             Average order / conversion value
           </label>
           <div className="relative">
@@ -138,7 +138,7 @@ function RevenueSection({
               onChange={(e) => { setAov(e.target.value); setSaved(false); }}
               placeholder="120"
               min="0"
-              className="w-full border border-black/[0.12] rounded-lg pl-7 pr-3 py-2.5 text-sm text-[#111] placeholder:text-[#9B9B9B] focus:outline-none focus:ring-2 focus:ring-[#111]/20 focus:border-[#111]/30 transition-all"
+              className="brut-input pl-7 pr-3 py-2.5 text-sm text-[#111] placeholder:text-[#9B9B9B]"
             />
           </div>
         </div>
@@ -146,7 +146,7 @@ function RevenueSection({
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-2 bg-[#111] text-[#FAFAF8] px-5 py-2.5 font-bold text-sm uppercase tracking-[0.08em] hover:opacity-80 transition-opacity disabled:opacity-40"
+          className="brut-action inline-flex items-center gap-2 disabled:opacity-40"
         >
           {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
         </button>
@@ -175,15 +175,15 @@ export default function SettingsView({
   if (!site) {
     return (
       <div className="p-8 max-w-2xl mx-auto">
-        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-1">
+        <div className="brut-label mb-1">
           Settings
         </div>
         <h1 className="text-3xl font-bold tracking-tighter text-[#111] mb-8">Settings</h1>
-        <div className="bg-white border border-black/[0.05] rounded-2xl p-8 text-center">
+        <div className="brut-card p-8 text-center">
           <p className="text-[#6B6B6B] mb-4">No site connected yet.</p>
           <Link
             href="/app/onboarding"
-            className="inline-flex items-center gap-2 bg-[#111] text-[#FAFAF8] px-6 py-3 font-bold text-sm uppercase tracking-[0.08em] hover:opacity-80 transition-opacity"
+            className="brut-action inline-flex items-center gap-2"
           >
             Set up your site
           </Link>
@@ -196,11 +196,11 @@ export default function SettingsView({
     <div className="p-8 max-w-2xl mx-auto space-y-8">
       {/* Header */}
       <div>
-        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-1">
+        <div className="brut-label mb-1">
           Settings
         </div>
         <h1 className="text-3xl font-bold tracking-tighter text-[#111]">{site.domain}</h1>
-        <p className="text-xs text-[#9B9B9B] mt-1 font-mono">site ID: {site.id}</p>
+        <p className="mono-text text-[11px] text-[#9B9B9B] mt-1">site ID: {site.id}</p>
       </div>
 
       {/* Proxy & DNS */}

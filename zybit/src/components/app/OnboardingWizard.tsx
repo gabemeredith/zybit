@@ -33,12 +33,12 @@ function ProgressBar({ step }: { step: Step }) {
       {([1, 2, 3] as Step[]).map((s) => (
         <div key={s} className="flex items-center gap-2">
           <div
-            className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors ${
+            className={`w-6 h-6 border-[1.5px] border-[#111] flex items-center justify-center text-[10px] font-bold transition-colors ${
               s < step
                 ? "bg-[#111] text-[#FAFAF8]"
                 : s === step
-                ? "bg-[#111] text-[#FAFAF8] ring-2 ring-[#111] ring-offset-2"
-                : "bg-black/[0.08] text-[#6B6B6B]"
+                ? "bg-[#111] text-[#FAFAF8]"
+                : "bg-white text-[#6B6B6B]"
             }`}
           >
             {s < step ? (
@@ -58,7 +58,7 @@ function ProgressBar({ step }: { step: Step }) {
 
 function StepLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-2">
+    <div className="brut-label mb-2">
       {children}
     </div>
   );
@@ -82,7 +82,7 @@ function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={disabled || loading}
-      className="inline-flex items-center gap-2 bg-[#111] text-[#FAFAF8] px-6 py-3 font-bold text-sm uppercase tracking-[0.08em] hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+      className="brut-action inline-flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
     >
       {loading && (
         <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -109,7 +109,7 @@ function SkipLink({ onClick, label = "Skip for now" }: { onClick: () => void; la
 
 function FieldLabel({ label }: { label: string }) {
   return (
-    <label className="block text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1.5">
+    <label className="brut-label block mb-1.5">
       {label}
     </label>
   );
@@ -135,7 +135,7 @@ function Input({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       autoFocus={autoFocus}
-      className="w-full border border-black/[0.12] rounded-lg px-3 py-2.5 text-sm text-[#111] placeholder:text-[#9B9B9B] focus:outline-none focus:ring-2 focus:ring-[#111]/20 focus:border-[#111]/30 transition-all"
+      className="brut-input px-3 py-2.5 text-sm text-[#111] placeholder:text-[#9B9B9B]"
     />
   );
 }
@@ -244,10 +244,10 @@ function VerificationPanel({
 }) {
   const tone =
     report.status === "ready"
-      ? { bg: "bg-emerald-50", border: "border-emerald-200", icon: "✅", text: "text-emerald-900" }
+      ? { bg: "bg-emerald-50", accent: "border-l-4 border-emerald-500", icon: "✅", text: "text-emerald-900" }
       : report.status === "thin"
-        ? { bg: "bg-amber-50", border: "border-amber-200", icon: "⚠️", text: "text-amber-900" }
-        : { bg: "bg-rose-50", border: "border-rose-200", icon: "🛑", text: "text-rose-900" };
+        ? { bg: "bg-amber-50", accent: "border-l-4 border-amber-300", icon: "⚠️", text: "text-amber-900" }
+        : { bg: "bg-rose-50", accent: "border-l-4 border-red-500", icon: "🛑", text: "text-rose-900" };
 
   const headline =
     report.status === "ready"
@@ -265,7 +265,7 @@ function VerificationPanel({
   });
 
   return (
-    <div className={`mt-6 max-w-sm rounded-xl border ${tone.border} ${tone.bg} p-4`}>
+    <div className={`mt-6 max-w-sm ${tone.accent} ${tone.bg} p-4`}>
       <div className={`flex items-start gap-2 ${tone.text}`}>
         <span aria-hidden className="text-base leading-none mt-0.5">{tone.icon}</span>
         <p className="text-sm font-semibold leading-snug">{headline}</p>
@@ -357,15 +357,15 @@ function Step2Connect({
       </p>
 
       {/* Provider tabs */}
-      <div className="flex gap-1 mb-6 bg-black/[0.04] rounded-lg p-1 w-fit">
+      <div className="flex gap-1 mb-6 bg-black/[0.04] p-1 w-fit">
         {(["posthog", "segment"] as AnalyticsProvider[]).map((p) => (
           <button
             key={p}
             type="button"
             onClick={() => { setProvider(p); setError(""); }}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors capitalize ${
+            className={`px-4 py-2 text-sm font-medium transition-colors capitalize ${
               provider === p
-                ? "bg-white text-[#111] shadow-sm border border-black/[0.06]"
+                ? "bg-white text-[#111] border-[1.5px] border-[#111]"
                 : "text-[#6B6B6B] hover:text-[#111]"
             }`}
           >
@@ -509,7 +509,7 @@ function Step3Revenue({
               onChange={(e) => setMrr(e.target.value)}
               placeholder="50,000"
               min="0"
-              className="w-full border border-black/[0.12] rounded-lg pl-7 pr-3 py-2.5 text-sm text-[#111] placeholder:text-[#9B9B9B] focus:outline-none focus:ring-2 focus:ring-[#111]/20 focus:border-[#111]/30 transition-all"
+              className="brut-input pl-7 pr-3 py-2.5 text-sm text-[#111] placeholder:text-[#9B9B9B]"
             />
           </div>
         </div>
@@ -523,7 +523,7 @@ function Step3Revenue({
               onChange={(e) => setAov(e.target.value)}
               placeholder="120"
               min="0"
-              className="w-full border border-black/[0.12] rounded-lg pl-7 pr-3 py-2.5 text-sm text-[#111] placeholder:text-[#9B9B9B] focus:outline-none focus:ring-2 focus:ring-[#111]/20 focus:border-[#111]/30 transition-all"
+              className="brut-input pl-7 pr-3 py-2.5 text-sm text-[#111] placeholder:text-[#9B9B9B]"
             />
           </div>
         </div>

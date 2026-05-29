@@ -121,7 +121,7 @@ export default function ProxySetupForm({
     <div>
       {variant === "wizard" && (
         <>
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-2">
+          <div className="brut-label mb-2">
             Step 2 of 4
           </div>
           <h1 className="text-4xl font-bold tracking-tighter text-[#111] mb-2 leading-[0.95]">
@@ -131,7 +131,7 @@ export default function ProxySetupForm({
       )}
       <p className="text-[#6B6B6B] text-sm mb-10 leading-relaxed max-w-lg">
         Zybit deploys experiments through a reverse proxy at{" "}
-        <code className="font-mono text-xs bg-black/[0.05] px-1.5 py-0.5 rounded">
+        <code className="font-mono text-xs bg-black/[0.05] px-1.5 py-0.5" style={{borderRadius:0}}>
           {slug || "<slug>"}.zybit.run
         </code>
         . Point a CNAME from your domain so visitors hit Zybit transparently — no code change to your site.
@@ -149,7 +149,7 @@ export default function ProxySetupForm({
                 placeholder="acme"
               />
             </div>
-            <div className="ml-2 self-stretch flex items-center text-sm text-[#6B6B6B] font-mono px-3 border border-black/[0.08] rounded-lg bg-black/[0.02]">
+            <div className="ml-2 self-stretch flex items-center text-sm text-[#6B6B6B] font-mono px-3 border-[1.5px] border-[#111]/[0.12] bg-black/[0.02]">
               .zybit.run
             </div>
           </div>
@@ -191,21 +191,21 @@ export default function ProxySetupForm({
           <FieldLabel label="DNS record to add at your registrar" />
 
           {/* Field-by-field record display, easier to map onto any registrar's DNS form */}
-          <div className="bg-[#F5F5F3] border border-black/[0.08] rounded-xl overflow-hidden">
+          <div className="bg-[#F5F5F3] border border-black/[0.08] border-l-4 border-l-[#111] overflow-hidden">
             <div className="flex justify-end px-3 pt-3">
               <CopyButton text={cnameSnippet} />
             </div>
             <div className="grid grid-cols-3 divide-x divide-black/[0.06]">
               <div className="px-5 pt-3 pb-5">
-                <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#9B9B9B] mb-2">Type</div>
+                <div className="brut-label mb-2">Type</div>
                 <div className="font-mono text-sm text-[#111]">CNAME</div>
               </div>
               <div className="px-5 pt-3 pb-5">
-                <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#9B9B9B] mb-2">Host / Name</div>
+                <div className="brut-label mb-2">Host / Name</div>
                 <div className="font-mono text-sm text-[#111] break-all">{cnameHost}</div>
               </div>
               <div className="px-5 pt-3 pb-5">
-                <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#9B9B9B] mb-2">Value / Target</div>
+                <div className="brut-label mb-2">Value / Target</div>
                 <div className="font-mono text-sm text-[#111] break-all">{cnameValue}</div>
               </div>
             </div>
@@ -213,7 +213,7 @@ export default function ProxySetupForm({
 
           {/* Numbered steps — generic, applies to any registrar */}
           <div className="mt-8 text-sm text-[#444] leading-relaxed">
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-3">How to add this</p>
+            <p className="brut-label mb-3">How to add this</p>
             <ol className="list-decimal list-inside space-y-3 text-[#444]">
               <li>Open your domain registrar (where you bought {domain}).</li>
               <li>
@@ -232,7 +232,7 @@ export default function ProxySetupForm({
 
           {/* Registrar quick-links */}
           <div className="mt-8">
-            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-3">Open your registrar&rsquo;s DNS panel</p>
+            <p className="brut-label mb-3">Open your registrar&rsquo;s DNS panel</p>
             <div className="flex flex-wrap gap-3">
               {REGISTRAR_LINKS.map((r) => (
                 <a
@@ -240,7 +240,7 @@ export default function ProxySetupForm({
                   href={r.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 bg-white border border-black/[0.1] rounded-lg px-3.5 py-2 text-xs font-medium text-[#111] hover:bg-black/[0.02] hover:border-black/[0.2] transition-colors"
+                  className="inline-flex items-center gap-1.5 bg-white border-[1.5px] border-[#111] px-3.5 py-2 text-xs font-medium text-[#111] hover:bg-black/[0.04] transition-colors"
                 >
                   {r.name}
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
@@ -322,7 +322,7 @@ export default function ProxySetupForm({
 
           {phase === "verify_failed" && (
             <div className="space-y-3 w-full">
-              <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm text-amber-900 leading-relaxed">
+              <div className="bg-amber-50 border-l-4 border-amber-300 px-4 py-3 text-sm text-amber-900 leading-relaxed">
                 <p className="font-bold mb-1">DNS hasn&rsquo;t resolved yet.</p>
                 {dnsResult?.error === "nxdomain" && (
                   <p>No CNAME found at <code className="font-mono">{customerSubdomain}</code>. Add the record above and try again in a few minutes.</p>
