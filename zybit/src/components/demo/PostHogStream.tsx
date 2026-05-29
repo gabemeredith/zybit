@@ -10,9 +10,6 @@
 
 import { useEffect, useState } from "react";
 
-const INK = "#111";
-const MUTED = "#6B6B6B";
-
 interface TickerEvent {
   label: string;
   detail: string;
@@ -20,16 +17,16 @@ interface TickerEvent {
 }
 
 const SAMPLES: Array<{ label: string; detail: string }> = [
-  { label: "pageview", detail: "/pricing — Twitter referral" },
-  { label: "click", detail: "/pricing → plan-pro" },
-  { label: "rage_click", detail: "/pricing — checkout button" },
-  { label: "scroll", detail: "/ — 87% depth" },
-  { label: "conversion", detail: "/signup — github OAuth" },
-  { label: "pageview", detail: "/ — direct visit" },
-  { label: "click", detail: "/ → hero-primary" },
+  { label: "pageview", detail: "/pricing (Twitter referral)" },
+  { label: "click", detail: "/pricing -> plan-pro" },
+  { label: "rage_click", detail: "/pricing checkout button" },
+  { label: "scroll", detail: "/ 87% depth" },
+  { label: "conversion", detail: "/signup github OAuth" },
+  { label: "pageview", detail: "/ direct visit" },
+  { label: "click", detail: "/ -> hero-primary" },
   { label: "experiment_assignment", detail: "variant · /pricing" },
-  { label: "click", detail: "/signup → email-submit" },
-  { label: "pageview", detail: "/docs — Google referral" },
+  { label: "click", detail: "/signup -> email-submit" },
+  { label: "pageview", detail: "/docs (Google referral)" },
 ];
 
 function pluralize(n: number, s: string) {
@@ -58,93 +55,47 @@ export default function PostHogStream({
   }, [paused]);
 
   return (
-    <div
-      style={{
-        background: "white",
-        border: "1px solid rgba(0,0,0,0.05)",
-        borderRadius: 16,
-        padding: 20,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 12,
-        }}
-      >
+    <div className="brut-card p-5">
+      <div className="flex items-start justify-between mb-3">
         <div>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.15em",
-              textTransform: "uppercase",
-              color: MUTED,
-              marginBottom: 6,
-            }}
-          >
+          <div className="brut-label mb-1.5 flex items-center gap-1.5">
+            <span className="inline-block h-1.5 w-1.5 bg-emerald-500 animate-pulse" />
             Live · PostHog
           </div>
-          <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", color: INK }}>
+          <div className="text-2xl font-bold tracking-tighter text-[#111]">
             {pluralize(perMinute, "event")}/min
           </div>
-          <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
+          <div className="text-xs text-[#6B6B6B] mt-0.5">
             {pluralize(eventCount7d, "event")} in the last 7 days · {bridgeLabel}
           </div>
         </div>
         <button
           type="button"
           onClick={() => setPaused((p) => !p)}
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            background: "transparent",
-            border: "1px solid rgba(0,0,0,0.1)",
-            color: INK,
-            padding: "6px 10px",
-            borderRadius: 999,
-            cursor: "pointer",
-          }}
+          className="mono-text text-[10px] font-bold uppercase tracking-[0.1em] border-[1.5px] border-[#111] px-2.5 py-1 hover:bg-[#111] hover:text-[#FAFAF8] transition-colors"
         >
           {paused ? "Resume" : "Pause"}
         </button>
       </div>
 
-      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+      <ul className="m-0 p-0 list-none">
         {feed.length === 0 && (
-          <li style={{ color: MUTED, fontSize: 12, padding: "8px 0" }}>
-            Listening for events…
-          </li>
+          <li className="text-[#6B6B6B] text-xs py-2">Listening for events…</li>
         )}
         {feed.map((e) => (
           <li
             key={`${e.ts}-${e.label}`}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "8px 0",
-              borderTop: "1px solid rgba(0,0,0,0.04)",
-              animation: "demo-fade 600ms ease-out",
-            }}
+            className="flex items-center justify-between py-2 border-t border-black/[0.06]"
+            style={{ animation: "demo-fade 600ms ease-out" }}
           >
             <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                color: badgeColor(e.label),
-              }}
+              className="mono-text text-[10px] font-bold uppercase tracking-[0.1em]"
+              style={{ color: badgeColor(e.label) }}
             >
               {e.label}
             </span>
-            <span style={{ fontSize: 12, color: INK, marginLeft: 12, flex: 1, textAlign: "left", paddingLeft: 12 }}>
-              {e.detail}
-            </span>
-            <span style={{ fontSize: 11, color: MUTED }}>just now</span>
+            <span className="text-xs text-[#111] ml-3 flex-1 text-left pl-3">{e.detail}</span>
+            <span className="mono-text text-[10px] text-[#6B6B6B]">just now</span>
           </li>
         ))}
       </ul>

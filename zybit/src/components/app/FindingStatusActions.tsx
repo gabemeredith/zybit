@@ -20,25 +20,25 @@ const ACTIONS: Array<{
   {
     targetStatus: "approved",
     label: "Approve",
-    style: "bg-emerald-600 text-white hover:bg-emerald-700",
+    style: "bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700",
     fromStatuses: ["open"],
   },
   {
     targetStatus: "dismissed",
     label: "Dismiss",
-    style: "bg-white border border-black/[0.1] text-[#6B6B6B] hover:text-[#111] hover:border-black/[0.2]",
+    style: "bg-white border-[#111] text-[#111] hover:bg-[#111] hover:text-[#FAFAF8]",
     fromStatuses: ["open", "approved"],
   },
   {
     targetStatus: "open",
     label: "Re-open",
-    style: "bg-white border border-black/[0.1] text-[#6B6B6B] hover:text-[#111]",
+    style: "bg-white border-[#111] text-[#111] hover:bg-[#111] hover:text-[#FAFAF8]",
     fromStatuses: ["dismissed", "approved"],
   },
   {
     targetStatus: "shipped",
     label: "Mark shipped",
-    style: "bg-sky-600 text-white hover:bg-sky-700",
+    style: "bg-sky-600 border-sky-600 text-white hover:bg-sky-700",
     fromStatuses: ["approved"],
   },
 ];
@@ -72,7 +72,7 @@ export default function FindingStatusActions({
           type="button"
           onClick={() => handleAction(action.targetStatus)}
           disabled={loading !== null}
-          className={`px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] rounded-lg transition-all disabled:opacity-40 ${action.style}`}
+          className={`px-4 py-2 mono-text text-xs font-bold uppercase tracking-[0.08em] border-[1.5px] transition-all disabled:opacity-40 ${action.style}`}
         >
           {loading === action.targetStatus ? "…" : action.label}
         </button>

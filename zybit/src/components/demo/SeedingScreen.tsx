@@ -3,10 +3,6 @@
 import { useEffect, useState } from "react";
 import type { SeedStatus } from "@/lib/demo/seed";
 
-const INK = "#111";
-const CREAM = "#FAFAF8";
-const MUTED = "#6B6B6B";
-
 const STAGE_LABELS: Record<SeedStatus["stage"], string> = {
   idle: "Warming up the demo",
   "audit-running": "Running the real audit on commitmint.app",
@@ -60,97 +56,56 @@ export default function SeedingScreen({ initialStatus }: Props) {
   const currentIdx = STAGE_ORDER.indexOf(status.stage);
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: CREAM,
-        color: INK,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 32,
-        fontFamily:
-          "-apple-system, BlinkMacSystemFont, Inter, sans-serif",
-      }}
-    >
-      <div style={{ maxWidth: 560, width: "100%" }}>
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.2em",
-            textTransform: "uppercase",
-            color: MUTED,
-            marginBottom: 16,
-          }}
-        >
-          Zybit · Demo
-        </div>
-        <h1
-          style={{
-            margin: "0 0 18px",
-            fontSize: 30,
-            fontWeight: 800,
-            letterSpacing: "-0.025em",
-            lineHeight: 1.1,
-          }}
-        >
+    <div className="min-h-screen bg-[#FAFAF8] text-[#111] sans-text flex items-center justify-center p-8">
+      <div className="w-full max-w-xl">
+        <div className="brut-label mb-4 tracking-[0.2em]">Zybit · Demo</div>
+        <h1 className="text-4xl md:text-5xl font-bold tracking-tighter leading-[0.95] mb-5">
           {status.stage === "failed"
             ? "Demo setup failed"
             : status.stage === "done"
-              ? "Ready — opening dashboard"
+              ? "Ready, opening dashboard"
               : "Preparing your demo"}
         </h1>
-        <p style={{ margin: "0 0 28px", color: INK, lineHeight: 1.6 }}>
+        <p className="text-[15px] leading-relaxed text-[#6B6B6B] mb-8">
           {status.stage === "failed" ? (
-            <>The seed run hit an error: <code>{status.error ?? "unknown"}</code>. Reload to retry.</>
+            <>
+              The seed run hit an error:{" "}
+              <code className="mono-text text-[#111]">{status.error ?? "unknown"}</code>. Reload to
+              retry.
+            </>
           ) : (
             <>
               Zybit is running its real audit pipeline on{" "}
-              <strong>commitmint.app</strong> — crawl, headless capture, brand
-              DNA, vision, copy critique, 23 rules. While that runs we&apos;re
-              overlaying a 14-day PostHog event stream so the dashboard reads
-              live the moment it opens. First visit only; subsequent loads
-              are instant.
+              <strong className="text-[#111]">commitmint.app</strong>: crawl, headless capture,
+              brand DNA, vision, copy critique, 23 rules. While that runs we&apos;re overlaying a
+              14-day PostHog event stream so the dashboard reads live the moment it opens. First
+              visit only; subsequent loads are instant.
             </>
           )}
         </p>
 
-        <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
+        <ol className="brut-card divide-y divide-black/[0.08]">
           {STAGE_ORDER.slice(0, -1).map((stage, i) => {
             const isActive = stage === status.stage;
             const isDone = i < currentIdx;
             return (
               <li
                 key={stage}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "10px 0",
-                  borderBottom: "1px solid rgba(0,0,0,0.06)",
-                  opacity: isDone || isActive ? 1 : 0.4,
-                }}
+                className={`flex items-center gap-3 px-5 py-3.5 transition-opacity ${
+                  isDone || isActive ? "opacity-100" : "opacity-40"
+                }`}
               >
                 <span
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 9,
-                    border: `1.5px solid ${INK}`,
-                    background: isDone ? INK : "transparent",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
+                  className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center border-[1.5px] border-[#111] ${
+                    isDone ? "bg-[#111]" : "bg-transparent"
+                  }`}
                   aria-hidden
                 >
                   {isDone ? (
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                       <path
                         d="M2 5l2 2 4-5"
-                        stroke={CREAM}
+                        stroke="#FAFAF8"
                         strokeWidth="1.8"
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -158,32 +113,23 @@ export default function SeedingScreen({ initialStatus }: Props) {
                     </svg>
                   ) : isActive ? (
                     <span
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 4,
-                        background: INK,
-                        animation: "demo-pulse 1.4s ease-in-out infinite",
-                      }}
+                      className="h-2 w-2 bg-[#111]"
+                      style={{ animation: "demo-pulse 1.4s ease-in-out infinite" }}
                     />
                   ) : null}
                 </span>
-                <span style={{ fontSize: 14 }}>{STAGE_LABELS[stage]}</span>
+                <span className="mono-text text-[12px] uppercase tracking-[0.08em]">
+                  {STAGE_LABELS[stage]}
+                </span>
               </li>
             );
           })}
         </ol>
 
-        <div
-          style={{
-            marginTop: 28,
-            fontSize: 12,
-            color: MUTED,
-          }}
-        >
+        <div className="mono-text mt-6 text-[12px] uppercase tracking-[0.08em] text-[#6B6B6B]">
           {status.findingCount > 0
             ? `${status.findingCount} findings captured · ${status.experimentCount} experiments staged`
-            : "Audit in progress — typically 60–120 seconds."}
+            : "Audit in progress. Typically 60-120 seconds."}
         </div>
       </div>
       <style>{`@keyframes demo-pulse { 0%,100% { opacity:1 } 50% { opacity:.35 } }`}</style>

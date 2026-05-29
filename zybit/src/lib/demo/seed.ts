@@ -300,7 +300,7 @@ async function curateDemoThrashFinding(): Promise<void> {
       priorityScore: 1,
       summary:
         '853 sessions came back to the homepage 3+ times without moving ' +
-        'forward. 61% get stuck in a loop — the page doesn’t surface what ' +
+        'forward. 61% get stuck in a loop: the page doesn’t surface what ' +
         'they’re looking for.',
       recommendation: [
         'Visitors loop back because they leave, don’t find what they ' +
@@ -314,7 +314,7 @@ async function curateDemoThrashFinding(): Promise<void> {
           'surfaces the destinations returning visitors keep looking for, so ' +
           'they find the answer on the first visit.',
         whyItWorks:
-          '853 sessions hit the homepage 3+ times without progressing — 61% ' +
+          '853 sessions hit the homepage 3+ times without progressing. 61% ' +
           'of all sessions. They keep returning because they haven’t found ' +
           'what they need. Surfacing the answer up front breaks the loop.',
         experimentVariantDescription:
@@ -697,9 +697,9 @@ async function tuneDemoFlowDropoff(): Promise<void> {
     `This is the single step in the flow losing the most users.`;
 
   const recommendation = [
-    `${route} is a mid-flow step — users navigate to it${
+    `${route} is a mid-flow step. Users navigate to it${
       predecessor ? ` (most from ${predecessor})` : ''
-    } rather than landing on it cold — yet ${exitPct}% of the sessions that ` +
+    } rather than landing on it cold, yet ${exitPct}% of the sessions that ` +
       `reach it end there. That is drop-off the page-level audit cannot see, ` +
       `because the problem is the transition, not the page in isolation.`,
     `Look at what this step asks of the user relative to the steps that retain ` +
@@ -722,7 +722,7 @@ async function tuneDemoFlowDropoff(): Promise<void> {
       ? { whyItMatters: existingPrescription.whyItMatters }
       : {}),
     whatToChange:
-      `Reduce drop-off at ${route} — the mid-flow step ${exitPct}% of ` +
+      `Reduce drop-off at ${route}: the mid-flow step ${exitPct}% of ` +
       `arriving sessions abandon. Give it one unambiguous next action and ` +
       `remove anything that competes with it.`,
   };
@@ -771,7 +771,7 @@ function prescriptionHypothesis(
   const p = finding.prescription as { whyItWorks?: string; whatToChange?: string } | null;
   if (!p) return fallback;
   if (p.whyItWorks && p.whatToChange) {
-    return `${p.whatToChange.trim()} — ${p.whyItWorks.trim()}`;
+    return `${p.whatToChange.trim()} ${p.whyItWorks.trim()}`;
   }
   return p.whyItWorks ?? p.whatToChange ?? fallback;
 }

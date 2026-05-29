@@ -4,6 +4,59 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-29 (follow-up — deferred UI surfaces)
+
+**Session:** Finish the brutalist pass on the deferred interaction-form surfaces
+**Author:** —
+**Branch:** `claude/dashboard-ui-experiments-Ovjyz`
+
+### What shipped
+
+- **Completed the brutalist conversion of every deferred surface** from the earlier session: `EvidencePanel`, `ExperimentBriefCard`, `ExperimentControls`, `ExperimentBuilderForm`, `AiAdvisorPanel`, `AnnotatedFindingPreview`, `SettingsView`, `OnboardingWizard`, `ProxySetupForm`, `/app/flow`, `/app/loop`, plus `FindingStatusActions` (was still soft-styled on every finding-detail page).
+- **Two new shared primitives in `globals.css`** so the forms stay DRY: `.brut-action-ghost` (white square ink-outline button that fills on hover — secondary/cancel) and `.brut-input` (full-width square ink-bordered field, replaces the rounded soft inputs/textareas/selects).
+- Mechanical pass applied consistently: removed all `rounded-*` (kept only on spinner loaders); `bg-white border border-black/[0.05] rounded-*` cards → `.brut-card`; section labels → `.brut-label`; status/type/severity pills → `.brut-badge`; primary buttons → `.brut-action`; soft alert banners (`border border-*-200 rounded-*`) → square left-accent bars (`border-l-4 border-*-300/500`); dividers → `border-t-[1.5px] border-black/[0.08]`; status dots and wizard step circles → square; progress/funnel bars → square with `border-[1.5px] border-[#111]`.
+- No logic, prop types, handlers, copy, or imports changed — styling only.
+
+### Verify
+
+`npx tsc --noEmit` clean · `npm run lint` 0 errors (10 pre-existing warnings) · `npm run build` clean · test suite 1305 passed / 2 skipped, **1 pre-existing failure** (`visionInpaint.test.ts > proceeds when model returns a large JPEG`) that is environment-dependent — it stubs a fake `BLOB_READ_WRITE_TOKEN` and relies on `put()` failing fast; in an env with outbound network the request hangs to the 5s test timeout. Fails identically on the untouched baseline; unrelated to this UI work (no test/logic files touched).
+
+Screenshots of the converted surfaces were captured via a throwaway `/showcase` dev route (real components + mock props, removed before commit).
+
+---
+
+## 2026-05-29
+
+**Session:** Demo dashboard brutalist redesign + Gemini → OpenAI provider swap
+**Author:** —
+**Branch:** `claude/dashboard-ui-experiments-Ovjyz`
+
+### What shipped
+
+**1. Brutalist dashboard UI** — brought the demo-visible `/app` surfaces in line with the marketing site's brutalist language (ink-on-cream, square corners, 1.5px ink borders, hard offset shadows, monospace data register), replacing the default "SaaS" round-card / soft-shadow look.
+- New `--font-mono` (JetBrains Mono) added in `layout.tsx` for data/labels/metrics.
+- New reusable utilities in `globals.css`: `.brut-card`, `.brut-card-link`, `.brut-label`, `.brut-badge`, `.brut-tag`, `.brut-action`, `.mono-text`.
+- Restyled: `AppShell` sidebar (square nav, mono uppercase labels, left-accent active state), `CockpitView` (stat cards, top-finding card, pipeline health, severity badges, alert banners → left-accent bars), findings list + finding detail, experiments list + experiment detail, `RunInsightsButton`.
+- Rewrote the three demo components (`SeedingScreen`, `PostHogStream`, `HowTrackingWorks`) off hardcoded `-apple-system` system fonts + `borderRadius:16` onto the site font + brutalist Tailwind.
+- **Deferred (now completed — see 2026-05-29 follow-up below):** deeper interaction-form components — `EvidencePanel`, `ExperimentBuilderForm`, `ExperimentControls`, `ExperimentBriefCard`, `AiAdvisorPanel`, `AnnotatedFindingPreview`, `ProxySetupForm`, `SettingsView`, `OnboardingWizard`, `/app/flow`, `/app/loop`.
+
+**2. Gemini → OpenAI** — replaced every Gemini REST integration with one shared OpenAI client (`src/lib/ai/openai.ts`, 9 unit tests).
+- Models (researched May 2026): `gpt-5.4` for reasoning/quality (variant advisor, audit fix advisor), `gpt-5.4-mini` for capture-time extraction + screenshot gate (copy critique, visual signals, vision caption, quality gate), `gpt-image-1` for Tier-2 inpaint. All overridable via `OPENAI_REASONING_MODEL` / `OPENAI_FAST_MODEL` / `OPENAI_IMAGE_MODEL`.
+- Migrated call sites: `aiAdvisor.ts` (`callGeminiFlash` → `callAdvisorModel`), `captureCopyCritique.ts`, `captureVisualSignals.ts`, `visionPass.ts`, `auditFixAdvisor.ts`, `screenshotQualityGate.ts`, `visionInpaint.ts` (now multipart `/v1/images/edits`), and the `ai-suggest` route. Env gate `GEMINI_API_KEY` → `OPENAI_API_KEY`.
+- Chat Completions shape: Bearer auth header, `response_format:{type:'json_object'}` for JSON, vision via `image_url` data URLs, `max_completion_tokens`, temperature omitted unless needed (gpt-5.x rejects non-default temps).
+- Updated all affected test stubs (`candidates[].content.parts[].text` → `choices[].message.content`; inpaint → `data[].b64_json`). `.env.example` + `README` env table updated.
+
+### Caveats / next
+
+- **Not live-verified against the OpenAI API** (no key/network in this env). Model IDs + request shapes are correct-by-construction from the May-2026 docs; confirm with a real key before relying on production AI surfaces. `gpt-image-1` edits do soft-mask full recreation (not pixel-level), so Tier-2 inpaint brand fidelity is good-but-not-guaranteed — the existing no-op/blank guards + Tier-3 fallback cover drift.
+- Legacy dev scripts (`scripts/probe-gemini.mjs`, `verify-gemini-inpaint.ts`, `live-fix-preview.ts`, `seed-demo.ts`) still reference `GEMINI_API_KEY` — not in the build/test path; update when next touched.
+- Doc comments inside rule files still say "Gemini" (historical context); the canonical build-state note records the swap.
+
+### Verify
+`npx tsc --noEmit` clean, full suite 1306 passed / 2 skipped (live), `npm run build` clean, lint clean on touched files.
+
+---
+
 ## 2026-05-22 (session 3)
 
 **Session:** PRD Milestone 1 — Flow-graph advisory (all 5 scope items)

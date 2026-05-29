@@ -22,13 +22,13 @@ function timeAgo(d: Date | string): string {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  draft: "bg-black/[0.05] text-[#6B6B6B] border-transparent",
-  running: "bg-emerald-50 text-emerald-700 border-emerald-100",
-  completed: "bg-sky-50 text-sky-700 border-sky-100",
-  stopped: "bg-black/[0.04] text-[#9B9B9B] border-transparent",
+  draft: "bg-white text-[#6B6B6B]",
+  running: "bg-emerald-300 text-[#111]",
+  completed: "bg-[#00E5FF] text-[#111]",
+  stopped: "bg-black/[0.06] text-[#9B9B9B]",
 };
 
-const SECTION_LABEL = "text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1";
+const SECTION_LABEL = "brut-label mb-1";
 
 function lift(control: number, variant: number): string {
   if (control === 0) return "—";
@@ -127,27 +127,21 @@ export default async function ExperimentDetailPage({
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-3">
-          <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
-              STATUS_STYLES[exp.status] ?? STATUS_STYLES.draft
-            }`}
-          >
+          <span className={`brut-badge ${STATUS_STYLES[exp.status] ?? STATUS_STYLES.draft}`}>
             {exp.status === "running" && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" />
+              <span className="w-1.5 h-1.5 bg-emerald-600 mr-1.5 animate-pulse" />
             )}
             {exp.status}
           </span>
           {exp.targetPath && (
-            <span className="text-xs text-[#6B6B6B] bg-black/[0.04] px-1.5 py-0.5 rounded">
-              {pathLabel(exp.targetPath)}
-            </span>
+            <span className="brut-tag text-[#6B6B6B]">{pathLabel(exp.targetPath)}</span>
           )}
-          <span className="text-xs text-[#9B9B9B] ml-auto">
+          <span className="mono-text text-[11px] text-[#9B9B9B] ml-auto">
             {exp.startedAt ? `Started ${timeAgo(exp.startedAt)}` : `Created ${timeAgo(exp.createdAt)}`}
           </span>
         </div>
 
-        <h1 className="text-2xl font-bold tracking-tight text-[#111] leading-snug mb-2">
+        <h1 className="text-3xl font-bold tracking-tighter text-[#111] leading-tight mb-2">
           {name}
         </h1>
 
@@ -167,7 +161,7 @@ export default async function ExperimentDetailPage({
       <div className="space-y-4">
         {/* Proxy / DNS gating — experiments need proxy_slug to actually serve traffic */}
         {!siteProxySlug && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="bg-amber-50 border-l-4 border-amber-300 p-4 flex items-center justify-between gap-4">
             <div className="text-sm text-amber-900">
               <span className="font-bold">Complete DNS setup to deploy this experiment.</span>{" "}
               Zybit needs a proxy slug + CNAME before variant traffic can route through us.
@@ -182,10 +176,8 @@ export default async function ExperimentDetailPage({
         )}
 
         {/* Config card */}
-        <div className="bg-white border border-black/[0.05] rounded-2xl p-6">
-          <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-5">
-            Configuration
-          </div>
+        <div className="brut-card p-6">
+          <div className="brut-label mb-5">Configuration</div>
 
           <div className="grid grid-cols-2 gap-x-8 gap-y-4">
             {notes?.changeType && (
@@ -237,7 +229,7 @@ export default async function ExperimentDetailPage({
           </div>
 
           {modifications.length > 0 && (
-            <div className="mt-5 pt-5 border-t border-black/[0.04]">
+            <div className="mt-5 pt-5 border-t-[1.5px] border-black/[0.08]">
               <div className={`${SECTION_LABEL} mb-3`}>What the variant changes</div>
               {(() => {
                 // Hide the cosmetic css-inject companions that style an inserted
@@ -254,7 +246,7 @@ export default async function ExperimentDetailPage({
                 return (
                   <>
                     {anyNoOp && (
-                      <div className="mb-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-800">
+                      <div className="mb-3 bg-amber-50 border-l-4 border-amber-300 px-4 py-3 text-xs text-amber-800">
                         {allNoOp
                           ? "All modifications below are no-ops — the variant iframe will render identical HTML to control. Edit the brief to give the modification a real selector and value."
                           : "One or more modifications below are no-ops (empty selector or empty value). They will be silently skipped at proxy time."}
@@ -266,10 +258,10 @@ export default async function ExperimentDetailPage({
                         return (
                           <div
                             key={i}
-                            className={`rounded-xl px-4 py-3 font-mono text-xs ${
+                            className={`px-4 py-3 font-mono text-xs border ${
                               d.noOp
-                                ? "bg-amber-50 border border-amber-200 text-amber-900"
-                                : "bg-[#F5F5F3] text-[#333]"
+                                ? "bg-amber-50 border-amber-300 text-amber-900"
+                                : "bg-[#F5F5F3] border-black/[0.08] text-[#333]"
                             }`}
                           >
                             <div>
@@ -320,10 +312,8 @@ export default async function ExperimentDetailPage({
 
         {/* Results card */}
         {hasResults ? (
-          <div className="bg-white border border-black/[0.05] rounded-2xl p-6">
-            <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-5">
-              Results
-            </div>
+          <div className="brut-card p-6">
+            <div className="brut-label mb-5">Results</div>
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
                 <div className={SECTION_LABEL}>Control rate</div>
@@ -349,7 +339,7 @@ export default async function ExperimentDetailPage({
               </div>
             </div>
             {exp.resultConfidence !== null && (
-              <div className="flex items-center gap-3 pt-4 border-t border-black/[0.04]">
+              <div className="flex items-center gap-3 pt-4 border-t-[1.5px] border-black/[0.08]">
                 <div className="text-sm text-[#6B6B6B]">
                   Statistical confidence:{" "}
                   <span className="font-bold text-[#111]">

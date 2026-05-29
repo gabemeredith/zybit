@@ -54,3 +54,4 @@ PRD.full.md
 !/lighthouse/sites/*/manifest.json
 !/lighthouse/sites/*/patches/
 !/lighthouse/sites/README.md
+.env.local

@@ -9,7 +9,7 @@ function geminiResponse(json: unknown): Response {
     ok: true,
     status: 200,
     json: async () => ({
-      candidates: [{ content: { parts: [{ text: JSON.stringify(json) }] } }],
+      choices: [{ message: { content: JSON.stringify(json) } }],
     }),
   } as unknown as Response;
 }

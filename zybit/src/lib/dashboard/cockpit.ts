@@ -126,7 +126,7 @@ export function deriveIntegrationHealth(
     return {
       state: 'degraded',
       label: integration.lastErrorCode
-        ? `Degraded — ${integration.lastErrorCode}`
+        ? `Degraded: ${integration.lastErrorCode}`
         : 'Degraded',
       tone: 'red',
     };
@@ -136,7 +136,7 @@ export function deriveIntegrationHealth(
   }
   const age = now - new Date(integration.lastSyncedAt).getTime();
   if (Number.isFinite(age) && age > STALE_SYNC_MS) {
-    return { state: 'degraded', label: 'Degraded — sync stale', tone: 'amber' };
+    return { state: 'degraded', label: 'Degraded, sync stale', tone: 'amber' };
   }
   return { state: 'watching', label: 'Zybit is watching', tone: 'green' };
 }
@@ -155,7 +155,7 @@ export function deriveBridgeHealth(assignedVisitors: number, bridgedVisitors: nu
   if (bridgedVisitors === 0 && assignedVisitors >= BRIDGE_MIN_ASSIGNED) {
     return {
       state: 'not-detected',
-      label: 'PostHog bridge not detected — conversions may be undercounted',
+      label: 'PostHog bridge not detected. Conversions may be undercounted.',
       tone: 'amber',
       assignedVisitors,
       bridgedVisitors,

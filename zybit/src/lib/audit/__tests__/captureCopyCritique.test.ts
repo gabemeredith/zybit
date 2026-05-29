@@ -155,10 +155,10 @@ describe('buildPromptInput', () => {
 
 describe('captureCopyCritique', () => {
   function makeBody(text: string) {
-    return { candidates: [{ content: { parts: [{ text }] } }] };
+    return { choices: [{ message: { content: text } }] };
   }
 
-  it('returns null when GEMINI_API_KEY is not set', async () => {
+  it('returns null when OPENAI_API_KEY is not set', async () => {
     const out = await captureCopyCritique(
       { url: 'https://example.com', heroBlock: HERO, primaryCtaText: 'Get started', pageType: 'home' },
       { apiKey: null },
@@ -247,7 +247,7 @@ describe('captureCopyCritique', () => {
     expect(out!.modelVersion).toBe(COPY_CRITIQUE_MODEL);
   });
 
-  it('passes the API key as x-goog-api-key header (never in URL)', async () => {
+  it('passes the API key in the Authorization header (never in URL)', async () => {
     const captured: { url?: string; headers?: Record<string, string> } = {};
     await captureCopyCritique(
       { url: 'https://example.com', heroBlock: HERO, primaryCtaText: 'Get started', pageType: 'home' },
@@ -263,6 +263,6 @@ describe('captureCopyCritique', () => {
       },
     );
     expect(captured.url!.includes('secret-token-123')).toBe(false);
-    expect(captured.headers!['x-goog-api-key']).toBe('secret-token-123');
+    expect(captured.headers!.authorization).toBe('Bearer secret-token-123');
   });
 });

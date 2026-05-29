@@ -70,7 +70,7 @@ export default function EmptyFindings({
           <div className="max-w-[400px] mx-auto">
             <div className="flex justify-between items-end mb-4">
               <span className="text-sm font-bold uppercase tracking-[0.1em] text-[#6B6B6B]">
-                {sessionsObserved?.toLocaleString() ?? 0} / {threshold?.toLocaleString() ?? "—"}
+                {sessionsObserved?.toLocaleString() ?? 0} / {threshold?.toLocaleString() ?? "n/a"}
               </span>
               <span className="text-3xl font-bold tracking-tighter text-[#111]">
                 {percent}%

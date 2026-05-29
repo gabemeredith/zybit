@@ -28,16 +28,12 @@ function timeAgo(isoDate: string): string {
 
 function SeverityBadge({ severity }: { severity: string }) {
   const styles: Record<string, string> = {
-    critical: "bg-red-50 text-red-700 border-red-100",
-    warn: "bg-amber-50 text-amber-700 border-amber-100",
-    info: "bg-sky-50 text-sky-700 border-sky-100",
+    critical: "bg-[#FF4A5A] text-white",
+    warn: "bg-amber-300 text-[#111]",
+    info: "bg-[#00E5FF] text-[#111]",
   };
   return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-widest border ${
-        styles[severity] ?? styles.info
-      }`}
-    >
+    <span className={`brut-badge ${styles[severity] ?? styles.info}`}>
       {severity}
     </span>
   );
@@ -54,36 +50,30 @@ function StatCard({
   sub?: string;
   href?: string;
 }) {
-  const inner = (
-    <div className="bg-white border border-black/[0.05] rounded-2xl p-6">
-      <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-2">
-        {label}
+  const body = (
+    <div className="px-4 py-3">
+      <div className="flex items-baseline justify-between gap-3 mb-1">
+        <span className="brut-label pt-0">{label}</span>
+        <span className="mono-text text-lg font-bold text-[#111] leading-none">{value}</span>
       </div>
-      <div className="text-4xl font-bold tracking-tighter text-[#111] leading-none mb-1">
-        {value}
-      </div>
-      {sub && (
-        <div className="text-sm text-[#6B6B6B] mt-1">{sub}</div>
-      )}
+      {sub && <div className="text-xs text-[#9B9B9B]">{sub}</div>}
     </div>
   );
 
   if (href) {
     return (
-      <Link href={href} className="block group transition-transform hover:-translate-y-0.5">
-        {inner}
+      <Link href={href} className="block brut-card-link">
+        {body}
       </Link>
     );
   }
-  return inner;
+  return <div className="brut-card">{body}</div>;
 }
 
 function PipelineHealth({ integrations }: { integrations: NonNullable<CockpitData["pipeline"]> }) {
   return (
     <div className="mt-6">
-      <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-3">
-        Pipeline health
-      </div>
+      <div className="brut-label mb-3">Pipeline health</div>
       <div className="space-y-2">
         {integrations.integrations.map((integration) => {
           const health = deriveIntegrationHealth(integration);
@@ -93,7 +83,7 @@ function PipelineHealth({ integrations }: { integrations: NonNullable<CockpitDat
               : health.tone === "amber"
                 ? "bg-amber-400"
                 : health.tone === "red"
-                  ? "bg-red-400"
+                  ? "bg-red-500"
                   : "bg-gray-300";
           const labelClass =
             health.tone === "red"
@@ -104,18 +94,18 @@ function PipelineHealth({ integrations }: { integrations: NonNullable<CockpitDat
           return (
             <div
               key={integration.id}
-              className="flex items-center justify-between bg-white border border-black/[0.05] rounded-xl px-4 py-3"
+              className="flex items-center justify-between brut-card px-4 py-3"
             >
               <div className="flex items-center gap-3">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
+                <span className={`w-2 h-2 shrink-0 ${dotClass}`} />
                 <div className="flex flex-col">
-                  <span className="text-sm font-medium text-[#111] capitalize">
+                  <span className="text-sm font-bold text-[#111] capitalize tracking-tight">
                     {integration.provider}
                   </span>
                   <span className={`text-xs ${labelClass}`}>{health.label}</span>
                 </div>
               </div>
-              <div className="text-right text-xs text-[#6B6B6B]">
+              <div className="text-right text-xs text-[#6B6B6B] mono-text">
                 <div>
                   {integration.lastSyncedAt
                     ? `Synced ${timeAgo(integration.lastSyncedAt)}`
@@ -129,14 +119,11 @@ function PipelineHealth({ integrations }: { integrations: NonNullable<CockpitDat
           );
         })}
         {integrations.integrations.length === 0 && (
-          <div className="bg-white border border-black/[0.05] rounded-xl px-5 py-5 flex items-center justify-between gap-4">
+          <div className="brut-card px-5 py-5 flex items-center justify-between gap-4">
             <div className="text-sm text-[#6B6B6B]">
               No integrations connected. Zybit needs analytics data to generate findings.
             </div>
-            <Link
-              href="/app/onboarding?step=2"
-              className="shrink-0 inline-flex items-center gap-2 bg-[#111] text-[#FAFAF8] px-4 py-2.5 font-bold text-xs uppercase tracking-[0.08em] hover:opacity-80 transition-opacity"
-            >
+            <Link href="/app/onboarding?step=2" className="brut-action shrink-0">
               Connect PostHog
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                 <path d="M2 6h8M6 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -153,9 +140,7 @@ function NoSiteCTA() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] text-center px-6">
       <div className="max-w-md">
-        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-4">
-          Get started
-        </div>
+        <div className="brut-label mb-4 tracking-[0.2em]">Get started</div>
         <h1 className="text-5xl font-bold tracking-tighter text-[#111] mb-4 leading-[0.95]">
           Connect your<br />first site.
         </h1>
@@ -163,10 +148,7 @@ function NoSiteCTA() {
           Zybit needs to know which product to analyze. Start by adding your site URL and
           connecting your analytics.
         </p>
-        <Link
-          href="/app/onboarding"
-          className="inline-flex items-center gap-2 bg-[#111] text-[#FAFAF8] px-8 py-4 font-bold text-sm uppercase tracking-[0.1em] hover:opacity-80 transition-opacity"
-        >
+        <Link href="/app/onboarding" className="brut-action">
           Connect site
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
             <path d="M2 7h10M7 2l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -213,10 +195,8 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-1">
-            Cockpit
-          </div>
-          <h1 className="text-3xl font-bold tracking-tighter text-[#111]">
+          <div className="brut-label mb-1 tracking-[0.2em]">Cockpit</div>
+          <h1 className="text-4xl font-bold tracking-tighter text-[#111]">
             {site.domain}
           </h1>
         </div>
@@ -255,27 +235,30 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
         />
         <StatCard
           label="Last analysis"
-          value={lastInsightAt ? timeAgo(lastInsightAt) : "—"}
+          value={lastInsightAt ? timeAgo(lastInsightAt) : "never"}
           sub={lastInsightAt ? "insights pipeline ran" : "run insights to start"}
         />
       </div>
 
-      {/* Snapshot staleness — Zybit-023 / per-path drift Zybit-135 */}
+      {/* Snapshot staleness notice */}
       {snapshots.staleDays != null && snapshots.staleDays > SNAPSHOT_STALE_DAYS && (
-        <div className="mb-8 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-            Page snapshots are {snapshots.staleDays} days old — the Understand layer may be stale.
+        <div className="mb-6 brut-card px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-[#6B6B6B]">
+            <span className="w-1.5 h-1.5 shrink-0 bg-[#111]" />
+            <span>
+              <span className="font-medium text-[#111]">Snapshots {snapshots.staleDays}d old.</span>{" "}
+              The Understand layer may be stale.
+            </span>
           </div>
           {snapshots.perPath.filter((p) => (p.staleDays ?? 0) > SNAPSHOT_STALE_DAYS).length > 0 && (
-            <ul className="mt-2 space-y-0.5 pl-4">
+            <ul className="mt-2 space-y-0.5 pl-5">
               {snapshots.perPath
                 .filter((p) => (p.staleDays ?? 0) > SNAPSHOT_STALE_DAYS)
                 .slice(0, 8)
                 .map((p) => (
-                  <li key={p.pathRef} className="flex items-center justify-between gap-3 text-xs">
+                  <li key={p.pathRef} className="flex items-center justify-between gap-3 text-xs text-[#9B9B9B]">
                     <span className="font-mono truncate">{p.pathRef}</span>
-                    <span className="shrink-0 text-amber-600">{p.staleDays}d old</span>
+                    <span className="shrink-0">{p.staleDays}d</span>
                   </li>
                 ))}
             </ul>
@@ -283,38 +266,42 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
         </div>
       )}
 
-      {/* PostHog bridge health — Zybit-126 */}
+      {/* PostHog bridge notice */}
       {bridge.state === "not-detected" && (
-        <div className="mb-8 flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-          PostHog bridge not detected — {bridge.assignedVisitors} visitors assigned but none
-          joined to a conversion. Experiment outcomes may be undercounted.
-        </div>
-      )}
-
-      {/* GA4-only measurement gap — Zybit-157 */}
-      {pipeline.ga4OnlyMeasurementGap && (
-        <div className="mb-8 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+        <div className="mb-6 brut-card px-4 py-3 flex items-start gap-2 text-sm text-[#6B6B6B]">
+          <span className="w-1.5 h-1.5 shrink-0 mt-1 bg-[#111]" />
           <span>
-            GA4 connected — findings and proposals are available, but outcome
-            measurement requires PostHog or Segment. GA4 is aggregate-grain and
-            cannot be joined to A/B test assignments.
+            <span className="font-medium text-[#111]">PostHog bridge not detected.</span>{" "}
+            {bridge.assignedVisitors} visitors assigned but none joined to a conversion. Experiment outcomes may be undercounted.
           </span>
         </div>
       )}
 
-      {/* Circuit breaker tripped — Zybit-154 */}
-      {pipeline.integrations.some((i) => i.status === "disconnected") && (
-        <div className="mb-8 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+      {/* GA4-only measurement gap */}
+      {pipeline.ga4OnlyMeasurementGap && (
+        <div className="mb-6 brut-card px-4 py-3 flex items-start gap-2 text-sm text-[#6B6B6B]">
+          <span className="w-1.5 h-1.5 shrink-0 mt-1 bg-[#111]" />
           <span>
-            {pipeline.integrations
-              .filter((i) => i.status === "disconnected")
-              .map((i) => i.provider)
-              .join(", ")}{" "}
-            sync is paused after repeated failures — Zybit stopped retrying to
-            avoid burning quota. Resume it once the connection is fixed
+            <span className="font-medium text-[#111]">GA4 connected.</span>{" "}
+            Findings and proposals are available, but outcome measurement requires PostHog or Segment.
+            GA4 is aggregate-grain and cannot be joined to A/B test assignments.
+          </span>
+        </div>
+      )}
+
+      {/* Circuit breaker */}
+      {pipeline.integrations.some((i) => i.status === "disconnected") && (
+        <div className="mb-6 border-[1.5px] border-red-400 px-4 py-3 flex items-start gap-2 text-sm text-red-700">
+          <span className="w-1.5 h-1.5 shrink-0 mt-1 bg-red-500" />
+          <span>
+            <span className="font-medium">
+              {pipeline.integrations
+                .filter((i) => i.status === "disconnected")
+                .map((i) => i.provider)
+                .join(", ")}{" "}
+              sync paused.
+            </span>{" "}
+            Stopped retrying after repeated failures to avoid burning quota. Resume once the connection is fixed
             (POST <code className="font-mono text-xs">/api/phase2/integrations/:id/resume</code>).
           </span>
         </div>
@@ -323,30 +310,26 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
       {/* Top finding */}
       {findings.topFinding && (
         <div className="mb-8">
-          <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-3">
-            Top priority finding
-          </div>
-          <Link href={`/app/findings/${findings.topFinding.id}`} className="block group">
-            <div className="bg-white border border-black/[0.05] rounded-2xl p-6 transition-all group-hover:-translate-y-0.5 group-hover:shadow-sm">
-              <div className="flex items-start justify-between gap-4 mb-3">
-                <h2 className="text-xl font-bold tracking-tight text-[#111] leading-snug">
-                  {findings.topFinding.title}
-                </h2>
-                <SeverityBadge severity={findings.topFinding.severity} />
-              </div>
-              <p className="text-sm text-[#6B6B6B] leading-relaxed mb-4">
-                {findings.topFinding.summary}
-              </p>
-              <div className="flex items-center justify-between">
-                {findings.topFinding.pathRef && (
-                  <span className="text-xs font-mono text-[#6B6B6B] bg-black/[0.04] px-2 py-1 rounded">
-                    {findings.topFinding.pathRef}
-                  </span>
-                )}
-                <span className="text-sm font-bold text-[#111] ml-auto group-hover:underline underline-offset-2">
-                  View finding →
+          <div className="brut-label mb-3">Top priority finding</div>
+          <Link href={`/app/findings/${findings.topFinding.id}`} className="block brut-card-link p-6 group">
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <h2 className="text-xl font-bold tracking-tight text-[#111] leading-snug">
+                {findings.topFinding.title}
+              </h2>
+              <SeverityBadge severity={findings.topFinding.severity} />
+            </div>
+            <p className="text-sm text-[#6B6B6B] leading-relaxed mb-4">
+              {findings.topFinding.summary}
+            </p>
+            <div className="flex items-center justify-between">
+              {findings.topFinding.pathRef && (
+                <span className="brut-tag text-[#6B6B6B]">
+                  {findings.topFinding.pathRef}
                 </span>
-              </div>
+              )}
+              <span className="mono-text text-xs font-bold uppercase tracking-[0.08em] text-[#111] ml-auto group-hover:underline underline-offset-2">
+                View finding →
+              </span>
             </div>
           </Link>
           {findings.openCount > 1 && (
@@ -364,7 +347,7 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
 
       {/* No findings yet but gate passed */}
       {findings.openCount === 0 && (
-        <div className="mb-8 bg-white border border-black/[0.05] rounded-2xl p-8 text-center">
+        <div className="mb-8 brut-card p-8 text-center">
           <div className="text-[#6B6B6B] mb-4">
             No findings yet. Run the insights pipeline to analyze your site.
           </div>

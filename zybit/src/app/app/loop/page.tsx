@@ -319,7 +319,7 @@ function EntryLabel({ entry }: { entry: TimelineEntry }) {
         <Link href={`/app/experiments/${entry.experimentId}`} className="font-medium hover:underline">
           Experiment{' '}
           {breached ? (
-            <span className="inline-flex items-center gap-1 align-middle rounded-full bg-amber-100 text-amber-800 text-xs font-semibold px-2 py-0.5">
+            <span className="brut-badge bg-amber-300 text-[#111] align-middle">
               ⚠ Guardrail breached
             </span>
           ) : (
@@ -449,8 +449,8 @@ export default async function LoopPage({
                 aria-selected={active}
                 className={
                   active
-                    ? 'px-3 py-1.5 rounded-full text-sm font-medium bg-[#111] text-white'
-                    : 'px-3 py-1.5 rounded-full text-sm font-medium bg-[#F2F2F2] text-[#6B6B6B] hover:bg-[#E8E8E8] transition-colors'
+                    ? 'brut-badge bg-[#111] text-white px-3 py-1.5'
+                    : 'brut-badge bg-[#F2F2F2] text-[#6B6B6B] px-3 py-1.5 hover:bg-[#E8E8E8] transition-colors'
                 }
               >
                 {s.name}
@@ -461,7 +461,7 @@ export default async function LoopPage({
       )}
 
       {timeline.length === 0 ? (
-        <div className="border border-dashed border-[#E0E0E0] rounded-xl p-12 text-center">
+        <div className="brut-card p-12 text-center border-dashed">
           <p className="text-[#6B6B6B] text-sm">
             {siteId
               ? 'No completed experiments yet. Approve a finding to get started.'
@@ -477,18 +477,18 @@ export default async function LoopPage({
           )}
         </div>
       ) : (
-        <ol className="relative border-l border-[#E8E8E8] ml-3 space-y-8">
+        <ol className="relative border-l-[1.5px] border-black/[0.08] ml-3 space-y-8">
           {timeline.map((entry, i) => (
             <li key={i} className="ml-6">
-              <span className="absolute -left-3 flex items-center justify-center w-6 h-6 bg-white border border-[#E8E8E8] rounded-full">
+              <span className="absolute -left-3 flex items-center justify-center w-6 h-6 bg-white border-[1.5px] border-black/[0.08]">
                 <EntryIcon kind={entry.kind} />
               </span>
               <div className="flex items-start gap-4">
-                <div className="min-w-[90px] text-xs text-[#9B9B9B] pt-0.5 shrink-0">
+                <div className="min-w-[90px] mono-text text-[11px] text-[#9B9B9B] pt-0.5 shrink-0">
                   {dateLabel(entry.date)}
                 </div>
                 <div className="flex-1">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#9B9B9B] mb-1 block">
+                  <span className="brut-label mb-1 block">
                     {kindLabel[entry.kind]}
                   </span>
                   <EntryLabel entry={entry} />
