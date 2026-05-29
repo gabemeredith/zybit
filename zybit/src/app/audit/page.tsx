@@ -6,6 +6,7 @@ import { SiteNav } from '@/components/SiteNav';
 import { IntakeModal } from '@/components/IntakeModal';
 import { PUBLIC_AUDIT_RULE_COUNT, PUBLIC_AUDIT_DEFERRED_RULE_COUNT, TOTAL_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
 import type { IntakeFinding } from '@/lib/intake/structuralAudit';
+import { useAnalytics } from '@/lib/analytics';
 
 const INK = '#111';
 const CREAM = '#FAFAF8';
@@ -80,6 +81,7 @@ export default function AuditPage() {
   const [progressIdx, setProgressIdx] = useState(0);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
   const [teaserFinding, setTeaserFinding] = useState<IntakeFinding | null>(null);
+  const analytics = useAnalytics();
 
   // Animate the progress strip while the submit fetch is in-flight.
   // The effect only advances progressIdx — the fetch completion sets the stage.
@@ -125,6 +127,7 @@ export default function AuditPage() {
     setForm(normalizedForm);
     setProgressIdx(0);
     setStage('running');
+    analytics.auditFormSubmitted({ url, role: form.role });
 
     try {
       const res = await fetch('/api/audit/public/submit', {
@@ -161,7 +164,10 @@ export default function AuditPage() {
 
   // The confirmation email was already sent during submit.
   // This just advances the UI state.
-  const confirmEmail = () => setStage('awaiting');
+  const confirmEmail = () => {
+    analytics.auditConfirmed();
+    setStage('awaiting');
+  };
 
   return (
     <main className="relative w-full min-h-screen" style={{ background: CREAM, color: INK }}>
@@ -520,6 +526,7 @@ function TeaserPanel({
   onSendEmail: () => void;
 }) {
   const host = hostFromUrl(form.url);
+  const analytics = useAnalytics();
   return (
     <div style={{ maxWidth: 760 }}>
       <div
@@ -728,6 +735,7 @@ function TeaserCard({ finding }: { finding: IntakeFinding }) {
 // ---------------------------------------------------------------------------
 
 function AwaitingPanel({ form, onReset }: { form: FormState; onReset: () => void }) {
+  const analytics = useAnalytics();
   return (
     <div
       className="sans-text"
@@ -779,6 +787,7 @@ function AwaitingPanel({ form, onReset }: { form: FormState; onReset: () => void
           target="_blank"
           rel="noreferrer"
           className="btn-brutalist"
+          onClick={() => analytics.calendlyCtaClicked("audit_teaser")}
         >
           Book the founders →
         </a>

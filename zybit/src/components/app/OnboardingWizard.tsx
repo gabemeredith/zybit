@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAnalytics } from "@/lib/analytics";
 import type { Phase1SiteRecord } from "@/lib/phase1";
 import {
   createSiteAction,
@@ -155,6 +156,7 @@ function Step1({
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const analytics = useAnalytics();
 
   async function handleSubmit() {
     setError("");
@@ -164,6 +166,7 @@ function Step1({
       if (!result.ok) {
         setError(result.error);
       } else {
+        analytics.onboardingStepCompleted({ step: 1, siteId: result.site.id });
         onComplete(result.site.id, result.site.domain);
       }
     } catch {
@@ -303,6 +306,7 @@ function Step2Connect({
 
   const [report, setReport] = useState<PreflightReport | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const analytics = useAnalytics();
 
   const segmentWebhookUrl = typeof window !== "undefined"
     ? `${window.location.origin}/api/phase2/integrations/segment-webhook-placeholder`
@@ -333,6 +337,7 @@ function Step2Connect({
       if (!result.ok) {
         setError(result.error);
       } else {
+        analytics.onboardingStepCompleted({ step: 2, siteId, provider });
         await runVerification();
       }
     } catch {
@@ -471,6 +476,8 @@ function Step3Revenue({
     (mrrNum !== null && Number.isFinite(mrrNum) && mrrNum > 0) ||
     (aovNum !== null && Number.isFinite(aovNum) && aovNum > 0);
 
+  const analytics = useAnalytics();
+
   async function handleFinish(saveNumbers: boolean) {
     setLoading(true);
     try {
@@ -479,6 +486,7 @@ function Step3Revenue({
         const aovCents = aovNum !== null && aovNum > 0 ? Math.round(aovNum * 100) : null;
         await saveSiteMetaAction(siteId, mrrCents, aovCents);
       }
+      analytics.onboardingStepCompleted({ step: 3, siteId });
       onFinish();
     } finally {
       setLoading(false);

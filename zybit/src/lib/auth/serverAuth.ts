@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import { getSessionUser } from './session';
 
 export type ServerAuthResult =
-  | { ok: true; orgId: string; userId: string }
+  | { ok: true; orgId: string; userId: string; email: string; role: string }
   | { ok: false; reason: 'unauthenticated' };
 
 export async function getServerAuth(): Promise<ServerAuthResult> {
@@ -13,5 +13,5 @@ export async function getServerAuth(): Promise<ServerAuthResult> {
   const user = await getSessionUser(token);
   if (!user) return { ok: false, reason: 'unauthenticated' };
 
-  return { ok: true, orgId: user.organizationId, userId: user.userId };
+  return { ok: true, orgId: user.organizationId, userId: user.userId, email: user.email, role: user.role };
 }

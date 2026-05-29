@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { updateExperimentStatusAction, recordResultsAction } from "@/app/app/experiments/[id]/actions";
+import { useAnalytics } from "@/lib/analytics";
 
 type Status = "draft" | "running" | "completed" | "stopped";
 
@@ -33,6 +34,7 @@ export default function ExperimentControls({
 }: Props) {
   const [statusLoading, setStatusLoading] = useState<string | null>(null);
   const [overlaps, setOverlaps] = useState<Array<{ id: string; name: string }> | null>(null);
+  const analytics = useAnalytics();
   const [showResultsForm, setShowResultsForm] = useState(!hasResults && currentStatus === "completed");
   const [controlRate, setControlRate] = useState(
     defaultResults.controlRate !== undefined ? (defaultResults.controlRate * 100).toFixed(1) : ""
@@ -60,6 +62,11 @@ export default function ExperimentControls({
         setOverlaps(result.overlaps);
         return;
       }
+      if (status === "running") {
+        analytics.experimentLaunched({ experimentId, hadOverlap: acknowledgeOverlap });
+      } else if (status === "completed" || status === "stopped") {
+        analytics.experimentStopped({ experimentId, finalStatus: status });
+      }
       if (status === "completed") setShowResultsForm(true);
       router.refresh();
     } finally {
@@ -71,13 +78,17 @@ export default function ExperimentControls({
     e.preventDefault();
     setSavingResults(true);
     try {
-      await recordResultsAction(
+      const control = parseFloat(controlRate) / 100;
+      const variant = parseFloat(variantRate) / 100;
+      const conf = parseFloat(confidence) / 100;
+      const parts = parseInt(participants) || 0;
+      await recordResultsAction(experimentId, control, variant, conf, parts);
+      analytics.experimentResultsRecorded({
         experimentId,
-        parseFloat(controlRate) / 100,
-        parseFloat(variantRate) / 100,
-        parseFloat(confidence) / 100,
-        parseInt(participants) || 0,
-      );
+        liftPct: control > 0 ? ((variant - control) / control) * 100 : 0,
+        confidence: conf,
+        participants: parts,
+      });
       setShowResultsForm(false);
       router.refresh();
     } finally {

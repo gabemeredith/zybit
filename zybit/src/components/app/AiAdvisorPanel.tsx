@@ -21,6 +21,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAnalytics } from "@/lib/analytics";
 import type {
   VariantModification,
   InsertPosition,
@@ -173,9 +174,11 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
     | { kind: "error"; message: string; code?: string };
 
   const [state, setState] = useState<State>({ kind: "idle" });
+  const analytics = useAnalytics();
 
   async function fetchSuggestions() {
     setState({ kind: "loading" });
+    analytics.aiAdvisorRequested({ findingId });
     try {
       const res = await fetch("/api/dashboard/experiments/ai-suggest", {
         method: "POST",
@@ -185,6 +188,11 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
       const json = await res.json().catch(() => ({}));
       const normalized = normalizeAdvisorResponse(res.status, json);
       if (normalized.kind === "err") {
+        if (res.status === 429) {
+          analytics.aiAdvisorRateLimited({ findingId });
+        } else {
+          analytics.aiAdvisorError({ findingId, code: normalized.code });
+        }
         setState({
           kind: "error",
           message: normalized.message,
@@ -192,8 +200,14 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
         });
         return;
       }
+      analytics.aiAdvisorResponded({
+        findingId,
+        proposalCount: normalized.data.options.length,
+        dailyUsed: normalized.data.usage.usedToday,
+      });
       setState({ kind: "loaded", data: normalized.data });
     } catch (err) {
+      analytics.aiAdvisorError({ findingId });
       setState({
         kind: "error",
         message: err instanceof Error ? err.message : "Network error.",

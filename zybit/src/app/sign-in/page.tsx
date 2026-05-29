@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AuthParticleCanvas } from "@/components/particle-background";
 import { Logo } from "@/components/logo";
+import { useAnalytics } from "@/lib/analytics";
 
 function SignInForm() {
   const searchParams = useSearchParams();
@@ -13,11 +14,13 @@ function SignInForm() {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "sent" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const analytics = useAnalytics();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setState("loading");
     setErrorMsg("");
+    analytics.signInRequested(email);
     try {
       const res = await fetch("/api/auth/request-link", {
         method: "POST",
@@ -28,9 +31,12 @@ function SignInForm() {
         const data = await res.json() as { error?: string };
         throw new Error(data.error ?? "Something went wrong.");
       }
+      analytics.magicLinkSent(email);
       setState("sent");
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Something went wrong.");
+      const reason = err instanceof Error ? err.message : "Something went wrong.";
+      analytics.signInError(reason);
+      setErrorMsg(reason);
       setState("error");
     }
   }
@@ -95,6 +101,7 @@ function SignInForm() {
           target="_blank"
           rel="noreferrer"
           className="font-semibold text-[#111] no-underline border-b border-[#111]"
+          onClick={() => analytics.calendlyCtaClicked("sign_in")}
         >
           Book a call with us first.
         </a>
