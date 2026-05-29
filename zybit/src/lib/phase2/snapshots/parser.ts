@@ -430,9 +430,14 @@ function findImages(target: HTMLElement, ctaElements: Set<HTMLElement>): ImageIt
     if (results.length >= MAX_IMAGES) break;
     const src = el.getAttribute('src') ?? '';
     if (!src) continue;
+    // `getAttribute` returns `undefined` (not `null`) for a missing attribute
+    // in this HTML parser, so a strict `!== null` wrongly treated a missing
+    // alt as present and called `.trim()` on `undefined` — crashing the parse
+    // on any alt-less <img> (e.g. Stripe's /blog). Loose `!= null` catches both
+    // and preserves the "alt present but empty = decorative" distinction.
     const altAttr = el.getAttribute('alt');
-    const hasAlt = altAttr !== null;
-    const alt = hasAlt ? altAttr!.trim() : null;
+    const hasAlt = altAttr != null;
+    const alt = altAttr != null ? altAttr.trim() : null;
     const widthAttr = el.getAttribute('width');
     const heightAttr = el.getAttribute('height');
     const width = widthAttr != null && /^\d+$/.test(widthAttr) ? parseInt(widthAttr, 10) : null;

@@ -63,6 +63,8 @@ export interface RunUrlAuditOpts {
    * `LLM_REFACTOR_ENABLED` env flag. The GUI toggle sets this explicitly.
    */
   layerB?: boolean;
+  /** Compare mode — derive facts from evidence so every finding is eligible. */
+  layerBDeriveFacts?: boolean;
 }
 
 function now(): string {
@@ -296,6 +298,7 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
     maxFindings: 50,
     ...(mode ? { mode } : {}),
     ...(typeof opts.layerB === 'boolean' ? { layerB: opts.layerB } : {}),
+    ...(opts.layerBDeriveFacts ? { layerBDeriveFacts: true } : {}),
   });
   let auditFindings = (insights.auditReport?.findings ?? []) as AuditFinding[];
 

@@ -175,6 +175,11 @@ export async function applyLayerB(
 
   if (!enabled) return { findings, telemetry: empty };
 
+  // Brand DNA is an Understand-step artifact — parsed from snapshots, NOT a
+  // function of findings. Derive it up front so it's observable even when no
+  // finding is eligible (e.g. a polished site that produces 0 snapshot findings).
+  const brandProfile = deriveBrandProfile([...ctx.pageSnapshotsByPath.values()]);
+
   // Eligible = anything with groundable facts (own factsJson, or derived from
   // evidence in compare mode), ranked by priority, capped.
   const eligibleIds = new Set(
@@ -185,11 +190,9 @@ export async function applyLayerB(
       .map((f) => f.id),
   );
 
-  if (eligibleIds.size === 0) return { findings, telemetry: empty };
-
-  // Brand DNA is a site-wide property — derive once from all snapshots, reuse
-  // per finding so the prose matches the brand's voice + reuses its CTA verbs.
-  const brandProfile = deriveBrandProfile([...ctx.pageSnapshotsByPath.values()]);
+  // No eligible findings (e.g. a polished site) still reports the brand DNA —
+  // it's a property of the site, not of whether a finding fired.
+  if (eligibleIds.size === 0) return { findings, telemetry: { ...empty, brandProfile } };
 
   const perFinding: LayerBFindingTelemetry[] = [];
 
