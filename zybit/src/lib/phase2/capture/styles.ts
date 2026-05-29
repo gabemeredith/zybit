@@ -47,6 +47,17 @@ const LIMITS = {
 } as const;
 
 export async function extractMeasurements(page: Page): Promise<PageMeasurements> {
+  // tsx/esbuild transpiles this file with `keepNames`, which wraps the named
+  // inner functions below in calls to a `__name(...)` helper. That helper is
+  // defined in Node but NOT in the browser context where `page.evaluate` runs,
+  // so without this shim the evaluate throws `__name is not defined` (Lighthouse
+  // runs under tsx; the Next build doesn't emit the helper). Define it in the
+  // page first — this arrow has no named inner functions, so it isn't itself
+  // wrapped and runs cleanly.
+  await page.evaluate(() => {
+    const g = globalThis as unknown as { __name?: (fn: unknown, name?: string) => unknown };
+    if (typeof g.__name !== 'function') g.__name = (fn) => fn;
+  });
   return page.evaluate(
     (limits: typeof LIMITS): PageMeasurements => {
       // ---- helpers --------------------------------------------------------
