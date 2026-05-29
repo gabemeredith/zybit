@@ -89,8 +89,8 @@ export async function POST(request: Request) {
     });
 
     const { data, error } = await getResendClient().emails.send({
-      from: 'Zybit Intake <onboarding@resend.dev>',
-      to: 'sar367@cornell.edu',
+      from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@mail.getzybit.com>',
+      to: process.env.INTAKE_NOTIFY_EMAIL ?? 'asad@getzybit.com',
       subject: `New Zybit Survey Request — ${url}`,
       html: `
         <div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; color: #0E0C09;">

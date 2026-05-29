@@ -56,7 +56,7 @@ export async function sendWelcomeEmail(input: WelcomeEmailInput): Promise<void> 
   const { subject, html } = buildWelcomeEmail(input);
   const resend = new Resend(key);
   await resend.emails.send({
-    from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@getzybit.com>',
+    from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@mail.getzybit.com>',
     to: input.email,
     subject,
     html,

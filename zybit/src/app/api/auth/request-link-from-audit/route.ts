@@ -79,7 +79,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       from:
         process.env.AUDIT_FROM_EMAIL ??
         process.env.AUTH_FROM_EMAIL ??
-        'Zybit <noreply@getzybit.com>',
+        'Zybit <noreply@mail.getzybit.com>',
       to: email,
       subject: 'Your Zybit sign-in link',
       html: `
