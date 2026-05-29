@@ -7,6 +7,7 @@ import { getServerAuth } from "@/lib/auth/serverAuth";
 import { createPhase1Repository } from "@/lib/phase1";
 import { getDb } from "@/lib/db/client";
 import { zybitExperiments, zybitFindings } from "@/lib/db/schema";
+import { readPreviewProjectionNote } from "@/lib/experiments/previewExperiment";
 
 function timeAgo(d: Date | string): string {
   const diff = Date.now() - new Date(d).getTime();
@@ -23,6 +24,7 @@ const STATUS_STYLES: Record<string, string> = {
   running: "bg-emerald-300 text-[#111]",
   completed: "bg-[#00E5FF] text-[#111]",
   stopped: "bg-black/[0.06] text-[#9B9B9B]",
+  projected: "bg-[#00E5FF] text-[#111]",
 };
 
 export default async function ExperimentsPage() {
@@ -42,6 +44,7 @@ export default async function ExperimentsPage() {
       hypothesis: zybitExperiments.hypothesis,
       primaryMetric: zybitExperiments.primaryMetric,
       status: zybitExperiments.status,
+      previewOnly: zybitExperiments.previewOnly,
       targetPath: zybitExperiments.targetPath,
       findingId: zybitExperiments.findingId,
       notes: zybitExperiments.notes,
@@ -103,10 +106,12 @@ export default async function ExperimentsPage() {
       ) : (
         <div className="space-y-2">
           {experiments.map((exp) => {
+            const preview = exp.previewOnly ? readPreviewProjectionNote(exp.notes) : null;
             const name = exp.notes
               ? (JSON.parse(exp.notes) as { name?: string }).name ?? exp.hypothesis
               : exp.hypothesis;
             const hasResult = exp.resultVariantRate !== null;
+            const badge = preview ? "projected" : exp.status;
 
             return (
               <Link key={exp.id} href={`/app/experiments/${exp.id}`} className="block brut-card-link px-5 py-4 group">
@@ -122,8 +127,8 @@ export default async function ExperimentsPage() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
-                      <span className={`brut-badge ${STATUS_STYLES[exp.status] ?? STATUS_STYLES.draft}`}>
-                        {exp.status}
+                      <span className={`brut-badge ${STATUS_STYLES[badge] ?? STATUS_STYLES.draft}`}>
+                        {badge}
                       </span>
                       {exp.targetPath && (
                         <span className="brut-tag text-[#6B6B6B]">{exp.targetPath}</span>
@@ -146,7 +151,12 @@ export default async function ExperimentsPage() {
                   </div>
 
                   <div className="shrink-0 flex flex-col items-end gap-1.5 ml-2">
-                    {hasResult ? (
+                    {preview ? (
+                      <span className="mono-text text-xs font-bold text-[#111]">
+                        +{preview.projection.liftPctRange.min}–{preview.projection.liftPctRange.max}%
+                        <span className="ml-1 text-[#9B9B9B] font-normal">projected</span>
+                      </span>
+                    ) : hasResult ? (
                       <span className="mono-text text-xs font-bold text-[#111]">
                         {exp.resultVariantRate !== null && exp.resultControlRate !== null
                           ? `+${((exp.resultVariantRate - exp.resultControlRate) * 100).toFixed(1)}pp`

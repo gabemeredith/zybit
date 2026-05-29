@@ -38,6 +38,7 @@ import { getDb } from '@/lib/db/client';
 import { phase1Sites, zybitFindings, zybitExperiments, zybitExperimentOutcomes } from '@/lib/db/schema';
 import { computeRuleCalibrations } from '@/lib/phase2/rules/ruleCalibration';
 import { createOutcomesRepository } from '@/lib/phase2/outcomes/repository';
+import { readPreviewProjectionNote, type PreviewProjectionNote } from '@/lib/experiments/previewExperiment';
 
 // ---------------------------------------------------------------------------
 // Timeline entry types
@@ -61,19 +62,24 @@ type DeploymentEntry = {
   hypothesis: string;
   controlPct: number;
   variantPct: number;
+  /** Free-experiment loop §5: a projected preview, never deployed to traffic. */
+  previewOnly?: boolean;
+  variantDescription?: string | null;
 };
 
 type ResultEntry = {
   kind: 'result';
   date: Date;
   experimentId: string;
-  result: string; // 'positive' | 'negative' | 'inconclusive'
+  result: string; // 'positive' | 'negative' | 'inconclusive' | 'projected'
   liftPct: number | null;
   confidence: number | null;
   controlRate: number | null;
   variantRate: number | null;
   guardrailBreached: string | null;
   participants: number | null;
+  /** Present when this is a projected (preview) result, not a measured one. */
+  projected?: PreviewProjectionNote | null;
 };
 
 type LearnedEntry = {
@@ -133,6 +139,8 @@ async function loadTimeline(
         audienceControlPct: zybitExperiments.audienceControlPct,
         audienceVariantPct: zybitExperiments.audienceVariantPct,
         status: zybitExperiments.status,
+        previewOnly: zybitExperiments.previewOnly,
+        notes: zybitExperiments.notes,
         startedAt: zybitExperiments.startedAt,
         createdAt: zybitExperiments.createdAt,
       })
@@ -181,6 +189,42 @@ async function loadTimeline(
 
   for (const exp of experiments) {
     if (exp.status === 'draft') continue;
+
+    // Free-experiment loop §5: a preview experiment was never deployed to real
+    // traffic — it shows as a "Proposed" step followed by a "Projected" result,
+    // distinct from a measured outcome. No outcome row exists for it.
+    if (exp.previewOnly) {
+      const preview = readPreviewProjectionNote(exp.notes);
+      const date = exp.startedAt ?? exp.createdAt;
+      entries.push({
+        kind: 'deployment',
+        date,
+        experimentId: exp.id,
+        findingId: exp.findingId,
+        hypothesis: exp.hypothesis,
+        controlPct: exp.audienceControlPct,
+        variantPct: exp.audienceVariantPct,
+        previewOnly: true,
+        variantDescription: preview?.variantDescription ?? null,
+      });
+      if (preview) {
+        entries.push({
+          kind: 'result',
+          date: new Date(date.getTime() + 1_000), // sort right after the proposal
+          experimentId: exp.id,
+          result: 'projected',
+          liftPct: null,
+          confidence: null,
+          controlRate: null,
+          variantRate: null,
+          guardrailBreached: null,
+          participants: null,
+          projected: preview.projection,
+        });
+      }
+      continue;
+    }
+
     entries.push({
       kind: 'deployment',
       date: exp.startedAt ?? exp.createdAt,
@@ -264,17 +308,22 @@ async function loadSites(
 // Rendering helpers
 // ---------------------------------------------------------------------------
 
-function EntryIcon({ kind }: { kind: TimelineEntry['kind'] }) {
-  // detection: magnifying glass (search)
-  // deployment: rocket / play button
-  // result: chart bar / checkmark (positive) / x (negative) / dash (inconclusive)
+function EntryIcon({ entry }: { entry: TimelineEntry }) {
+  // detection: magnifying glass · deployment: rocket · result: chart · learned: brain
+  // Preview variants read as "proposed" (lightbulb) → "projected" (crystal ball).
+  if (entry.kind === 'deployment' && entry.previewOnly) {
+    return <span className="text-lg">💡</span>;
+  }
+  if (entry.kind === 'result' && entry.projected) {
+    return <span className="text-lg">🔮</span>;
+  }
   const icons: Record<TimelineEntry['kind'], string> = {
     detection: '🔍',
     deployment: '🚀',
     result: '📊',
     learned: '🧠',
   };
-  return <span className="text-lg">{icons[kind]}</span>;
+  return <span className="text-lg">{icons[entry.kind]}</span>;
 }
 
 function EntryLabel({ entry }: { entry: TimelineEntry }) {
@@ -299,13 +348,30 @@ function EntryLabel({ entry }: { entry: TimelineEntry }) {
           {entry.hypothesis}
         </Link>
         <p className="text-sm text-[#6B6B6B] mt-0.5">
-          {entry.controlPct}% control / {entry.variantPct}% variant
+          {entry.previewOnly
+            ? entry.variantDescription ?? 'Proposed experiment — not yet deployed to real traffic.'
+            : `${entry.controlPct}% control / ${entry.variantPct}% variant`}
         </p>
       </div>
     );
   }
 
   if (entry.kind === 'result') {
+    if (entry.projected) {
+      const { liftPctRange, basisNote } = entry.projected;
+      return (
+        <div>
+          <Link href={`/app/experiments/${entry.experimentId}`} className="font-medium hover:underline">
+            Projected{' '}
+            <span className="brut-badge bg-[#00E5FF] text-[#111] align-middle">
+              +{liftPctRange.min}–{liftPctRange.max}%
+            </span>
+          </Link>
+          <p className="text-xs text-[#9B9B9B] mt-1">{basisNote}</p>
+        </div>
+      );
+    }
+
     const breached = Boolean(entry.guardrailBreached);
     const resultColor =
       entry.result === 'positive'
@@ -428,6 +494,12 @@ export default async function LoopPage({
     learned: 'Learned',
   };
 
+  const entryLabel = (entry: TimelineEntry): string => {
+    if (entry.kind === 'deployment' && entry.previewOnly) return 'Proposed';
+    if (entry.kind === 'result' && entry.projected) return 'Projected';
+    return kindLabel[entry.kind];
+  };
+
   return (
     <main className="max-w-2xl mx-auto px-6 py-10">
       <div className="mb-8">
@@ -481,7 +553,7 @@ export default async function LoopPage({
           {timeline.map((entry, i) => (
             <li key={i} className="ml-6">
               <span className="absolute -left-3 flex items-center justify-center w-6 h-6 bg-white border-[1.5px] border-black/[0.08]">
-                <EntryIcon kind={entry.kind} />
+                <EntryIcon entry={entry} />
               </span>
               <div className="flex items-start gap-4">
                 <div className="min-w-[90px] mono-text text-[11px] text-[#9B9B9B] pt-0.5 shrink-0">
@@ -489,7 +561,7 @@ export default async function LoopPage({
                 </div>
                 <div className="flex-1">
                   <span className="brut-label mb-1 block">
-                    {kindLabel[entry.kind]}
+                    {entryLabel(entry)}
                   </span>
                   <EntryLabel entry={entry} />
                 </div>

@@ -27,6 +27,9 @@ import {
   zybitFindings,
 } from '@/lib/db/schema';
 import type { VariantModification } from '@/lib/experiments/types';
+import { createPreviewExperiment } from '@/lib/experiments/previewExperiment';
+import { projectImpact } from '@/lib/experiments/projectedImpact';
+import type { ManufacturedExperiment } from '@/lib/experiments/auditFindingBrief';
 import { formatCount, pct } from '@/lib/phase2/rules/helpers';
 import { renderBeforeAfter } from '@/lib/audit/fixPreview/renderBeforeAfter';
 import { runUrlAudit } from '../../../lighthouse/lib/runner/runUrlAudit';
@@ -616,6 +619,38 @@ async function provisionDemoExperiments(args: {
         },
       });
   }
+
+  // Free-experiment loop §5: seed one projected preview so the loop timeline
+  // shows the full detect → propose → projected-result arc (the GUI-visible
+  // payoff of the on-ramp). previewOnly is excluded from the proxy config, so
+  // it can never reach real traffic. Tied to a finding that isn't already
+  // experimented on, so it reads as a distinct "here's one we'd run on you".
+  const previewFinding =
+    nonThrash.find((f) => f.id !== completed.id && f.id !== draft?.id) ?? null;
+  const previewManufactured: ManufacturedExperiment = {
+    basis: 'no_above_fold_cta',
+    experimentName: 'Add a primary CTA above the fold',
+    changeType: 'insert',
+    variantDescription:
+      'Insert a high-contrast "Start free" button in the hero, above the fold, so visitors get an obvious next step without scrolling.',
+    hypothesis:
+      'Giving above-the-fold visitors an obvious next action increases clicks into the signup funnel.',
+    suggestedPrimaryMetric: 'Primary CTA click-through rate',
+  };
+  await createPreviewExperiment({
+    db,
+    organizationId: DEMO_ORG_ID,
+    siteId: DEMO_SITE_ID,
+    findingId: previewFinding?.id ?? null,
+    manufactured: previewManufactured,
+    projection: projectImpact({
+      basis: 'no_above_fold_cta',
+      monthlyRevenue: 42_000,
+      monthlyVisitors: 28_000,
+    }),
+    targetPath: previewFinding?.pathRef ?? '/',
+    now,
+  });
 
   await db
     .insert(phase1Events)
