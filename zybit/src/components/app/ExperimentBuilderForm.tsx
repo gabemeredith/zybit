@@ -32,15 +32,15 @@ const CSS_SYSTEM_HINTS: Partial<Record<CssSystem, { label: string; example: stri
   },
   "styled-components": {
     label: "styled-components detected",
-    example: "Class names are hashed at runtime — use data-zybit-ref selectors from the suggestions above",
+    example: "Class names are hashed at runtime. Use data-zybit-ref selectors from the suggestions above.",
   },
   emotion: {
     label: "Emotion CSS detected",
-    example: "Class names are generated at runtime — use data-zybit-ref selectors from the suggestions above",
+    example: "Class names are generated at runtime. Use data-zybit-ref selectors from the suggestions above.",
   },
   "css-modules": {
     label: "CSS Modules detected",
-    example: "Class names are hashed per-build — prefer element-level selectors like button or h1",
+    example: "Class names are hashed per-build. Prefer element-level selectors like button or h1.",
   },
   bootstrap: {
     label: "Bootstrap detected",
@@ -69,15 +69,15 @@ const INSERT_POSITION_OPTIONS: Array<{ value: InsertPosition; label: string; hin
 ];
 
 const INPUT_CLASS =
-  "w-full border border-black/[0.1] rounded-lg px-3 py-2 text-sm text-[#111] bg-white focus:outline-none focus:ring-1 focus:ring-black/[0.2] placeholder-[#9B9B9B]";
+  "brut-input px-3 py-2 text-sm text-[#111] placeholder-[#9B9B9B]";
 
-const SECTION_LABEL = "block text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-2";
+const SECTION_LABEL = "brut-label mb-2";
 
 function SelectorBadge({ result, loading }: { result: ValidateResult | null; loading: boolean }) {
   if (loading) {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/[0.04] text-[#9B9B9B]">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#9B9B9B] animate-pulse" />
+      <span className="brut-badge bg-black/[0.04] text-[#9B9B9B]">
+        <span className="w-1.5 h-1.5 bg-[#9B9B9B] animate-pulse" />
         Checking…
       </span>
     );
@@ -85,14 +85,14 @@ function SelectorBadge({ result, loading }: { result: ValidateResult | null; loa
   if (!result || result.status === 'empty') return null;
   if (result.status === 'invalid_selector') {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600 border border-red-100">
+      <span className="brut-badge bg-[#FF4A5A] text-[#111]">
         Invalid selector
       </span>
     );
   }
   if (result.status === 'no_snapshot') {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/[0.04] text-[#9B9B9B]">
+      <span className="brut-badge bg-black/[0.04] text-[#9B9B9B]">
         No snapshot to validate against
       </span>
     );
@@ -100,36 +100,36 @@ function SelectorBadge({ result, loading }: { result: ValidateResult | null; loa
   const count = result.count ?? 0;
   if (count === 0) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600 border border-red-100">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+      <span className="brut-badge bg-[#FF4A5A] text-[#111]">
+        <span className="w-1.5 h-1.5 bg-[#111]" />
         No matches
       </span>
     );
   }
   if (count === 1) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+      <span className="brut-badge bg-emerald-300 text-[#111]">
+        <span className="w-1.5 h-1.5 bg-[#111]" />
         1 match
       </span>
     );
   }
   const MULTI_MATCH_STYLES = {
-    amber: {
-      badge: "bg-amber-50 text-amber-700 border border-amber-100",
-      dot: "w-1.5 h-1.5 rounded-full bg-amber-400",
+    neutral: {
+      badge: "bg-black/[0.04] text-[#6B6B6B]",
+      dot: "w-1.5 h-1.5 bg-[#9B9B9B]",
     },
     red: {
-      badge: "bg-red-50 text-red-700 border border-red-100",
-      dot: "w-1.5 h-1.5 rounded-full bg-red-400",
+      badge: "bg-red-50 text-red-700",
+      dot: "w-1.5 h-1.5 bg-red-400",
     },
   } as const;
-  const variant = count <= 5 ? "amber" : "red";
+  const variant = count <= 5 ? "neutral" : "red";
   const s = MULTI_MATCH_STYLES[variant];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${s.badge}`}>
+    <span className={`brut-badge ${s.badge}`}>
       <span className={s.dot} />
-      {count} matches{count > 5 ? " — too broad?" : ""}
+      {count} matches{count > 5 ? " (too broad?)" : ""}
     </span>
   );
 }
@@ -155,36 +155,36 @@ function SuggestionsDropdown({
 
   if (suggestions.length === 0) {
     return (
-      <div ref={ref} className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/[0.1] rounded-xl shadow-lg z-20 p-3">
-        <p className="text-xs text-[#9B9B9B]">No snapshot elements available — type a selector manually.</p>
+      <div ref={ref} className="absolute top-full left-0 right-0 mt-1 bg-white border-[1.5px] border-[#111] shadow-[4px_4px_0_#111] z-20 p-3">
+        <p className="text-xs text-[#9B9B9B]">No snapshot elements available. Type a selector manually.</p>
       </div>
     );
   }
 
   return (
-    <div ref={ref} className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/[0.1] rounded-xl shadow-lg z-20 max-h-52 overflow-y-auto">
+    <div ref={ref} className="absolute top-full left-0 right-0 mt-1 bg-white border-[1.5px] border-[#111] shadow-[4px_4px_0_#111] z-20 max-h-52 overflow-y-auto">
       {suggestions.map((s, i) => (
         <button
           key={i}
           type="button"
           onClick={() => { onSelect(s.selector); onClose(); }}
-          className="w-full text-left px-3 py-2.5 hover:bg-black/[0.03] transition-colors border-b border-black/[0.04] last:border-0"
+          className="w-full text-left px-3 py-2.5 hover:bg-black/[0.03] transition-colors border-b-[1.5px] border-black/[0.08] last:border-0"
         >
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-[#111] truncate">{s.label}</span>
             <span
-              className={`shrink-0 ml-auto inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+              className={`shrink-0 ml-auto brut-badge ${
                 s.stability === "stable"
                   ? "bg-emerald-50 text-emerald-700"
                   : s.stability === "fragile"
-                    ? "bg-amber-50 text-amber-700"
+                    ? "bg-red-50 text-red-700"
                     : "bg-black/[0.04] text-[#9B9B9B]"
               }`}
               title={
                 s.stability === "stable"
-                  ? "Robust selector — survives most redesigns"
+                  ? "Robust selector (survives most redesigns)"
                   : s.stability === "fragile"
-                    ? "Positional selector — breaks if markup order changes"
+                    ? "Positional selector (breaks if markup order changes)"
                     : "Moderately stable selector"
               }
             >
@@ -328,7 +328,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
       {/* CSS selector */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="block text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B]" htmlFor="selector">
+          <label className="brut-label" htmlFor="selector">
             CSS selector
           </label>
           <SelectorBadge result={validateResult} loading={validateLoading} />
@@ -349,7 +349,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
               <button
                 type="button"
                 onClick={() => setShowSuggestions((v) => !v)}
-                className="shrink-0 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.1em] border border-black/[0.1] rounded-lg text-[#6B6B6B] hover:text-[#111] hover:border-black/[0.2] transition-colors bg-white"
+                className="brut-action-ghost shrink-0 px-3 py-2"
               >
                 Suggest
               </button>
@@ -364,7 +364,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
           )}
         </div>
         <p className="text-[11px] text-[#9B9B9B] mt-1.5">
-          Targets the element the script modifies at runtime — no code changes needed
+          Targets the element the script modifies at runtime (no code changes needed)
         </p>
       </div>
 
@@ -378,7 +378,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
               type="button"
               title={opt.hint}
               onClick={() => setChangeType(opt.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 text-sm font-medium transition-colors ${
                 changeType === opt.value
                   ? "bg-[#111] text-[#FAFAF8]"
                   : "bg-black/[0.04] text-[#6B6B6B] hover:bg-black/[0.07]"
@@ -395,7 +395,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
 
       {/* CSS system hint — shown when "style" change type is selected */}
       {changeType === "style" && cssSystem && CSS_SYSTEM_HINTS[cssSystem] && (
-        <div className="bg-sky-50 border border-sky-100 rounded-xl px-4 py-3">
+        <div className="bg-sky-50 border-l-4 border-sky-500 px-4 py-3">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-sky-700 mb-0.5">
             {CSS_SYSTEM_HINTS[cssSystem]!.label}
           </p>
@@ -416,7 +416,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
                 type="button"
                 title={opt.hint}
                 onClick={() => setInsertPosition(opt.value)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
                   insertPosition === opt.value
                     ? "bg-[#111] text-[#FAFAF8]"
                     : "bg-black/[0.04] text-[#6B6B6B] hover:bg-black/[0.07]"
@@ -462,7 +462,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
               onChange={(e) => setNewValue(e.target.value)}
               placeholder={
                 changeType === "copy"
-                  ? "e.g. Get started — free"
+                  ? "e.g. Get started, free"
                   : "e.g. bg-blue-600 text-white font-bold"
               }
               required
@@ -489,7 +489,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
                       h.level === "warn" ? "text-amber-700" : "text-[#6B6B6B]"
                     }`}
                   >
-                    <span className={`mt-1 h-1 w-1 shrink-0 rounded-full ${h.level === "warn" ? "bg-amber-400" : "bg-[#C9C9C9]"}`} />
+                    <span className={`mt-1 h-1 w-1 shrink-0 ${h.level === "warn" ? "bg-amber-400" : "bg-[#C9C9C9]"}`} />
                     {h.message}
                   </li>
                 ))}
@@ -557,15 +557,15 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
         <button
           type="submit"
           disabled={saving || selectorBlocked}
-          className="bg-[#111] text-[#FAFAF8] px-5 py-2.5 font-bold text-sm uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
+          className="brut-action px-5 py-2.5 disabled:opacity-40"
         >
           {saving ? "Saving…" : "Save brief"}
         </button>
         {selectorBlocked && (
           <p className="text-[11px] text-red-600 mt-2">
             {validateResult?.status === 'invalid_selector'
-              ? "Selector is malformed — fix it before saving."
-              : "Selector matches no element on the snapshot — pick one that does."}
+              ? "Selector is malformed. Fix it before saving."
+              : "Selector matches no element on the snapshot. Pick one that does."}
           </p>
         )}
         {serverError && (

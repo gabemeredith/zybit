@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPrompt,
-  callGeminiFlash,
+  callAdvisorModel,
   isSafeAttributeName,
   isSafeCssDeclarations,
   isSafeReplacementText,
@@ -540,13 +540,13 @@ describe('parseAndValidateResponse', () => {
   });
 });
 
-describe('callGeminiFlash', () => {
+describe('callAdvisorModel', () => {
   it('extracts text + token counts from a successful response', async () => {
     const fakeBody = {
-      candidates: [{ content: { parts: [{ text: '{"options":[]}' }] } }],
-      usageMetadata: { promptTokenCount: 123, candidatesTokenCount: 45 },
+      choices: [{ message: { content: '{"options":[]}' } }],
+      usage: { prompt_tokens: 123, completion_tokens: 45 },
     };
-    const result = await callGeminiFlash({
+    const result = await callAdvisorModel({
       prompt: 'hi',
       apiKey: 'k',
       fetcher: async () => ({ ok: true, status: 200, json: async () => fakeBody }),
@@ -558,7 +558,7 @@ describe('callGeminiFlash', () => {
 
   it('throws when the upstream returns non-2xx', async () => {
     await expect(
-      callGeminiFlash({
+      callAdvisorModel({
         prompt: 'hi',
         apiKey: 'k',
         fetcher: async () => ({ ok: false, status: 429, json: async () => ({}) }),
@@ -566,10 +566,10 @@ describe('callGeminiFlash', () => {
     ).rejects.toThrow(/HTTP 429/);
   });
 
-  it('sends the api key in the x-goog-api-key header, not the URL query string', async () => {
+  it('sends the api key in the Authorization header, not the URL query string', async () => {
     let capturedUrl = '';
     let capturedHeaders: Record<string, string> = {};
-    await callGeminiFlash({
+    await callAdvisorModel({
       prompt: 'hi',
       apiKey: 'super-secret-token',
       fetcher: async (url, init) => {
@@ -578,23 +578,23 @@ describe('callGeminiFlash', () => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ candidates: [{ content: { parts: [{ text: '{}' }] } }] }),
+          json: async () => ({ choices: [{ message: { content: '{}' } }] }),
         };
       },
     });
     expect(capturedUrl).not.toContain('super-secret-token');
     expect(capturedUrl).not.toContain('key=');
-    expect(capturedHeaders['x-goog-api-key']).toBe('super-secret-token');
+    expect(capturedHeaders.authorization).toBe('Bearer super-secret-token');
   });
 
-  it('handles missing usageMetadata gracefully', async () => {
-    const result = await callGeminiFlash({
+  it('handles missing usage gracefully', async () => {
+    const result = await callAdvisorModel({
       prompt: 'hi',
       apiKey: 'k',
       fetcher: async () => ({
         ok: true,
         status: 200,
-        json: async () => ({ candidates: [{ content: { parts: [{ text: '{}' }] } }] }),
+        json: async () => ({ choices: [{ message: { content: '{}' } }] }),
       }),
     });
     expect(result.promptTokens).toBeNull();

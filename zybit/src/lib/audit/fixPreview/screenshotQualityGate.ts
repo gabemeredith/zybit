@@ -24,9 +24,9 @@
  * setting `AUDIT_SCREENSHOT_GATE_DISABLED=1`.
  */
 
-const QUALITY_GATE_MODEL = 'gemini-3.5-flash';
-const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+import { OPENAI_CHAT_ENDPOINT, OPENAI_FAST_MODEL, extractChatText } from '@/lib/ai/openai';
+
+const QUALITY_GATE_MODEL = OPENAI_FAST_MODEL;
 
 /** Categorical issue the model assigns when a screenshot is unfit to email. */
 export type ScreenshotIssue =
@@ -51,7 +51,7 @@ export interface AssessScreenshotArgs {
 export interface AssessScreenshotDeps {
   /** Override-able for tests. Defaults to the global `fetch`. */
   fetch?: typeof fetch;
-  /** Override-able for tests. Defaults to `process.env.GEMINI_API_KEY`. */
+  /** Override-able for tests. Defaults to `process.env.OPENAI_API_KEY`. */
   apiKey?: string | null;
 }
 
@@ -65,7 +65,7 @@ const VALID_ISSUES: ReadonlySet<ScreenshotIssue> = new Set<ScreenshotIssue>([
 
 // Fail-soft default — when we can't get a verdict we render, matching the
 // behavior before the gate existed. A missing screenshot is worse than the
-// occasional bad one slipping through during a Gemini outage.
+// occasional bad one slipping through during a model-provider outage.
 const RENDER_ANYWAY: ScreenshotVerdict = { render: true, issue: 'ok' };
 
 const QUALITY_PROMPT = `You are screening a website screenshot before it is emailed to a prospect in a "before / after" comparison. Decide whether this screenshot is fit to show.
@@ -82,7 +82,7 @@ Set "usable": false ONLY when the screenshot is clearly unfit to show, and pick 
 Otherwise set "usable": true and "issue": "ok". A normal, fully-rendered marketing or product page is usable even if it is plain or sparse. When in doubt, prefer "usable": true — only flag screenshots that are obviously unfit.`;
 
 /**
- * Ask Gemini whether a rendered screenshot is fit to email. Never throws.
+ * Ask the model whether a rendered screenshot is fit to email. Never throws.
  * Returns `{ render: true, issue: 'ok' }` on any failure so the caller
  * degrades to the pre-gate behavior.
  */
@@ -93,37 +93,32 @@ export async function assessScreenshotQuality(
   if (process.env.AUDIT_SCREENSHOT_GATE_DISABLED === '1') return RENDER_ANYWAY;
 
   const fetchImpl = deps.fetch ?? fetch;
-  const apiKey = deps.apiKey ?? process.env.GEMINI_API_KEY ?? null;
+  const apiKey = deps.apiKey ?? process.env.OPENAI_API_KEY ?? null;
   if (!apiKey) return RENDER_ANYWAY;
 
   let resp: Response;
   try {
     const base64 = args.buffer.toString('base64');
-    resp = await fetchImpl(GEMINI_ENDPOINT, {
+    resp = await fetchImpl(OPENAI_CHAT_ENDPOINT, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        // Key in header (not URL) so it never lands in Vercel access logs.
-        'x-goog-api-key': apiKey,
+        // Bearer key in header (not URL) so it never lands in Vercel access logs.
+        authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        contents: [
+        model: QUALITY_GATE_MODEL,
+        messages: [
           {
-            parts: [
-              { inlineData: { mimeType: 'image/png', data: base64 } },
-              { text: QUALITY_PROMPT },
+            role: 'user',
+            content: [
+              { type: 'text', text: QUALITY_PROMPT },
+              { type: 'image_url', image_url: { url: `data:image/png;base64,${base64}` } },
             ],
           },
         ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          maxOutputTokens: 256,
-          temperature: 0,
-          // gemini-3.5-flash defaults thinking-mode ON and counts the
-          // reasoning tokens against maxOutputTokens — without this it burns
-          // the budget on internal thinking and returns an empty response.
-          thinkingConfig: { thinkingBudget: 0 },
-        },
+        response_format: { type: 'json_object' },
+        max_completion_tokens: 256,
       }),
       signal: AbortSignal.timeout(30_000),
     });
@@ -136,7 +131,7 @@ export async function assessScreenshotQuality(
   }
 
   if (!resp.ok) {
-    console.warn('[screenshotQualityGate] Gemini API error', {
+    console.warn('[screenshotQualityGate] OpenAI API error', {
       findingId: args.findingId,
       status: resp.status,
     });
@@ -170,14 +165,8 @@ export async function assessScreenshotQuality(
 // Pure helpers — exported for tests.
 // ---------------------------------------------------------------------------
 
-interface GeminiBody {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-}
-
 function extractText(body: unknown): string | null {
-  if (!body || typeof body !== 'object') return null;
-  const b = body as GeminiBody;
-  return b.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
+  return extractChatText(body);
 }
 
 /**

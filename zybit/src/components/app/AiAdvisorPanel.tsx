@@ -209,10 +209,10 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
   }
 
   return (
-    <div className="rounded-xl border border-black/[0.08] bg-black/[0.02] p-4">
+    <div className="brut-card p-4">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B]">
+          <div className="brut-label">
             AI variant advisor
           </div>
           <p className="text-[11px] text-[#6B6B6B] mt-1 leading-relaxed">
@@ -224,7 +224,7 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
           type="button"
           onClick={fetchSuggestions}
           disabled={state.kind === "loading"}
-          className="shrink-0 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] border border-black/[0.15] rounded-lg text-[#111] bg-white hover:bg-black/[0.04] disabled:opacity-50 transition-colors"
+          className="brut-action-ghost shrink-0 px-3 py-1.5 text-[11px] disabled:opacity-50"
         >
           {state.kind === "loading"
             ? "Thinking…"
@@ -237,7 +237,7 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
       {state.kind === "error" && (
         <p className="text-[11px] text-amber-700">
           {state.code === "AI_UNAVAILABLE"
-            ? "AI advisor isn't configured for this environment — build the brief manually."
+            ? "AI advisor isn't configured for this environment. Build the brief manually."
             : state.code === "RATE_LIMITED"
               ? state.message
               : state.message}
@@ -251,7 +251,7 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
           )}
           {(state.data.options ?? []).length === 0 && (
             <p className="text-[11px] text-[#6B6B6B]">
-              No valid proposals — try again or build manually.
+              No valid proposals. Try again or build manually.
             </p>
           )}
           {(state.data.options ?? []).map((option, i) => {
@@ -261,15 +261,15 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
             return (
               <div
                 key={i}
-                className="rounded-lg border border-black/[0.08] bg-white p-3"
+                className="brut-card p-3"
               >
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-black/[0.05] text-[#6B6B6B]">
+                    <span className="brut-badge shrink-0 bg-black/[0.05] text-[#6B6B6B] px-1.5 py-0.5 text-[9px]">
                       {TYPE_LABELS[displayMod?.type ?? "text-replace"]}
                     </span>
                     {option.confidence === "low" && (
-                      <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700">
+                      <span className="brut-badge shrink-0 bg-amber-300 text-[#111] px-1.5 py-0.5 text-[9px]">
                         Low confidence
                       </span>
                     )}
@@ -284,9 +284,9 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
                     title={
                       applicable
                         ? "Pre-fills the brief with this proposal"
-                        : "This proposal type can't be imported into the brief — build manually"
+                        : "This proposal type can't be imported into the brief. Build manually."
                     }
-                    className="shrink-0 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] border border-black/[0.15] rounded text-[#111] bg-white hover:bg-black/[0.04] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="brut-action-ghost shrink-0 px-2.5 py-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Use this
                   </button>

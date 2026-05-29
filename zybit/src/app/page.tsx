@@ -27,7 +27,7 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
           </h1>
           <div className="sans-text text-sm sm:text-xl md:text-2xl font-medium text-[#6B6B6B] leading-relaxed md:leading-snug space-y-3 md:space-y-4">
             <p className="text-[#111]">
-              Zybit reads how customers move through your product — every click, every drop-off — and ranks what to fix by revenue impact.
+              Zybit reads how customers move through your product: every click, every drop-off, ranked by revenue impact.
             </p>
             <p>
               Every finding ships with the evidence trail and a dollar estimate. No opinions. No generic checklists.
@@ -44,7 +44,7 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
           <div className="bg-[#FAFAF8] p-4 md:bg-transparent md:p-0">
             <h2 className="sans-text text-3xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-3 md:mb-6">Friction is already in your data.</h2>
             <div className="sans-text text-sm sm:text-xl md:text-2xl text-[#6B6B6B] leading-relaxed md:leading-snug space-y-3 md:space-y-4">
-              <p>Dead-end sessions, rage taps, missed CTAs — the events tell you exactly where customers stall.</p>
+              <p>Dead-end sessions, rage taps, missed CTAs. The events tell you exactly where customers stall.</p>
               <p className="text-[#111]">Zybit reads the signal and turns it into a ranked, defensible action list.</p>
             </div>
           </div>

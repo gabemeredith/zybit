@@ -20,9 +20,9 @@ import type {
 import { createOutcomesRepository, type ExperimentOutcomeRow } from "@/lib/phase2/outcomes/repository";
 
 const SEVERITY_STYLES = {
-  critical: "bg-red-50 text-red-700 border-red-100",
-  warn: "bg-amber-50 text-amber-700 border-amber-100",
-  info: "bg-sky-50 text-sky-700 border-sky-100",
+  critical: "bg-[#FF4A5A] text-white",
+  warn: "bg-amber-300 text-[#111]",
+  info: "bg-[#00E5FF] text-[#111]",
 } as const;
 
 const STATUS_LABELS: Record<string, string> = {
@@ -117,7 +117,7 @@ export default async function FindingDetailPage({
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3">
           <span
-            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${
+            className={`brut-badge ${
               SEVERITY_STYLES[finding.severity as keyof typeof SEVERITY_STYLES] ??
               SEVERITY_STYLES.info
             }`}
@@ -125,26 +125,22 @@ export default async function FindingDetailPage({
             {finding.severity}
           </span>
           {finding.pathRef && (
-            <span className="font-mono text-xs text-[#6B6B6B] bg-black/[0.04] px-1.5 py-0.5 rounded">
-              {finding.pathRef}
-            </span>
+            <span className="brut-tag text-[#6B6B6B]">{finding.pathRef}</span>
           )}
-          <span className="text-xs text-[#9B9B9B] ml-auto">
+          <span className="mono-text text-[11px] text-[#9B9B9B] ml-auto">
             Seen {timeAgo(finding.lastSeenAt)}
           </span>
         </div>
 
-        <h1 className="text-2xl font-bold tracking-tight text-[#111] leading-snug mb-3">
+        <h1 className="text-3xl font-bold tracking-tighter text-[#111] leading-tight mb-3">
           {finding.title}
         </h1>
 
         <p className="text-sm text-[#6B6B6B] leading-relaxed mb-5">{finding.summary}</p>
 
         {/* Status + actions row */}
-        <div className="flex items-center gap-3 pt-4 border-t border-black/[0.04]">
-          <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#9B9B9B]">
-            Status:
-          </span>
+        <div className="flex items-center gap-3 pt-4 border-t-[1.5px] border-black/[0.08]">
+          <span className="brut-label">Status</span>
           <span className="text-xs font-bold text-[#111]">
             {STATUS_LABELS[finding.status] ?? finding.status}
           </span>
@@ -178,16 +174,14 @@ export default async function FindingDetailPage({
 
       {/* Layer 2 calibration panel — shown when the rule's threshold was tuned for this site */}
       {learn?.calibration && (
-        <section className="mt-6 bg-white border border-black/[0.05] rounded-2xl px-6 py-5">
+        <section className="mt-6 brut-card px-6 py-5">
           <div className="flex items-center gap-2 mb-2">
-            <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B]">
-              Tuned for your site
-            </div>
+            <div className="brut-label">Tuned for your site</div>
             <span
-              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${
+              className={`brut-badge ${
                 learn.calibration.direction === 'loosen'
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                  : 'bg-slate-50 text-slate-600 border-slate-200'
+                  ? 'bg-emerald-300 text-[#111]'
+                  : 'bg-slate-200 text-slate-700'
               }`}
             >
               {learn.calibration.direction === 'loosen' ? 'More sensitive' : 'Less sensitive'}
@@ -203,10 +197,8 @@ export default async function FindingDetailPage({
 
       {/* Past-tests panel (Z-3 / Zybit-093) */}
       {learn?.visible && pastOutcomes.length > 0 && (
-        <section className="mt-6 bg-white border border-black/[0.05] rounded-2xl px-6 py-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1">
-            Past tests on your site
-          </div>
+        <section className="mt-6 brut-card px-6 py-5">
+          <div className="brut-label mb-1">Past tests on your site</div>
           <div className="text-xs text-[#9B9B9B] mb-4">
             Tier {learn.tier} match · Adjusted by {learn.delta >= 0 ? "+" : "−"}
             {Math.abs(learn.delta).toFixed(2)}
@@ -248,19 +240,14 @@ export default async function FindingDetailPage({
               findingId={finding.id}
             />
           ) : (
-            <div className="bg-white border border-black/[0.05] rounded-2xl px-6 py-5 flex items-center justify-between">
+            <div className="brut-card px-6 py-5 flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1">
-                  Experiment brief
-                </div>
+                <div className="brut-label mb-1">Experiment brief</div>
                 <p className="text-sm text-[#6B6B6B]">
                   Ready to test this finding? Create an experiment brief.
                 </p>
               </div>
-              <Link
-                href={`/app/findings/${finding.id}/experiment`}
-                className="shrink-0 ml-4 bg-[#111] text-[#FAFAF8] px-5 py-2.5 font-bold text-sm uppercase tracking-[0.08em] hover:opacity-80 transition-opacity"
-              >
+              <Link href={`/app/findings/${finding.id}/experiment`} className="brut-action shrink-0 ml-4">
                 Create experiment
               </Link>
             </div>

@@ -78,25 +78,15 @@ describe('isLikelyBlankFrame — JPEG', () => {
 describe('inpaintFixAfter — JPEG blank guard', () => {
   const blobToken = 'tok_test';
 
-  function makeFetcher(mimeType: string, imageBuffer: Buffer): InpaintFetcher {
+  // `mimeType` is retained in the signature for call-site readability; the
+  // OpenAI Images Edits endpoint always returns PNG bytes via `b64_json`, and
+  // the downstream blank guard inspects the raw bytes' magic header anyway.
+  function makeFetcher(_mimeType: string, imageBuffer: Buffer): InpaintFetcher {
     return vi.fn(async () => ({
       ok: true,
       status: 200,
       json: async () => ({
-        candidates: [
-          {
-            content: {
-              parts: [
-                {
-                  inlineData: {
-                    mimeType,
-                    data: imageBuffer.toString('base64'),
-                  },
-                },
-              ],
-            },
-          },
-        ],
+        data: [{ b64_json: imageBuffer.toString('base64') }],
       }),
     }));
   }
@@ -172,20 +162,12 @@ describe('buildInpaintPrompt — vague-claim-detected guidance', () => {
 // ── callInpaint — basic response parsing ────────────────────────────────
 
 describe('callInpaint', () => {
-  it('extracts inlineData from camelCase response', async () => {
+  it('extracts the edited image from data[].b64_json', async () => {
     const buf = makeRealPng();
     const fetcher: InpaintFetcher = vi.fn(async () => ({
       ok: true,
       status: 200,
-      json: async () => ({
-        candidates: [
-          {
-            content: {
-              parts: [{ inlineData: { mimeType: 'image/png', data: buf.toString('base64') } }],
-            },
-          },
-        ],
-      }),
+      json: async () => ({ data: [{ b64_json: buf.toString('base64') }] }),
     }));
     const result = await callInpaint({ apiKey: 'k', prompt: 'edit this', beforeBuffer: buf, fetcher });
     expect(result).not.toBeNull();
@@ -193,11 +175,11 @@ describe('callInpaint', () => {
     expect(result!.buffer.equals(buf)).toBe(true);
   });
 
-  it('returns null when no image part in response', async () => {
+  it('returns null when no image is returned', async () => {
     const fetcher: InpaintFetcher = vi.fn(async () => ({
       ok: true,
       status: 200,
-      json: async () => ({ candidates: [{ content: { parts: [{ text: 'I cannot edit this' }] } }] }),
+      json: async () => ({ data: [] }),
     }));
     const result = await callInpaint({
       apiKey: 'k',

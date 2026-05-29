@@ -35,7 +35,7 @@ export default function ImpersonationBanner({ orgId }: ImpersonationBannerProps)
         textAlign: 'center',
       }}
     >
-      <strong>Synthetic Lighthouse PM view</strong> ({orgId}) — generated data, not a real customer.
+      <strong>Synthetic Lighthouse PM view</strong> ({orgId}). Generated data, not a real customer.
     </div>
   );
 }
