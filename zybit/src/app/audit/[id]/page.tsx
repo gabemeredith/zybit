@@ -307,8 +307,7 @@ function AuditStatusPageInner() {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditId]);
+  }, [auditId, analytics]);
 
   const bookCallUrl =
     process.env.NEXT_PUBLIC_BOOK_CALL_URL ?? 'https://calendly.com/asad-getzybit/30min';

@@ -11,7 +11,7 @@ function PageViewTracker() {
   const ph = usePostHog();
 
   useEffect(() => {
-    if (pathname) {
+    if (pathname && ph) {
       const url = searchParams.size > 0
         ? `${pathname}?${searchParams.toString()}`
         : pathname;
@@ -24,7 +24,8 @@ function PageViewTracker() {
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+    if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
+    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
       api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com",
       person_profiles: "identified_only",
       capture_pageview: false,

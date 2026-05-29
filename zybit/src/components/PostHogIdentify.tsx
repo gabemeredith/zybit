@@ -14,11 +14,13 @@ export function PostHogIdentify({ userId, orgId, email, role }: Props) {
   const ph = usePostHog();
 
   useEffect(() => {
-    ph.identify(userId, {
-      email,
-      organization_id: orgId,
-      role,
-    });
+    if (ph) {
+      ph.identify(userId, {
+        email,
+        organization_id: orgId,
+        role,
+      });
+    }
   }, [userId, orgId, email, role, ph]);
 
   return null;

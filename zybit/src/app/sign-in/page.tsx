@@ -20,7 +20,7 @@ function SignInForm() {
     e.preventDefault();
     setState("loading");
     setErrorMsg("");
-    analytics.signInRequested(email);
+    analytics.signInRequested();
     try {
       const res = await fetch("/api/auth/request-link", {
         method: "POST",
@@ -31,7 +31,7 @@ function SignInForm() {
         const data = await res.json() as { error?: string };
         throw new Error(data.error ?? "Something went wrong.");
       }
-      analytics.magicLinkSent(email);
+      analytics.magicLinkSent();
       setState("sent");
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Something went wrong.";
