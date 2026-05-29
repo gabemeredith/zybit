@@ -63,7 +63,7 @@ export default function RunInsightsButton({ siteId, orgId }: RunInsightsButtonPr
         <p className="text-xs font-medium text-emerald-600">
           {result.synced > 0
             ? `${result.synced} finding${result.synced !== 1 ? "s" : ""} synced`
-            : "Up to date — no new findings"}
+            : "Up to date, no new findings"}
         </p>
       )}
       {error && <p className="text-xs text-red-600">{error}</p>}

@@ -51,23 +51,23 @@ function StatCard({
   href?: string;
 }) {
   const body = (
-    <>
-      <div className="brut-label mb-3">{label}</div>
-      <div className="text-5xl font-bold tracking-tighter text-[#111] leading-none mb-1">
-        {value}
+    <div className="px-4 py-3">
+      <div className="flex items-baseline justify-between gap-3 mb-1">
+        <span className="brut-label pt-0">{label}</span>
+        <span className="mono-text text-lg font-bold text-[#111] leading-none">{value}</span>
       </div>
-      {sub && <div className="text-sm text-[#6B6B6B] mt-2">{sub}</div>}
-    </>
+      {sub && <div className="text-xs text-[#9B9B9B]">{sub}</div>}
+    </div>
   );
 
   if (href) {
     return (
-      <Link href={href} className="block brut-card-link p-6">
+      <Link href={href} className="block brut-card-link">
         {body}
       </Link>
     );
   }
-  return <div className="brut-card p-6">{body}</div>;
+  return <div className="brut-card">{body}</div>;
 }
 
 function PipelineHealth({ integrations }: { integrations: NonNullable<CockpitData["pipeline"]> }) {
@@ -235,27 +235,30 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
         />
         <StatCard
           label="Last analysis"
-          value={lastInsightAt ? timeAgo(lastInsightAt) : "—"}
+          value={lastInsightAt ? timeAgo(lastInsightAt) : "never"}
           sub={lastInsightAt ? "insights pipeline ran" : "run insights to start"}
         />
       </div>
 
-      {/* Snapshot staleness — Zybit-023 / per-path drift Zybit-135 */}
+      {/* Snapshot staleness notice */}
       {snapshots.staleDays != null && snapshots.staleDays > SNAPSHOT_STALE_DAYS && (
-        <div className="mb-8 border-l-4 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-            Page snapshots are {snapshots.staleDays} days old — the Understand layer may be stale.
+        <div className="mb-6 brut-card px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-[#6B6B6B]">
+            <span className="w-1.5 h-1.5 shrink-0 bg-[#111]" />
+            <span>
+              <span className="font-medium text-[#111]">Snapshots {snapshots.staleDays}d old.</span>{" "}
+              The Understand layer may be stale.
+            </span>
           </div>
           {snapshots.perPath.filter((p) => (p.staleDays ?? 0) > SNAPSHOT_STALE_DAYS).length > 0 && (
-            <ul className="mt-2 space-y-0.5 pl-4">
+            <ul className="mt-2 space-y-0.5 pl-5">
               {snapshots.perPath
                 .filter((p) => (p.staleDays ?? 0) > SNAPSHOT_STALE_DAYS)
                 .slice(0, 8)
                 .map((p) => (
-                  <li key={p.pathRef} className="flex items-center justify-between gap-3 text-xs">
+                  <li key={p.pathRef} className="flex items-center justify-between gap-3 text-xs text-[#9B9B9B]">
                     <span className="font-mono truncate">{p.pathRef}</span>
-                    <span className="shrink-0 text-amber-600">{p.staleDays}d old</span>
+                    <span className="shrink-0">{p.staleDays}d</span>
                   </li>
                 ))}
             </ul>
@@ -263,38 +266,42 @@ export default function CockpitView({ data, orgId }: CockpitViewProps) {
         </div>
       )}
 
-      {/* PostHog bridge health — Zybit-126 */}
+      {/* PostHog bridge notice */}
       {bridge.state === "not-detected" && (
-        <div className="mb-8 flex items-center gap-2 border-l-4 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-          PostHog bridge not detected — {bridge.assignedVisitors} visitors assigned but none
-          joined to a conversion. Experiment outcomes may be undercounted.
-        </div>
-      )}
-
-      {/* GA4-only measurement gap — Zybit-157 */}
-      {pipeline.ga4OnlyMeasurementGap && (
-        <div className="mb-8 flex items-start gap-2 border-l-4 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+        <div className="mb-6 brut-card px-4 py-3 flex items-start gap-2 text-sm text-[#6B6B6B]">
+          <span className="w-1.5 h-1.5 shrink-0 mt-1 bg-[#111]" />
           <span>
-            GA4 connected — findings and proposals are available, but outcome
-            measurement requires PostHog or Segment. GA4 is aggregate-grain and
-            cannot be joined to A/B test assignments.
+            <span className="font-medium text-[#111]">PostHog bridge not detected.</span>{" "}
+            {bridge.assignedVisitors} visitors assigned but none joined to a conversion. Experiment outcomes may be undercounted.
           </span>
         </div>
       )}
 
-      {/* Circuit breaker tripped — Zybit-154 */}
-      {pipeline.integrations.some((i) => i.status === "disconnected") && (
-        <div className="mb-8 flex items-start gap-2 border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+      {/* GA4-only measurement gap */}
+      {pipeline.ga4OnlyMeasurementGap && (
+        <div className="mb-6 brut-card px-4 py-3 flex items-start gap-2 text-sm text-[#6B6B6B]">
+          <span className="w-1.5 h-1.5 shrink-0 mt-1 bg-[#111]" />
           <span>
-            {pipeline.integrations
-              .filter((i) => i.status === "disconnected")
-              .map((i) => i.provider)
-              .join(", ")}{" "}
-            sync is paused after repeated failures — Zybit stopped retrying to
-            avoid burning quota. Resume it once the connection is fixed
+            <span className="font-medium text-[#111]">GA4 connected.</span>{" "}
+            Findings and proposals are available, but outcome measurement requires PostHog or Segment.
+            GA4 is aggregate-grain and cannot be joined to A/B test assignments.
+          </span>
+        </div>
+      )}
+
+      {/* Circuit breaker */}
+      {pipeline.integrations.some((i) => i.status === "disconnected") && (
+        <div className="mb-6 border-[1.5px] border-red-400 px-4 py-3 flex items-start gap-2 text-sm text-red-700">
+          <span className="w-1.5 h-1.5 shrink-0 mt-1 bg-red-500" />
+          <span>
+            <span className="font-medium">
+              {pipeline.integrations
+                .filter((i) => i.status === "disconnected")
+                .map((i) => i.provider)
+                .join(", ")}{" "}
+              sync paused.
+            </span>{" "}
+            Stopped retrying after repeated failures to avoid burning quota. Resume once the connection is fixed
             (POST <code className="font-mono text-xs">/api/phase2/integrations/:id/resume</code>).
           </span>
         </div>

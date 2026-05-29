@@ -32,15 +32,15 @@ const CSS_SYSTEM_HINTS: Partial<Record<CssSystem, { label: string; example: stri
   },
   "styled-components": {
     label: "styled-components detected",
-    example: "Class names are hashed at runtime — use data-zybit-ref selectors from the suggestions above",
+    example: "Class names are hashed at runtime. Use data-zybit-ref selectors from the suggestions above.",
   },
   emotion: {
     label: "Emotion CSS detected",
-    example: "Class names are generated at runtime — use data-zybit-ref selectors from the suggestions above",
+    example: "Class names are generated at runtime. Use data-zybit-ref selectors from the suggestions above.",
   },
   "css-modules": {
     label: "CSS Modules detected",
-    example: "Class names are hashed per-build — prefer element-level selectors like button or h1",
+    example: "Class names are hashed per-build. Prefer element-level selectors like button or h1.",
   },
   bootstrap: {
     label: "Bootstrap detected",
@@ -115,21 +115,21 @@ function SelectorBadge({ result, loading }: { result: ValidateResult | null; loa
     );
   }
   const MULTI_MATCH_STYLES = {
-    amber: {
-      badge: "bg-amber-50 text-amber-700",
-      dot: "w-1.5 h-1.5 bg-amber-400",
+    neutral: {
+      badge: "bg-black/[0.04] text-[#6B6B6B]",
+      dot: "w-1.5 h-1.5 bg-[#9B9B9B]",
     },
     red: {
       badge: "bg-red-50 text-red-700",
       dot: "w-1.5 h-1.5 bg-red-400",
     },
   } as const;
-  const variant = count <= 5 ? "amber" : "red";
+  const variant = count <= 5 ? "neutral" : "red";
   const s = MULTI_MATCH_STYLES[variant];
   return (
     <span className={`brut-badge ${s.badge}`}>
       <span className={s.dot} />
-      {count} matches{count > 5 ? " — too broad?" : ""}
+      {count} matches{count > 5 ? " (too broad?)" : ""}
     </span>
   );
 }
@@ -156,7 +156,7 @@ function SuggestionsDropdown({
   if (suggestions.length === 0) {
     return (
       <div ref={ref} className="absolute top-full left-0 right-0 mt-1 bg-white border-[1.5px] border-[#111] shadow-[4px_4px_0_#111] z-20 p-3">
-        <p className="text-xs text-[#9B9B9B]">No snapshot elements available — type a selector manually.</p>
+        <p className="text-xs text-[#9B9B9B]">No snapshot elements available. Type a selector manually.</p>
       </div>
     );
   }
@@ -177,14 +177,14 @@ function SuggestionsDropdown({
                 s.stability === "stable"
                   ? "bg-emerald-50 text-emerald-700"
                   : s.stability === "fragile"
-                    ? "bg-amber-50 text-amber-700"
+                    ? "bg-red-50 text-red-700"
                     : "bg-black/[0.04] text-[#9B9B9B]"
               }`}
               title={
                 s.stability === "stable"
-                  ? "Robust selector — survives most redesigns"
+                  ? "Robust selector (survives most redesigns)"
                   : s.stability === "fragile"
-                    ? "Positional selector — breaks if markup order changes"
+                    ? "Positional selector (breaks if markup order changes)"
                     : "Moderately stable selector"
               }
             >
@@ -364,7 +364,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
           )}
         </div>
         <p className="text-[11px] text-[#9B9B9B] mt-1.5">
-          Targets the element the script modifies at runtime — no code changes needed
+          Targets the element the script modifies at runtime (no code changes needed)
         </p>
       </div>
 
@@ -462,7 +462,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
               onChange={(e) => setNewValue(e.target.value)}
               placeholder={
                 changeType === "copy"
-                  ? "e.g. Get started — free"
+                  ? "e.g. Get started, free"
                   : "e.g. bg-blue-600 text-white font-bold"
               }
               required
@@ -564,8 +564,8 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
         {selectorBlocked && (
           <p className="text-[11px] text-red-600 mt-2">
             {validateResult?.status === 'invalid_selector'
-              ? "Selector is malformed — fix it before saving."
-              : "Selector matches no element on the snapshot — pick one that does."}
+              ? "Selector is malformed. Fix it before saving."
+              : "Selector matches no element on the snapshot. Pick one that does."}
           </p>
         )}
         {serverError && (

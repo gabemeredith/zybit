@@ -40,7 +40,7 @@ function toBriefText(brief: ExperimentBrief): string {
   lines.push(
     `**Variant B:** ${brief.variantDescription}`,
     `**Primary metric:** ${brief.primaryMetric}`,
-    `**Hypothesis:** ${brief.hypothesis ?? "—"}`,
+    `**Hypothesis:** ${brief.hypothesis ?? "(none)"}`,
   );
   return lines.join("\n");
 }

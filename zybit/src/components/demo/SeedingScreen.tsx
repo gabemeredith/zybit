@@ -63,7 +63,7 @@ export default function SeedingScreen({ initialStatus }: Props) {
           {status.stage === "failed"
             ? "Demo setup failed"
             : status.stage === "done"
-              ? "Ready — opening dashboard"
+              ? "Ready, opening dashboard"
               : "Preparing your demo"}
         </h1>
         <p className="text-[15px] leading-relaxed text-[#6B6B6B] mb-8">
@@ -76,7 +76,7 @@ export default function SeedingScreen({ initialStatus }: Props) {
           ) : (
             <>
               Zybit is running its real audit pipeline on{" "}
-              <strong className="text-[#111]">commitmint.app</strong> — crawl, headless capture,
+              <strong className="text-[#111]">commitmint.app</strong>: crawl, headless capture,
               brand DNA, vision, copy critique, 23 rules. While that runs we&apos;re overlaying a
               14-day PostHog event stream so the dashboard reads live the moment it opens. First
               visit only; subsequent loads are instant.
@@ -129,7 +129,7 @@ export default function SeedingScreen({ initialStatus }: Props) {
         <div className="mono-text mt-6 text-[12px] uppercase tracking-[0.08em] text-[#6B6B6B]">
           {status.findingCount > 0
             ? `${status.findingCount} findings captured · ${status.experimentCount} experiments staged`
-            : "Audit in progress — typically 60–120 seconds."}
+            : "Audit in progress. Typically 60-120 seconds."}
         </div>
       </div>
       <style>{`@keyframes demo-pulse { 0%,100% { opacity:1 } 50% { opacity:.35 } }`}</style>

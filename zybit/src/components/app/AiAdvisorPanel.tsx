@@ -237,7 +237,7 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
       {state.kind === "error" && (
         <p className="text-[11px] text-amber-700">
           {state.code === "AI_UNAVAILABLE"
-            ? "AI advisor isn't configured for this environment — build the brief manually."
+            ? "AI advisor isn't configured for this environment. Build the brief manually."
             : state.code === "RATE_LIMITED"
               ? state.message
               : state.message}
@@ -251,7 +251,7 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
           )}
           {(state.data.options ?? []).length === 0 && (
             <p className="text-[11px] text-[#6B6B6B]">
-              No valid proposals — try again or build manually.
+              No valid proposals. Try again or build manually.
             </p>
           )}
           {(state.data.options ?? []).map((option, i) => {
@@ -284,7 +284,7 @@ export default function AiAdvisorPanel({ findingId, onApply }: Props) {
                     title={
                       applicable
                         ? "Pre-fills the brief with this proposal"
-                        : "This proposal type can't be imported into the brief — build manually"
+                        : "This proposal type can't be imported into the brief. Build manually."
                     }
                     className="brut-action-ghost shrink-0 px-2.5 py-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
                   >

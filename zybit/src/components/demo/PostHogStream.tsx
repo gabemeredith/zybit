@@ -17,16 +17,16 @@ interface TickerEvent {
 }
 
 const SAMPLES: Array<{ label: string; detail: string }> = [
-  { label: "pageview", detail: "/pricing — Twitter referral" },
-  { label: "click", detail: "/pricing → plan-pro" },
-  { label: "rage_click", detail: "/pricing — checkout button" },
-  { label: "scroll", detail: "/ — 87% depth" },
-  { label: "conversion", detail: "/signup — github OAuth" },
-  { label: "pageview", detail: "/ — direct visit" },
-  { label: "click", detail: "/ → hero-primary" },
+  { label: "pageview", detail: "/pricing (Twitter referral)" },
+  { label: "click", detail: "/pricing -> plan-pro" },
+  { label: "rage_click", detail: "/pricing checkout button" },
+  { label: "scroll", detail: "/ 87% depth" },
+  { label: "conversion", detail: "/signup github OAuth" },
+  { label: "pageview", detail: "/ direct visit" },
+  { label: "click", detail: "/ -> hero-primary" },
   { label: "experiment_assignment", detail: "variant · /pricing" },
-  { label: "click", detail: "/signup → email-submit" },
-  { label: "pageview", detail: "/docs — Google referral" },
+  { label: "click", detail: "/signup -> email-submit" },
+  { label: "pageview", detail: "/docs (Google referral)" },
 ];
 
 function pluralize(n: number, s: string) {

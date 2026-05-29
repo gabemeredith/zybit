@@ -38,23 +38,23 @@ interface ScreenshotResponse {
  */
 const HIGHLIGHT_INTENTS: Record<string, string> = {
   "hero-hierarchy-inversion":
-    "The two outlines are your design's pull vs. your users' actual clicks. The variant isn't 'remove the loud CTA' — it's 'restyle the CTA that wins clicks so visual weight matches user intent.'",
+    "The two outlines are your design's pull vs. your users' actual clicks. The variant isn't 'remove the loud CTA': it's 'restyle the CTA that wins clicks so visual weight matches user intent.'",
   "above-fold-coverage":
-    "The outline marks your primary CTA — sitting below the fold. The variant isn't 'change the CTA' — it's 'move it (or its message) above the fold where visitors actually see it.'",
+    "The outline marks your primary CTA, sitting below the fold. The variant isn't 'change the CTA': it's 'move it (or its message) above the fold where visitors actually see it.'",
   "rage-click-target":
-    "The outline marks the element visitors are rage-clicking — they expect it to be interactive but it isn't. The variant is either to make it actually clickable, or strip the affordance so it stops baiting clicks.",
+    "The outline marks the element visitors are rage-clicking. They expect it to be interactive but it isn't. The variant is either to make it actually clickable, or strip the affordance so it stops baiting clicks.",
   "form-abandonment":
-    "The outline marks the form visitors start and abandon. The variant usually isn't 'restyle the submit button' — it's 'cut a required field or rephrase the commitment copy that's losing them.'",
+    "The outline marks the form visitors start and abandon. The variant usually isn't 'restyle the submit button': it's 'cut a required field or rephrase the commitment copy that's losing them.'",
   "bounce-on-key-page":
-    "Amber marks a contextual anchor, not a broken element. This is the most-prominent thing visitors see before bouncing — the variant rewrites the page's primary message so it earns the click, not redesigning this CTA.",
+    "This is the most-prominent thing visitors see before bouncing. The variant rewrites the page's primary message so it earns the click, not redesigning this CTA.",
   "help-seeking-spike":
-    "Amber marks a contextual anchor. The outline shows where visitors click 'help' instead of converting — the variant answers their question inline above this, rather than routing them to a help page.",
+    "The outline shows where visitors click 'help' instead of converting. The variant answers their question inline above this, rather than routing them to a help page.",
   "hesitation-pattern":
-    "Amber marks a contextual anchor. The outline shows where visitors dwell without clicking — the variant clarifies the value proposition above it so they don't have to deliberate, not restyling the button.",
+    "The outline shows where visitors dwell without clicking. The variant clarifies the value proposition above it so they don't have to deliberate, not restyling the button.",
   "flow-inter-step-dropoff":
-    "The outline marks the primary CTA on the step losing the most users. The variant cuts friction in the step (shorten the form, clarify what happens next) — not redesigning the button itself.",
+    "The outline marks the primary CTA on the step losing the most users. The variant cuts friction in the step (shorten the form, clarify what happens next), not redesigning the button itself.",
   "return-visit-thrash":
-    "Amber marks a contextual anchor, not a broken element. The outline shows the most-prominent thing visitors see when they keep coming back — the variant adds a Quick Answer section or anchor nav above it, not 'fix this button.'",
+    "The outline shows the most-prominent thing visitors see when they keep coming back. The variant adds a Quick Answer section or anchor nav above it, not 'fix this button.'",
 };
 
 const LEGENDS: Record<
@@ -65,7 +65,7 @@ const LEGENDS: Record<
     {
       label: "Your design emphasizes this",
       color: ANNOTATION_HEAVY_COLOR,
-      description: "The visually-heaviest CTA — the one your styling pulls the eye toward.",
+      description: "The visually-heaviest CTA. The one your styling pulls the eye toward.",
     },
     {
       label: "Your users click this",
@@ -77,42 +77,42 @@ const LEGENDS: Record<
     {
       label: "Hidden below the fold",
       color: ANNOTATION_HEAVY_COLOR,
-      description: "Your primary CTA — most visitors never scroll far enough to see it.",
+      description: "Your primary CTA. Most visitors never scroll far enough to see it.",
     },
   ],
   "rage-click-target": [
     {
       label: "Users are angrily clicking here",
       color: ANNOTATION_HEAVY_COLOR,
-      description: "This element looks clickable but doesn't behave like one — repeated rage clicks.",
+      description: "This element looks clickable but doesn't behave like one. Repeated rage clicks.",
     },
   ],
   "form-abandonment": [
     {
       label: "Users drop off in this form",
       color: ANNOTATION_HEAVY_COLOR,
-      description: "Visitors start but don't finish — usually a required-field or commitment-copy issue.",
+      description: "Visitors start but don't finish. Usually a required-field or commitment-copy issue.",
     },
   ],
   "bounce-on-key-page": [
     {
       label: "Primary CTA on the bounce page",
       color: ANNOTATION_HEAVY_COLOR,
-      description: "Most visitors arrive on this page and leave without clicking — your primary CTA isn't pulling them in.",
+      description: "Most visitors arrive on this page and leave without clicking. Your primary CTA isn't pulling them in.",
     },
   ],
   "help-seeking-spike": [
     {
       label: "Users are asking for help here",
       color: ANNOTATION_WARN_COLOR,
-      description: "The help/contact CTA visitors click instead of converting — answer inline above this.",
+      description: "The help/contact CTA visitors click instead of converting. Answer inline above this.",
     },
   ],
   "hesitation-pattern": [
     {
       label: "Users dwell here without clicking",
       color: ANNOTATION_WARN_COLOR,
-      description: "Your primary CTA — long active dwell with no follow-up is a value-clarity gap.",
+      description: "Your primary CTA. Long active dwell with no follow-up is a value-clarity gap.",
     },
   ],
   "flow-inter-step-dropoff": [
@@ -126,7 +126,7 @@ const LEGENDS: Record<
     {
       label: "What visitors see when they keep coming back",
       color: ANNOTATION_WARN_COLOR,
-      description: "Your primary CTA on the looping page — visitors return because the answer they need isn't here. Add a TL;DR or anchor nav above this.",
+      description: "Your primary CTA on the looping page. Visitors return because the answer they need isn't here. Add a TL;DR or anchor nav above this.",
     },
   ],
 };
@@ -139,13 +139,13 @@ const LEGENDS: Record<
  */
 const EMPTY_STATE_CAPTIONS: Record<string, string> = {
   "nav-dispersion":
-    "Navigation findings span the whole site — there isn't one page to outline.",
+    "Navigation findings span the whole site. There isn't one page to outline.",
   "error-exposure":
     "JavaScript exception clusters live in code, not in a single page element.",
   "cohort-pain-asymmetry":
     "Cohort-vs-cohort comparisons aren't anchored to a single page element.",
   "mobile-engagement-asymmetry":
-    "Mobile/desktop step asymmetry is a site-wide signal — no single element to outline.",
+    "Mobile/desktop step asymmetry is a site-wide signal. No single element to outline.",
 };
 const DEFAULT_EMPTY_STATE_CAPTION = "Visual preview not available for this finding type.";
 
@@ -259,11 +259,11 @@ export default function AnnotatedFindingPreview({
       </div>
 
       {intent && hasAnnotations && (
-        <div className="mt-3 border-l-4 border-amber-300 bg-amber-50 px-3 py-2">
-          <p className="brut-label !text-amber-800">
+        <div className="mt-3 border-l-4 border-[#111] bg-black/[0.03] px-3 py-2">
+          <p className="brut-label">
             Why this is highlighted
           </p>
-          <p className="mt-1 text-xs leading-relaxed text-[#3F2D08]">{intent}</p>
+          <p className="mt-1 text-xs leading-relaxed text-[#444]">{intent}</p>
         </div>
       )}
 
@@ -307,7 +307,7 @@ export default function AnnotatedFindingPreview({
                 id={`finding-preview-modal-title-${findingId}`}
                 className="text-sm font-medium text-[#111]"
               >
-                Live preview — {pageName}
+                Live preview: {pageName}
               </span>
               <button
                 type="button"

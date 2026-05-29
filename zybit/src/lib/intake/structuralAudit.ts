@@ -44,7 +44,7 @@ function check(data: PageSnapshotData, domain: string): IntakeFinding | null {
       kind: 'no_above_fold_cta',
       title: 'No primary CTA above the fold',
       evidence: `${domain} has ${ctaCount === 0 ? 'no detectable CTAs' : `${ctaCount} CTA${ctaCount !== 1 ? 's' : ''}`} but none with sufficient visual weight above the fold. Visitors who don't scroll have no clear action to take.`,
-      prescription: 'Place a visually prominent button (filled, high-contrast) above the fold — ideally within the hero. The label should name what happens when clicked, not generic copy like "Learn more".',
+      prescription: 'Place a visually prominent button (filled, high-contrast) above the fold, ideally within the hero. The label should name what happens when clicked, not generic copy like "Learn more".',
       confidence: 0.82,
       domain,
     };

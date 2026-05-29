@@ -134,7 +134,7 @@ export default function ProxySetupForm({
         <code className="font-mono text-xs bg-black/[0.05] px-1.5 py-0.5" style={{borderRadius:0}}>
           {slug || "<slug>"}.zybit.run
         </code>
-        . Point a CNAME from your domain so visitors hit Zybit transparently — no code change to your site.
+        . Point a CNAME from your domain so visitors hit Zybit transparently, with no code changes to your site.
       </p>
 
       <div className="space-y-8 max-w-lg">
@@ -250,7 +250,7 @@ export default function ProxySetupForm({
               ))}
             </div>
             <p className="text-xs text-[#9B9B9B] mt-3">
-              Not sure who hosts your DNS? Try <a href="https://www.whois.com/whois/" target="_blank" rel="noopener noreferrer" className="underline hover:text-[#111]">whois.com</a> — the &ldquo;Registrar&rdquo; field tells you.
+              Not sure who hosts your DNS? Try <a href="https://www.whois.com/whois/" target="_blank" rel="noopener noreferrer" className="underline hover:text-[#111]">whois.com</a>. The &ldquo;Registrar&rdquo; field tells you.
             </p>
           </div>
 
@@ -310,7 +310,7 @@ export default function ProxySetupForm({
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
                     <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  Proxy live — HTTPS responding.
+                  Proxy live. HTTPS responding.
                 </div>
               ) : (
                 <div className="text-xs text-[#6B6B6B] ml-6">
