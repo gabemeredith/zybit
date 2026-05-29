@@ -26,9 +26,17 @@ export async function postAuditUrl(req: IncomingMessage, res: ServerResponse): P
   } catch {
     return badRequest(res, 'bad_json');
   }
-  const params = (body ?? {}) as { url?: unknown; maxPages?: unknown };
+  const params = (body ?? {}) as {
+    url?: unknown;
+    maxPages?: unknown;
+    layerB?: unknown;
+    layerBDeriveFacts?: unknown;
+  };
   const url = typeof params.url === 'string' ? params.url.trim() : '';
   if (!url) return badRequest(res, 'missing_url');
+  const layerB = typeof params.layerB === 'boolean' ? params.layerB : undefined;
+  const layerBDeriveFacts =
+    typeof params.layerBDeriveFacts === 'boolean' ? params.layerBDeriveFacts : undefined;
 
   let parsed: URL;
   try {
@@ -54,6 +62,8 @@ export async function postAuditUrl(req: IncomingMessage, res: ServerResponse): P
         url,
         maxPages,
         onProgress: (event) => appendProgress(state.runId, event),
+        ...(typeof layerB === 'boolean' ? { layerB } : {}),
+        ...(layerBDeriveFacts ? { layerBDeriveFacts } : {}),
       });
       completeRun(state.runId, result);
     } catch (err) {

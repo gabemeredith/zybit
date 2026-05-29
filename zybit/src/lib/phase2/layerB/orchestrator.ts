@@ -29,7 +29,7 @@ import {
   type LayerBRunOpts,
 } from './runLayerB';
 import { factsFromEvidence } from './factsFromEvidence';
-import { deriveBrandProfile } from './brandProfile';
+import { deriveBrandProfile, type BrandProfile } from './brandProfile';
 
 /** Default number of top findings (by priorityScore) sent to Layer B. */
 export const LAYER_B_TOP_N = 4;
@@ -82,6 +82,8 @@ export interface LayerBRunTelemetry {
   totalResponseTokens: number;
   estTotalCostUsd: number;
   proseSourceCounts: { template: number; 'llm-v1': number };
+  /** The site-wide brand DNA fed to the LLM this run (null = no snapshot signal). */
+  brandProfile: BrandProfile | null;
   findings: LayerBFindingTelemetry[];
 }
 
@@ -167,6 +169,7 @@ export async function applyLayerB(
     totalResponseTokens: 0,
     estTotalCostUsd: 0,
     proseSourceCounts: { template: 0, 'llm-v1': 0 },
+    brandProfile: null,
     findings: [],
   };
 
@@ -263,6 +266,7 @@ export async function applyLayerB(
     totalResponseTokens: perFinding.reduce((s, f) => s + (f.call.responseTokens ?? 0), 0),
     estTotalCostUsd: perFinding.reduce((s, f) => s + (f.call.estCostUsd ?? 0), 0),
     proseSourceCounts: { template: fellBack, 'llm-v1': llmWon },
+    brandProfile,
     findings: perFinding,
   };
 

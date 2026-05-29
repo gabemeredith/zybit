@@ -346,8 +346,21 @@ function buildLayerBPanel(layerB) {
     ]);
   }
 
+  const bp = layerB.brandProfile;
+  const brandText = bp
+    ? [
+        bp.ctaVocabulary?.length ? `CTAs: ${bp.ctaVocabulary.slice(0, 5).join(' · ')}` : '',
+        bp.voiceSamples?.length
+          ? `voice: ${bp.voiceSamples.slice(0, 2).map((v) => `"${v}"`).join('  ')}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('  —  ') || 'derived (empty)'
+    : 'none — no snapshot brand signal (0 snapshots?)';
+
   const agg = el('table', { class: 'counts' }, [
     el('tr', {}, [el('th', {}, 'model'), el('td', {}, layerB.model || 'n/a')]),
+    el('tr', {}, [el('th', {}, 'brand DNA'), el('td', {}, brandText)]),
     el('tr', {}, [el('th', {}, 'attempted'), el('td', {}, String(layerB.attempted))]),
     el('tr', {}, [el('th', {}, 'LLM won'), el('td', {}, `${layerB.llmWon} / ${layerB.attempted}`)]),
     el('tr', {}, [
@@ -421,15 +434,25 @@ function buildUrlAuditControls(runPane) {
     value: '20',
   });
   const auditBtn = el('button', { class: 'primary', type: 'button' }, 'audit url');
+  const compareBtn = el(
+    'button',
+    {
+      class: 'primary',
+      type: 'button',
+      title: 'Audit this real URL with Layer B forced ON for every finding — see brand-aware LLM vs template prose',
+    },
+    'audit + compare LLM',
+  );
 
-  auditBtn.addEventListener('click', async () => {
+  async function runAudit(extra) {
     const url = urlInput.value.trim();
     if (!url) return;
     auditBtn.setAttribute('disabled', 'disabled');
+    compareBtn.setAttribute('disabled', 'disabled');
     try {
       const r = await api('/lighthouse/api/audit-url', {
         method: 'POST',
-        body: JSON.stringify({ url, maxPages: Number(pagesInput.value) || 20 }),
+        body: JSON.stringify({ url, maxPages: Number(pagesInput.value) || 20, ...extra }),
       });
       if (!r.ok) {
         throw new Error((r.body && (r.body.detail || r.body.error)) || `http ${r.status}`);
@@ -440,14 +463,19 @@ function buildUrlAuditControls(runPane) {
       runPane.appendChild(el('p', { class: 'error' }, `error: ${err.message}`));
     } finally {
       auditBtn.removeAttribute('disabled');
+      compareBtn.removeAttribute('disabled');
     }
-  });
+  }
+
+  auditBtn.addEventListener('click', () => runAudit({}));
+  compareBtn.addEventListener('click', () => runAudit({ layerB: true, layerBDeriveFacts: true }));
 
   return el('section', { class: 'controls' }, [
     el('div', { class: 'control-row' }, [
       el('label', {}, ['audit url ', urlInput]),
       el('label', {}, ['max pages ', pagesInput]),
       auditBtn,
+      compareBtn,
     ]),
   ]);
 }
