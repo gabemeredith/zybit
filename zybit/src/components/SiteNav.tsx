@@ -69,30 +69,25 @@ export function SiteNav({ onRequestAccess }: { onRequestAccess: () => void }) {
             <span className="text-[15px] font-bold tracking-tight text-[#111] sans-text">Zybit</span>
           </Link>
           <nav className="flex items-center gap-4 sans-text" aria-label="Secondary">
+            <a href={FOUNDERS_CALENDLY} target="_blank" rel="noreferrer" className={subtleLink}>
+              Founders
+            </a>
             <Link href="/sign-in" className={subtleLink}>
-              Sign in
-            </Link>
-            <Link href="/audit" className={subtleLink}>
-              Free audit
+              Log in
             </Link>
           </nav>
         </div>
-        <div className="grid grid-cols-2 gap-2 px-4 pb-2.5 sans-text">
-          <a
-            href={FOUNDERS_CALENDLY}
-            target="_blank"
-            rel="noreferrer"
-            className={`${chip} py-2 text-center whitespace-nowrap`}
-          >
-            Founders
-          </a>
+        <div className="px-4 pb-2.5 sans-text">
           <button onClick={onRequestAccess} className={`${chip} py-2 w-full whitespace-nowrap`}>
-            Access
+            Request access
           </button>
         </div>
       </div>
 
-      {/* ── Desktop (md+): single row ── */}
+      {/* ── Desktop (md+): single row. Two front-door actions only —
+           Request access (primary) + Log in (secondary). Founders call kept
+           as a subtle link; the free audit is a section CTA, not a competing
+           front door. ── */}
       <div className="hidden md:flex items-center justify-between px-6 py-3.5">
         <Link href="/" className="flex items-center gap-2.5 no-underline">
           <Logo className="w-5 h-5 text-[#111]" />
@@ -103,19 +98,16 @@ export function SiteNav({ onRequestAccess }: { onRequestAccess: () => void }) {
             href={FOUNDERS_CALENDLY}
             target="_blank"
             rel="noreferrer"
-            className={`${chip} px-3.5 py-1.5`}
+            className={subtleLink}
           >
             Talk to founders
           </a>
-          <button onClick={onRequestAccess} className={`${chip} px-3.5 py-1.5`}>
-            Request Access
-          </button>
           <Link href="/sign-in" className={subtleLink}>
-            Sign in
+            Log in
           </Link>
-          <Link href="/audit" className={subtleLink}>
-            Free audit
-          </Link>
+          <button onClick={onRequestAccess} className={`${chip} px-3.5 py-1.5`}>
+            Request access
+          </button>
         </nav>
       </div>
     </header>

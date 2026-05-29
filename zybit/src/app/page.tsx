@@ -180,33 +180,33 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
         </div>
       </section>
 
-      {/* Section 6: CTA — primary path is the free audit; Request Access is the
-          secondary path into the full product waitlist. A single solid backdrop
-          (instead of per-element chiclets) so the type breathes against the
-          particle field. */}
+      {/* Section 6: CTA — primary path is Request access (the gated 1:1 motion);
+          the free audit is the lower-commitment path that feeds the same queue.
+          A single solid backdrop (instead of per-element chiclets) so the type
+          breathes against the particle field. */}
       <section className="h-screen w-full flex flex-col items-center justify-center text-center px-6">
         <div className="w-full max-w-2xl bg-[#FAFAF8] px-6 py-8 md:px-8 md:py-10 pointer-events-none">
           <div className="sans-text text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-5">
-            Free · No call required
+            Closed rollout · onboarded 1:1
           </div>
           <h2 className="sans-text text-[2rem] sm:text-5xl md:text-7xl font-bold tracking-tighter mb-5 md:mb-6 leading-[0.95]">
-            See the four highest-impact{" "}
-            <span className="md:block">fixes on your site.</span>
+            See where your{" "}
+            <span className="md:block">funnel leaks.</span>
           </h2>
           <p className="sans-text mb-0 mx-auto text-sm text-[#6B6B6B] md:text-lg leading-relaxed">
-            Submit your URL and a work email. Zybit crawls the site, runs {PUBLIC_AUDIT_RULE_COUNT}{' '}friction rules, and emails the report &mdash; ranked findings with evidence and what to change.
+            We onboard every customer personally. Request access and we&rsquo;ll reach out to set up a call. Not ready to talk? Run a free audit and see the four highest-impact fixes on your site first &mdash; {PUBLIC_AUDIT_RULE_COUNT} friction rules, evidence, and what to change.
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-4 mt-8 pointer-events-auto">
-          <Link href="/audit" className="btn-brutalist">
-            Run a free audit
-          </Link>
-          <button
-            onClick={openModal}
+          <button onClick={openModal} className="btn-brutalist">
+            Request access
+          </button>
+          <Link
+            href="/audit"
             className="sans-text text-[10px] font-bold uppercase tracking-[0.18em] text-[#6B6B6B] hover:text-[#111] transition-colors underline underline-offset-4 decoration-[#6B6B6B] hover:decoration-[#111]"
           >
-            Or request product access &rarr;
-          </button>
+            Or run a free audit &rarr;
+          </Link>
         </div>
       </section>
 

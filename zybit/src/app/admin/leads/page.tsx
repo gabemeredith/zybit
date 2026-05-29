@@ -16,9 +16,8 @@ type LeadRow = {
   submitted_at: string;
   confirmed_at: string | null;
   completed_at: string | null;
-  industry: string | null;
   role_title: string | null;
-  provisioned: boolean;
+  request_status: string | null;
 };
 
 function badge(status: string) {
@@ -26,6 +25,8 @@ function badge(status: string) {
     pending:     { bg: '#FEF3C7', color: '#92400E' },
     running:     { bg: '#DBEAFE', color: '#1E40AF' },
     done:        { bg: '#D1FAE5', color: '#065F46' },
+    invited:     { bg: '#D1FAE5', color: '#065F46' },
+    rejected:    { bg: '#FEE2E2', color: '#991B1B' },
     failed:      { bg: '#FEE2E2', color: '#991B1B' },
     unreachable: { bg: '#F3F4F6', color: '#374151' },
   };
@@ -65,8 +66,10 @@ export default async function LeadsPage() {
 
   const db = getDb();
 
-  // Join public_audits with app_users via source_audit_id to get enriched
-  // profile data (industry, role_title) alongside the raw submission fields.
+  // Join public_audits with the access_requests queue by email so the operator
+  // sees where each audit lead sits in the gated motion (pending / invited /
+  // rejected). The audit funnel no longer auto-provisions accounts — approval
+  // happens on the main /admin queue.
   const result = await db.execute<LeadRow>(sql`
     SELECT
       pa.id,
@@ -77,11 +80,10 @@ export default async function LeadsPage() {
       pa.submitted_at,
       pa.confirmed_at,
       pa.completed_at,
-      au.industry,
-      au.role_title,
-      (au.id IS NOT NULL) AS provisioned
+      ar.role_title,
+      ar.status AS request_status
     FROM public_audits pa
-    LEFT JOIN app_users au ON au.source_audit_id = pa.id
+    LEFT JOIN access_requests ar ON ar.email = pa.email
     ORDER BY pa.submitted_at DESC
     LIMIT 200
   `);
@@ -109,7 +111,7 @@ export default async function LeadsPage() {
   };
 
   const done = leads.filter(l => l.status === 'done').length;
-  const provisioned = leads.filter(l => l.provisioned).length;
+  const invited = leads.filter(l => l.request_status === 'invited').length;
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -125,7 +127,7 @@ export default async function LeadsPage() {
             Public audit leads
           </h1>
           <span style={{ fontSize: 13, color: '#6B7280' }}>
-            {leads.length} total · {done} completed · {provisioned} provisioned
+            {leads.length} total · {done} completed · {invited} invited
           </span>
         </div>
 
@@ -137,8 +139,8 @@ export default async function LeadsPage() {
                   <th style={thStyle}>Email</th>
                   <th style={thStyle}>Domain</th>
                   <th style={thStyle}>Form role</th>
-                  <th style={thStyle}>Industry</th>
-                  <th style={thStyle}>Status</th>
+                  <th style={thStyle}>Queue</th>
+                  <th style={thStyle}>Audit status</th>
                   <th style={thStyle}>Submitted</th>
                   <th style={thStyle}>Completed</th>
                 </tr>
@@ -155,19 +157,16 @@ export default async function LeadsPage() {
                   <tr key={lead.id} style={{ background: lead.status === 'done' ? '#fff' : '#FAFAFA' }}>
                     <td style={tdStyle}>
                       <span style={{ fontWeight: 500 }}>{lead.email}</span>
-                      {!lead.provisioned && (
-                        <span style={{ display: 'block', fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
-                          not provisioned
-                        </span>
-                      )}
                     </td>
                     <td style={tdStyle}>{lead.domain}</td>
                     <td style={tdStyle}>
-                      {/* role_title is populated post-confirm; fall back to
-                          the raw form value from public_audits.role */}
+                      {/* role_title from the access_requests queue; fall back
+                          to the raw form value from public_audits.role */}
                       {lead.role_title ?? lead.role ?? '—'}
                     </td>
-                    <td style={tdStyle}>{lead.industry ?? '—'}</td>
+                    <td style={tdStyle}>
+                      {lead.request_status ? badge(lead.request_status) : '—'}
+                    </td>
                     <td style={tdStyle}>{badge(lead.status)}</td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#6B7280', fontSize: 12 }}>
                       {fmt(lead.submitted_at)}

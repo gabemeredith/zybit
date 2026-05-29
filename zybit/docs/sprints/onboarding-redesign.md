@@ -1,12 +1,18 @@
 # Onboarding — current audit and proposed simplification
 
-**Status:** Proposal (wizard trim — §§1-6). **Date:** 2026-05-23.
-**Owner:** triggered by founder feedback — "heavily complex, doesn't really
-make sense even for a closed rollout."
+**Status:** Wizard trim (§§1-6) **SHIPPED**. **Date:** 2026-05-23 (proposal),
+shipped 2026-05-29. **Owner:** triggered by founder feedback — "heavily
+complex, doesn't really make sense even for a closed rollout."
 
-> **Login & access-request redesign — SHIPPED 2026-05-29 (Phases 0-3).** See
-> §0 below. The wizard-trim proposal (§§1-6) is still pending — it is Phase 5
-> of the same plan and not in the login-redesign PR.
+> **Onboarding/login redesign — SHIPPED 2026-05-29 (Phases 0-6).** See §0
+> below for Phases 0-4 (data model, real login, request-access queue, audit
+> funnel, founder approval). The wizard trim (§§1-6 / Phase 5) is now built:
+> `OnboardingWizard.tsx` is the 3-step site → analytics → revenue flow with
+> the proxy moved to `/app/settings`, the flow pre-flight wired into the
+> analytics step, and a skippable revenue step. Phase 6 (landing/nav
+> coherence) shipped too: `SiteNav` leads with Request access (primary) + Log
+> in (secondary), and the landing final CTA leads with Request access with the
+> free audit demoted to the lower-commitment path.
 
 ---
 
@@ -53,8 +59,20 @@ report still ships; the report-email CTA is the human-touch book-a-call, not
 an instant dashboard hand-off. This closes the hole where anyone confirming an
 audit email got an approved account.
 
-**Not in this PR (deliberate):** Phase 4 (admin approval queue → mint org+user
-→ welcome email with the set-password link) and Phase 5 (wizard trim, §§1-6).
+**Phase 4 — founder approval → onboard.** The `/admin` dashboard renders the
+unified pending queue (request-form + audit leads) with Approve / Reject /
+save-Stripe-link actions (`GET`/`POST /api/admin/access-requests`). Approve
+mints an `organizations` + approved `app_users` row, flips the request to
+`invited`, and sends a welcome email (`src/lib/email/welcomeEmail.ts`) with the
+one-time set-password link + "continue with Google". Stripe payment links are
+manual (paste + save on the request); no automated checkout yet.
+
+**Phase 5 — wizard trim.** See §§1-6 below — shipped: 3-step flow, proxy in
+settings, pre-flight in the analytics step, skippable revenue.
+
+**Phase 6 — landing coherence.** `SiteNav` and the landing final CTA lead with
+Request access; the free audit is the lower-commitment path, not a competing
+front door; the sign-in page is password + Google.
 
 ### Enumeration vs. humaneness tradeoff
 
