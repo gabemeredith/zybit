@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     }
-    if (verifyPassword(password, user.passwordHash)) {
+    if (await verifyPassword(password, user.passwordHash)) {
       const token = await createSession(user.id);
       const response = NextResponse.json({ ok: true });
       response.cookies.set(sessionCookieOptions.name, token, {

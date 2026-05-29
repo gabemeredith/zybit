@@ -16,6 +16,9 @@ function noticeCopy(notice: string | null, error: string | null): string | null 
   if (error === "google-failed") {
     return "Google sign-in didn't complete. Please try again.";
   }
+  if (error === "google-mismatch") {
+    return "That email is linked to a different Google account. Sign in with your password instead.";
+  }
   if (error === "google-unavailable") {
     return "Google sign-in isn't available right now. Use your email and password instead.";
   }

@@ -35,12 +35,17 @@ export async function GET(request: NextRequest) {
     return clearState(NextResponse.redirect(new URL('/sign-in?error=google-failed', request.url)));
   }
 
-  const accessToken = await exchangeGoogleCode(config, code);
-  if (!accessToken) {
-    return clearState(NextResponse.redirect(new URL('/sign-in?error=google-failed', request.url)));
+  // Guard the external token exchange + userinfo fetch: a network timeout or
+  // malformed JSON from Google would otherwise throw and surface a generic 500
+  // instead of a graceful "try again" redirect.
+  let info: Awaited<ReturnType<typeof fetchGoogleUserInfo>> = null;
+  try {
+    const accessToken = await exchangeGoogleCode(config, code);
+    if (accessToken) info = await fetchGoogleUserInfo(accessToken);
+  } catch (err) {
+    console.error('[google/callback] OAuth exchange failed:', err);
   }
 
-  const info = await fetchGoogleUserInfo(accessToken);
   if (!info || !info.emailVerified) {
     return clearState(NextResponse.redirect(new URL('/sign-in?error=google-failed', request.url)));
   }
@@ -65,9 +70,19 @@ export async function GET(request: NextRequest) {
       .where(and(eq(appUsers.email, info.email), eq(appUsers.status, 'approved')))
       .limit(1);
     if (byEmail) {
+      if (byEmail.googleSub && byEmail.googleSub !== info.sub) {
+        // The account is already bound to a DIFFERENT Google identity. We
+        // reached the email fallback only because the sub lookup missed, so a
+        // verified-email match here would let a second Google account hijack
+        // the binding. Refuse the Google path; they can still use password.
+        return clearState(
+          NextResponse.redirect(new URL('/sign-in?error=google-mismatch', request.url)),
+        );
+      }
       userId = byEmail.id;
-      // Link the Google account on first use (only if not already linked to
-      // some other sub — leave an existing link intact).
+      // First Google login for an approved user who set up via the email path:
+      // link the sub. (If it were already set to info.sub the byGoogle lookup
+      // would have matched, so here it is always null.)
       if (!byEmail.googleSub) {
         await db
           .update(appUsers)

@@ -82,6 +82,20 @@ describe('GET /api/auth/google/callback', () => {
     expect(createSession).not.toHaveBeenCalled();
   });
 
+  it('rejects when the email is already bound to a different google_sub', async () => {
+    exchangeGoogleCode.mockResolvedValueOnce('access-token');
+    fetchGoogleUserInfo.mockResolvedValueOnce({
+      sub: 'new-sub', email: 'user@co.com', emailVerified: true,
+    });
+    // sub lookup → miss; email lookup → approved user already linked to OTHER sub
+    limitResults = [[], [{ id: 'u1', googleSub: 'old-sub' }]];
+
+    const res = await GET(makeRequest({ code: 'abc', state: 's' }, 'zb_oauth_state=s'));
+
+    expect(res.headers.get('location')).toContain('/sign-in?error=google-mismatch');
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
   it('signs in an approved user matched by google_sub', async () => {
     exchangeGoogleCode.mockResolvedValueOnce('access-token');
     fetchGoogleUserInfo.mockResolvedValueOnce({

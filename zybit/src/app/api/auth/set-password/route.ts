@@ -59,7 +59,7 @@ export async function POST(request: Request) {
 
   await db
     .update(appUsers)
-    .set({ passwordHash: hashPassword(password), authProvider: 'password' })
+    .set({ passwordHash: await hashPassword(password), authProvider: 'password' })
     .where(eq(appUsers.id, user.id));
 
   // Sign them straight in — first password set should land in /app, not bounce
