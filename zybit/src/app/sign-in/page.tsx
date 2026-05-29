@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AuthParticleCanvas } from "@/components/particle-background";
 import { Logo } from "@/components/logo";
+import { useAnalytics } from "@/lib/analytics";
 
 function noticeCopy(notice: string | null, error: string | null): string | null {
   if (notice === "pending") {
@@ -33,11 +34,13 @@ function SignInForm() {
   const [password, setPassword] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const analytics = useAnalytics();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setState("loading");
     setErrorMsg("");
+    analytics.signInRequested();
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -50,11 +53,12 @@ function SignInForm() {
         window.location.assign("/app");
         return;
       }
-      const data = (await res.json()) as { error?: string };
-      setErrorMsg(data.error ?? "Something went wrong.");
-      setState("error");
-    } catch {
-      setErrorMsg("Network error. Please try again.");
+      analytics.magicLinkSent();
+      setState("sent");
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "Something went wrong.";
+      analytics.signInError(reason);
+      setErrorMsg(reason);
       setState("error");
     }
   }
@@ -138,6 +142,7 @@ function SignInForm() {
         <Link
           href="/audit"
           className="font-semibold text-[#111] no-underline border-b border-[#111]"
+          onClick={() => analytics.calendlyCtaClicked("sign_in")}
         >
           Run a free audit
         </Link>

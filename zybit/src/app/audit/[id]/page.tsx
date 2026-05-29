@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { BeforeAfterSlider } from '@/components/audit/BeforeAfterSlider';
 import { PUBLIC_AUDIT_RULE_COUNT } from '@/lib/audit/publicAuditRuleCount';
+import { useAnalytics } from '@/lib/analytics';
 
 const INK = '#111';
 const CREAM = '#FAFAF8';
@@ -253,6 +254,7 @@ function AuditStatusPageInner() {
   const [findings, setFindings] = useState<InlineFinding[] | null>(null);
   const [brandDna, setBrandDna] = useState<BrandDna | null>(null);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const analytics = useAnalytics();
 
   useEffect(() => {
     if (!auditId) return;
@@ -278,6 +280,7 @@ function AuditStatusPageInner() {
 
         if (data.status === 'done') {
           setStatus('done');
+          analytics.auditReportViewed({ auditId, domain: data.domain });
           return;
         }
         if (data.status === 'unreachable') {
@@ -304,7 +307,7 @@ function AuditStatusPageInner() {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [auditId]);
+  }, [auditId, analytics]);
 
   const bookCallUrl =
     process.env.NEXT_PUBLIC_BOOK_CALL_URL ?? 'https://calendly.com/asad-getzybit/30min';
@@ -489,6 +492,7 @@ function AuditStatusPageInner() {
               href={bookCallUrl}
               target="_blank"
               rel="noreferrer"
+              onClick={() => analytics.auditCtaClicked({ cta: 'book_call', auditId: auditId ?? undefined, source: 'report' })}
               style={{
                 display: 'inline-block',
                 padding: '13px 26px',
@@ -507,6 +511,7 @@ function AuditStatusPageInner() {
             </a>
             <Link
               href="/audit"
+              onClick={() => analytics.auditCtaClicked({ cta: 'audit_another', auditId: auditId ?? undefined, source: 'report' })}
               style={{
                 display: 'inline-block',
                 padding: '13px 24px',
