@@ -121,6 +121,7 @@ async function renderDashboard() {
     el('option', { value: 'direct' }, 'direct (write straight to DB)'),
     el('option', { value: 'posthog', disabled: 'disabled' }, 'posthog (Step 11)'),
   ]);
+  const layerBInput = el('input', { type: 'checkbox', name: 'layerB' });
   const generateBtn = el('button', { class: 'primary', type: 'button' }, 'generate');
 
   generateBtn.addEventListener('click', async () => {
@@ -128,10 +129,11 @@ async function renderDashboard() {
     const scenarioId = scenarioSelect.value;
     const sessions = Number(sessionsInput.value);
     const mode = modeSelect.value;
+    const layerB = layerBInput.checked;
     try {
       const r = await api('/lighthouse/api/generate', {
         method: 'POST',
-        body: JSON.stringify({ scenarioId, sessions, mode }),
+        body: JSON.stringify({ scenarioId, sessions, mode, layerB }),
       });
       if (!r.ok) throw new Error((r.body && r.body.error) || `http ${r.status}`);
       await pollRun(r.body.runId, runPane);
@@ -148,6 +150,10 @@ async function renderDashboard() {
       el('label', {}, ['scenario ', scenarioSelect]),
       el('label', {}, ['sessions ', sessionsInput]),
       el('label', {}, ['mode ', modeSelect]),
+      el('label', { class: 'layerb-toggle', title: 'Generate finding prose with the LLM (Layer B) instead of templates' }, [
+        layerBInput,
+        ' Layer B (LLM prose)',
+      ]),
       generateBtn,
     ]),
   );
@@ -191,7 +197,7 @@ function renderRunState(runPane, state) {
   ]);
 
   if (state.status === 'done' && state.result) {
-    const { counts, sample, organizationId, siteId, snapshotErrors, experiment, flowGraph } = state.result;
+    const { counts, sample, organizationId, siteId, snapshotErrors, experiment, flowGraph, layerB } = state.result;
     left.appendChild(el('h3', { class: 'subhead' }, 'results'));
     left.appendChild(
       el('p', {}, [
@@ -244,6 +250,7 @@ function renderRunState(runPane, state) {
         ]),
       );
     }
+    if (layerB) left.appendChild(buildLayerBPanel(layerB));
     left.appendChild(
       el('details', { class: 'group', open: 'open' }, [
         el('summary', {}, `findings (${sample.findings.length} shown)`),
@@ -283,6 +290,104 @@ function renderRunState(runPane, state) {
   }
 
   runPane.appendChild(el('div', { class: 'two-col' }, [left, right]));
+}
+
+// --- Layer B (LLM finding prose) AI-engineering panel ---------------------
+
+function fmtUsd(n) {
+  if (n == null) return 'n/a';
+  return n < 0.01 ? `$${n.toFixed(5)}` : `$${n.toFixed(4)}`;
+}
+function fmtMs(n) {
+  return n == null ? 'n/a' : `${Math.round(n)}ms`;
+}
+
+function proseBlock(title, prose) {
+  if (!prose) {
+    return el('div', { class: 'layerb-prose layerb-prose-empty' }, [
+      el('h5', {}, title),
+      el('p', { class: 'empty' }, '— no LLM prose (fell back to template) —'),
+    ]);
+  }
+  const presc = prose.prescription || {};
+  return el('div', { class: 'layerb-prose' }, [
+    el('h5', {}, title),
+    el('p', { class: 'layerb-summary' }, prose.summary || ''),
+    presc.whatToChange ? el('p', {}, [el('strong', {}, 'Change: '), presc.whatToChange]) : null,
+  ]);
+}
+
+function buildLayerBPanel(layerB) {
+  if (!layerB.enabled) {
+    return el('details', { class: 'group layerb-panel' }, [
+      el('summary', {}, 'Layer B — LLM prose (off this run)'),
+      el(
+        'p',
+        { class: 'empty' },
+        'Layer B was disabled. Tick "Layer B (LLM prose)" before generating to compare LLM vs template prose.',
+      ),
+    ]);
+  }
+
+  const agg = el('table', { class: 'counts' }, [
+    el('tr', {}, [el('th', {}, 'model'), el('td', {}, layerB.model || 'n/a')]),
+    el('tr', {}, [el('th', {}, 'attempted'), el('td', {}, String(layerB.attempted))]),
+    el('tr', {}, [el('th', {}, 'LLM won'), el('td', {}, `${layerB.llmWon} / ${layerB.attempted}`)]),
+    el('tr', {}, [
+      el('th', {}, 'fell back'),
+      el('td', {}, `${layerB.fellBack} (${Math.round(layerB.fallbackRate * 100)}%)`),
+    ]),
+    el('tr', {}, [el('th', {}, 'fabrication rejects'), el('td', {}, String(layerB.fabricationRejections))]),
+    el('tr', {}, [
+      el('th', {}, 'latency p50 / p95'),
+      el('td', {}, `${fmtMs(layerB.latencyMsP50)} / ${fmtMs(layerB.latencyMsP95)}`),
+    ]),
+    el('tr', {}, [
+      el('th', {}, 'tokens in / out'),
+      el('td', {}, `${layerB.totalPromptTokens} / ${layerB.totalResponseTokens}`),
+    ]),
+    el('tr', {}, [el('th', {}, 'est cost'), el('td', {}, fmtUsd(layerB.estTotalCostUsd))]),
+  ]);
+
+  const cards = (layerB.findings || []).map((f) => {
+    const won = f.proseSource === 'llm-v1';
+    const head = el('div', { class: 'layerb-card-head' }, [
+      el('code', {}, `${f.ruleId}${f.pathRef ? ' · ' + f.pathRef : ''}`),
+      el('span', { class: `layerb-badge ${won ? 'is-llm' : 'is-template'}` }, f.proseSource),
+      el('span', { class: 'layerb-outcome' }, f.call?.outcome || ''),
+    ]);
+    const side = el('div', { class: 'layerb-side' }, [
+      proseBlock('template', f.prose?.template),
+      proseBlock('LLM', f.prose?.llm),
+    ]);
+    const fail =
+      !won && f.call
+        ? el('p', { class: 'layerb-fail' }, [
+            el('strong', {}, `fallback: ${f.call.outcome}`),
+            f.call.fabricationFailures?.length
+              ? ` — rejected numbers: ${f.call.fabricationFailures.join(', ')}`
+              : '',
+          ])
+        : null;
+    const raw = el('details', { class: 'group layerb-raw' }, [
+      el('summary', {}, 'prompt + raw response'),
+      el('h6', {}, 'prompt'),
+      el('pre', {}, f.call?.prompt || '(none)'),
+      el('h6', {}, 'raw response'),
+      el('pre', {}, f.call?.rawResponse || '(none)'),
+    ]);
+    return el('div', { class: 'layerb-card' }, [head, side, fail, raw]);
+  });
+
+  return el('details', { class: 'group layerb-panel', open: 'open' }, [
+    el(
+      'summary',
+      {},
+      `Layer B — LLM prose (${layerB.llmWon}/${layerB.attempted} LLM, ${layerB.fellBack} fallback)`,
+    ),
+    agg,
+    ...cards,
+  ]);
 }
 
 function buildUrlAuditControls(runPane) {

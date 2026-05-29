@@ -70,9 +70,11 @@ export interface LayerBOutput {
   prescription: LayerBPrescription;
 }
 
-export const LAYER_B_MODEL_NAME = 'gemini-3.5-flash';
-const LAYER_B_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+// `gemini-3.5-flash` 404s on the current key (it isn't a served model);
+// `gemini-2.5-flash` is the newest flash tier the key actually supports.
+// Overridable via env so we can switch models without a code change.
+export const LAYER_B_MODEL_NAME = process.env.LAYER_B_MODEL ?? 'gemini-2.5-flash';
+const LAYER_B_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${LAYER_B_MODEL_NAME}:generateContent`;
 
 // Per-field length caps. The LLM is told these in the prompt; we re-clamp
 // on parse so a runaway response can't poison the persisted finding.
