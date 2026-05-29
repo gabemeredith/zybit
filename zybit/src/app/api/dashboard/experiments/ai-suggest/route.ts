@@ -4,7 +4,7 @@
  * POST /api/dashboard/experiments/ai-suggest
  * Body: { findingId: string }
  *
- * Loads the finding + structural snapshot + design snapshot, calls Gemini
+ * Loads the finding + structural snapshot + design snapshot, calls the model
  * with the locked prompt (`aiAdvisor.ts`), validates response against the
  * `VariantModification` schema + selector allowlist, returns 3 options or
  * fewer with a `note` explaining the gap.
@@ -12,7 +12,7 @@
  * Gated by `checkAndIncrementAiUsage` (Zybit-148). Token usage logged to
  * the structured logger under `service: 'ai-advisor'`.
  *
- * Missing GEMINI_API_KEY → 503 (route is non-essential; PMs build manually).
+ * Missing OPENAI_API_KEY → 503 (route is non-essential; PMs build manually).
  */
 
 import { NextResponse } from 'next/server';
@@ -37,7 +37,7 @@ import {
 } from '@/lib/experiments/aiAdvisorRateLimit';
 import {
   buildPrompt,
-  callGeminiFlash,
+  callAdvisorModel,
   MODEL_NAME,
   parseAndValidateResponse,
   type AdvisorDesignContext,
@@ -117,7 +117,7 @@ export async function POST(request: Request) {
 
     // 4. API key check (cheap, before rate limit so a missing key doesn't
     // burn budget).
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
         {
@@ -151,7 +151,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 6. Build prompt + call Gemini.
+    // 6. Build prompt + call the model.
     const prompt = buildPrompt({
       finding: {
         ruleId: finding.ruleId,
@@ -162,9 +162,9 @@ export async function POST(request: Request) {
     });
 
     const t0 = Date.now();
-    let geminiResult: Awaited<ReturnType<typeof callGeminiFlash>>;
+    let modelResult: Awaited<ReturnType<typeof callAdvisorModel>>;
     try {
-      geminiResult = await callGeminiFlash({ prompt, apiKey });
+      modelResult = await callAdvisorModel({ prompt, apiKey });
     } catch (err) {
       logAiAdvisorUsage({
         organizationId,
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
 
     // 7. Parse + validate.
     const result = parseAndValidateResponse({
-      raw: geminiResult.text,
+      raw: modelResult.text,
       availableSelectors,
       captureMethod: designContext.captureMethod,
     });
@@ -194,8 +194,8 @@ export async function POST(request: Request) {
       organizationId,
       findingId,
       model: MODEL_NAME,
-      promptTokens: geminiResult.promptTokens,
-      responseTokens: geminiResult.responseTokens,
+      promptTokens: modelResult.promptTokens,
+      responseTokens: modelResult.responseTokens,
       durationMs,
       outcome: result.options.length > 0 ? 'ok' : 'invalid_response',
     });

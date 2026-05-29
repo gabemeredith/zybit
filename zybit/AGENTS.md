@@ -23,6 +23,7 @@ Zybit is a conversion intelligence platform for product managers. It runs a six-
 - **Every file has a purpose.** No scaffolding, no placeholders, no "we might need this later."
 - **Third-party where it's better.** Auth = invite-only magic-link sessions in `src/lib/auth/` (Clerk was removed in `a786d37`). Email = Resend. Billing = Stripe. Headless browser = Browserless.io. Cron monitoring = Cronitor. Observability = Axiom. Do not rebuild what third parties do well.
 - **Third-party where it's better.** Email = Resend. Billing = Stripe. Headless browser = Browserless.io. Cron monitoring = Cronitor. Observability = Axiom. Do not rebuild what third parties do well. (Auth is owned: invite-only magic-link system, no Clerk.)
+- **AI provider = OpenAI.** Every text / vision / image-edit call routes through the shared client `src/lib/ai/openai.ts` (replaced the per-file Gemini REST integrations 2026-05). Default models: `gpt-5.4` (reasoning — variant advisor, audit fix advisor), `gpt-5.4-mini` (capture-time extraction + screenshot quality gate), `gpt-image-1` (Tier-2 inpaint), all env-overridable. Key: `OPENAI_API_KEY`. Inline "Gemini 2.0 Flash" / "gemini-3.5-flash" mentions elsewhere in this file are historical — the trust model (structured-output + strict validator + fail-soft, cached on the snapshot) is unchanged.
 - **`npm run verify` must pass** before any commit: lint + TypeScript + build.
 
 ---

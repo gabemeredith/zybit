@@ -1,7 +1,7 @@
 /**
  * Live end-to-end check for the AI Variant Advisor scope expansion.
  *
- * Runs against the real Gemini 2.0 Flash endpoint when `GEMINI_API_KEY`
+ * Runs against the real OpenAI endpoint when `OPENAI_API_KEY`
  * is present in the environment; otherwise skipped. Verifies that:
  *
  *   1. The new MODIFICATION SCHEMA (with `element-insert`) round-trips
@@ -13,7 +13,7 @@
  *      returns (no dropped options) for at least one of the offered
  *      heading + CTA anchors.
  *
- * Skipped via vitest's `it.skipIf` when GEMINI_API_KEY is absent so the
+ * Skipped via vitest's `it.skipIf` when OPENAI_API_KEY is absent so the
  * test does not fail in CI without secrets. This is intentional — the
  * test sits in the regular suite as an opt-in live smoke check.
  */
@@ -21,14 +21,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPrompt,
-  callGeminiFlash,
+  callAdvisorModel,
   parseAndValidateResponse,
   type AdvisorDesignContext,
   type AdvisorFinding,
   type AdvisorSnapshotContext,
 } from '../aiAdvisor';
 
-const HAS_KEY = !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.length > 10;
+const HAS_KEY = !!process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length > 10;
 
 // The return-visit-thrash prescription is the canonical insert-shaped
 // finding — the AcmeBank quick-answer prescription pre-loads with a starter
@@ -64,7 +64,7 @@ const SNAPSHOT: AdvisorSnapshotContext = {
   ctaVocabulary: ['Open a checking account', 'See pricing'],
 };
 
-describe('AI Variant Advisor — live Gemini smoke check', () => {
+describe('AI Variant Advisor — live OpenAI smoke check', () => {
   it.skipIf(!HAS_KEY)(
     'returns at least one valid option for an insert-shaped finding against a heading anchor',
     async () => {
@@ -72,14 +72,14 @@ describe('AI Variant Advisor — live Gemini smoke check', () => {
       expect(prompt).toContain('element-insert');
       expect(prompt).toContain('#hero-h1');
 
-      const apiKey = process.env.GEMINI_API_KEY!;
-      const geminiResult = await callGeminiFlash({ prompt, apiKey });
+      const apiKey = process.env.OPENAI_API_KEY!;
+      const modelResult = await callAdvisorModel({ prompt, apiKey });
 
-      // Raw text should be JSON (Gemini honors responseMimeType in our call).
-      expect(geminiResult.text.length).toBeGreaterThan(0);
+      // Raw text should be JSON (json mode is requested in our call).
+      expect(modelResult.text.length).toBeGreaterThan(0);
 
       const result = parseAndValidateResponse({
-        raw: geminiResult.text,
+        raw: modelResult.text,
         availableSelectors: SNAPSHOT.availableSelectors,
         captureMethod: 'full',
       });
@@ -87,7 +87,7 @@ describe('AI Variant Advisor — live Gemini smoke check', () => {
       // The strict contract: at least one option survived schema + selector
       // validation. The advisor route returns 503/note when zero options
       // survive — that's the failure mode PR #84 was paused on.
-      expect(result.options.length, `gemini returned: ${geminiResult.text.slice(0, 500)}`).toBeGreaterThan(0);
+      expect(result.options.length, `model returned: ${modelResult.text.slice(0, 500)}`).toBeGreaterThan(0);
 
       // Every surviving modification must target an allowlisted selector
       // (proves the new heading selector flows through validation).

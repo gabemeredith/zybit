@@ -16,6 +16,7 @@
 import type { InsertPosition, VariantModification } from './types';
 import { INSERT_POSITIONS } from './types';
 import { sanitizeInsertHtml } from './sanitizeInsertHtml';
+import { callOpenAIChat, OPENAI_REASONING_MODEL } from '@/lib/ai/openai';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,9 +60,7 @@ export interface AdvisorResult {
   note?: string;
 }
 
-export const MODEL_NAME = 'gemini-3.5-flash';
-const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+export const MODEL_NAME = OPENAI_REASONING_MODEL;
 
 // `attribute-set` lets the AI mutate a DOM attribute on an allowlisted
 // selector. The selector check constrains *which element* is touched; this
@@ -349,61 +348,26 @@ export function parseAndValidateResponse(args: {
 }
 
 // ---------------------------------------------------------------------------
-// Gemini REST client
+// Model client — delegates to the shared OpenAI client
 // ---------------------------------------------------------------------------
 
-export interface GeminiCallResult {
-  text: string;
-  promptTokens: number | null;
-  responseTokens: number | null;
-}
+export type { OpenAIFetcher, OpenAICallResult } from '@/lib/ai/openai';
 
-export type GeminiFetcher = (
-  url: string,
-  init: { method: 'POST'; headers: Record<string, string>; body: string },
-) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
-
-const defaultFetcher: GeminiFetcher = (url, init) =>
-  fetch(url, init) as unknown as ReturnType<GeminiFetcher>;
-
-export async function callGeminiFlash(args: {
+/**
+ * Single structured-JSON call for the variant advisor. Thin wrapper over the
+ * shared OpenAI client so the route and tests get the same `{ text,
+ * promptTokens, responseTokens }` contract the Gemini client returned.
+ */
+export async function callAdvisorModel(args: {
   prompt: string;
   apiKey: string;
-  fetcher?: GeminiFetcher;
-}): Promise<GeminiCallResult> {
-  const fetcher = args.fetcher ?? defaultFetcher;
-  // Key goes in the `x-goog-api-key` header, not the URL query string —
-  // outbound request URLs land verbatim in Vercel/proxy access logs and
-  // Sentry breadcrumbs; request headers do not.
-  const response = await fetcher(GEMINI_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-goog-api-key': args.apiKey,
-    },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: args.prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.7,
-        // See note in `captureVisualSignals.ts`: thinking-mode budget eats
-        // into output tokens and causes empty `content: {}` returns on
-        // structured-output calls. Disable for the variant advisor.
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    }),
+  fetcher?: import('@/lib/ai/openai').OpenAIFetcher;
+}): Promise<import('@/lib/ai/openai').OpenAICallResult> {
+  return callOpenAIChat({
+    prompt: args.prompt,
+    apiKey: args.apiKey,
+    model: MODEL_NAME,
+    json: true,
+    fetcher: args.fetcher,
   });
-  if (!response.ok) {
-    throw new Error(`Gemini request failed: HTTP ${response.status}`);
-  }
-  const body = (await response.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
-  };
-  const text = body.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  return {
-    text,
-    promptTokens: body.usageMetadata?.promptTokenCount ?? null,
-    responseTokens: body.usageMetadata?.candidatesTokenCount ?? null,
-  };
 }

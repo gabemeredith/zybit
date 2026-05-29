@@ -19,10 +19,10 @@ function timeAgo(d: Date | string): string {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  draft: "bg-black/[0.05] text-[#6B6B6B]",
-  running: "bg-emerald-50 text-emerald-700",
-  completed: "bg-sky-50 text-sky-700",
-  stopped: "bg-black/[0.04] text-[#9B9B9B]",
+  draft: "bg-white text-[#6B6B6B]",
+  running: "bg-emerald-300 text-[#111]",
+  completed: "bg-[#00E5FF] text-[#111]",
+  stopped: "bg-black/[0.06] text-[#9B9B9B]",
 };
 
 export default async function ExperimentsPage() {
@@ -80,10 +80,8 @@ export default async function ExperimentsPage() {
     <div className="p-8 max-w-4xl mx-auto">
       <div className="flex items-start justify-between mb-8">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-1">
-            Experiments
-          </div>
-          <h1 className="text-3xl font-bold tracking-tighter text-[#111]">
+          <div className="brut-label mb-1 tracking-[0.2em]">Experiments</div>
+          <h1 className="text-4xl font-bold tracking-tighter text-[#111]">
             {runningCount > 0
               ? `${runningCount} running`
               : experiments.length > 0
@@ -94,14 +92,11 @@ export default async function ExperimentsPage() {
       </div>
 
       {experiments.length === 0 ? (
-        <div className="bg-white border border-black/[0.05] rounded-2xl p-12 text-center">
-          <p className="text-[#6B6B6B] mb-4 leading-relaxed">
+        <div className="brut-card p-12 text-center">
+          <p className="text-[#6B6B6B] mb-5 leading-relaxed">
             Approve a finding, save an experiment brief, then launch it to start testing.
           </p>
-          <Link
-            href="/app/findings"
-            className="inline-block bg-[#111] text-[#FAFAF8] px-5 py-2.5 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 transition-opacity"
-          >
+          <Link href="/app/findings" className="brut-action">
             View findings
           </Link>
         </div>
@@ -114,63 +109,53 @@ export default async function ExperimentsPage() {
             const hasResult = exp.resultVariantRate !== null;
 
             return (
-              <Link key={exp.id} href={`/app/experiments/${exp.id}`} className="block group">
-                <div className="bg-white border border-black/[0.05] rounded-2xl px-5 py-4 transition-all group-hover:-translate-y-0.5 group-hover:shadow-sm">
-                  <div className="flex items-start gap-4">
-                    {/* Running indicator */}
-                    <div className="shrink-0 mt-1.5">
-                      {exp.status === "running" ? (
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 block animate-pulse" />
-                      ) : (
-                        <span className="w-2 h-2 rounded-full bg-black/[0.12] block" />
+              <Link key={exp.id} href={`/app/experiments/${exp.id}`} className="block brut-card-link px-5 py-4 group">
+                <div className="flex items-start gap-4">
+                  {/* Running indicator */}
+                  <div className="shrink-0 mt-1.5">
+                    {exp.status === "running" ? (
+                      <span className="w-2 h-2 bg-emerald-500 block animate-pulse" />
+                    ) : (
+                      <span className="w-2 h-2 bg-black/[0.15] block" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={`brut-badge ${STATUS_STYLES[exp.status] ?? STATUS_STYLES.draft}`}>
+                        {exp.status}
+                      </span>
+                      {exp.targetPath && (
+                        <span className="brut-tag text-[#6B6B6B]">{exp.targetPath}</span>
                       )}
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span
-                          className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                            STATUS_STYLES[exp.status] ?? STATUS_STYLES.draft
-                          }`}
-                        >
-                          {exp.status}
-                        </span>
-                        {exp.targetPath && (
-                          <span className="font-mono text-xs text-[#6B6B6B] bg-black/[0.04] px-1.5 py-0.5 rounded">
-                            {exp.targetPath}
-                          </span>
-                        )}
-                      </div>
+                    <p className="text-sm font-semibold text-[#111] leading-snug mb-1 truncate">
+                      {name}
+                    </p>
 
-                      <p className="text-sm font-semibold text-[#111] leading-snug mb-1 truncate">
-                        {name}
-                      </p>
-
-                      <div className="flex items-center gap-3 text-xs text-[#9B9B9B]">
-                        <span>Metric: {exp.primaryMetric}</span>
-                        {exp.findingId && findingTitles.has(exp.findingId) && (
-                          <>
-                            <span>·</span>
-                            <span className="truncate">
-                              From: {findingTitles.get(exp.findingId)}
-                            </span>
-                          </>
-                        )}
-                      </div>
+                    <div className="flex items-center gap-3 text-xs text-[#9B9B9B]">
+                      <span>Metric: {exp.primaryMetric}</span>
+                      {exp.findingId && findingTitles.has(exp.findingId) && (
+                        <>
+                          <span>·</span>
+                          <span className="truncate">From: {findingTitles.get(exp.findingId)}</span>
+                        </>
+                      )}
                     </div>
+                  </div>
 
-                    <div className="shrink-0 flex flex-col items-end gap-1.5 ml-2">
-                      {hasResult ? (
-                        <span className="text-xs font-bold text-[#111]">
-                          {exp.resultVariantRate !== null && exp.resultControlRate !== null
-                            ? `+${((exp.resultVariantRate - exp.resultControlRate) * 100).toFixed(1)}pp`
-                            : "Results recorded"}
-                        </span>
-                      ) : null}
-                      <span className="text-xs text-[#9B9B9B]">
-                        {exp.startedAt ? `Started ${timeAgo(exp.startedAt)}` : timeAgo(exp.createdAt)}
+                  <div className="shrink-0 flex flex-col items-end gap-1.5 ml-2">
+                    {hasResult ? (
+                      <span className="mono-text text-xs font-bold text-[#111]">
+                        {exp.resultVariantRate !== null && exp.resultControlRate !== null
+                          ? `+${((exp.resultVariantRate - exp.resultControlRate) * 100).toFixed(1)}pp`
+                          : "Results recorded"}
                       </span>
-                    </div>
+                    ) : null}
+                    <span className="mono-text text-[11px] text-[#9B9B9B]">
+                      {exp.startedAt ? `Started ${timeAgo(exp.startedAt)}` : timeAgo(exp.createdAt)}
+                    </span>
                   </div>
                 </div>
               </Link>

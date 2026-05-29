@@ -36,6 +36,7 @@
 import type { InsertPosition, VariantModification } from '@/lib/experiments/types';
 import { INSERT_POSITIONS } from '@/lib/experiments/types';
 import { sanitizeInsertHtml } from '@/lib/experiments/sanitizeInsertHtml';
+import { OPENAI_CHAT_ENDPOINT, OPENAI_REASONING_MODEL, type OpenAIFetcher } from '@/lib/ai/openai';
 import {
   isSafeAttributeName,
   isSafeCssDeclarations,
@@ -78,9 +79,7 @@ export interface AuditFixAdvisorResult {
   note?: string;
 }
 
-export const AUDIT_MODEL_NAME = 'gemini-3.5-flash';
-const AUDIT_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+export const AUDIT_MODEL_NAME = OPENAI_REASONING_MODEL;
 
 // The audit advisor lets the model emit larger insert payloads than the
 // production surface. A hero refresh / FAQ block / proof bar wants ~8-12 KB
@@ -301,73 +300,65 @@ export interface AuditGeminiCallResult {
   responseTokens: number | null;
 }
 
-export type AuditGeminiFetcher = (
-  url: string,
-  init: { method: 'POST'; headers: Record<string, string>; body: string },
-) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+export type AuditAdvisorFetcher = OpenAIFetcher;
 
-const defaultFetcher: AuditGeminiFetcher = (url, init) =>
-  fetch(url, init) as unknown as ReturnType<AuditGeminiFetcher>;
+const defaultFetcher: AuditAdvisorFetcher = (url, init) =>
+  fetch(url, init) as unknown as ReturnType<AuditAdvisorFetcher>;
 
 export async function callAuditAdvisor(args: {
   prompt: string;
   apiKey: string;
   beforeScreenshotBase64: string | null;
-  fetcher?: AuditGeminiFetcher;
+  fetcher?: AuditAdvisorFetcher;
 }): Promise<AuditGeminiCallResult> {
   const fetcher = args.fetcher ?? defaultFetcher;
-  const parts: Array<{ text?: string; inline_data?: { mime_type: string; data: string } }> = [
-    { text: args.prompt },
-  ];
+  // Vision message: prompt text + the optional "before" screenshot as a
+  // base64 data URL (OpenAI image_url part).
+  const content: Array<
+    { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+  > = [{ type: 'text', text: args.prompt }];
   if (args.beforeScreenshotBase64) {
-    parts.push({
-      inline_data: { mime_type: 'image/png', data: args.beforeScreenshotBase64 },
+    content.push({
+      type: 'image_url',
+      image_url: { url: `data:image/png;base64,${args.beforeScreenshotBase64}` },
     });
   }
-  const response = await fetcher(AUDIT_ENDPOINT, {
+  const response = await fetcher(OPENAI_CHAT_ENDPOINT, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-goog-api-key': args.apiKey,
+      authorization: `Bearer ${args.apiKey}`,
     },
     body: JSON.stringify({
-      contents: [{ parts }],
-      // Slightly cooler than the production advisor — we want a single
-      // best fix, not three exploratory options.
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.5,
-        // See note in `captureVisualSignals.ts`: thinking-mode budget eats
-        // into output tokens and causes empty `content: {}` returns on
-        // structured-output calls. Disable for the audit fix advisor.
-        thinkingConfig: { thinkingBudget: 0 },
-      },
+      model: AUDIT_MODEL_NAME,
+      messages: [{ role: 'user', content }],
+      response_format: { type: 'json_object' },
     }),
   });
   if (!response.ok) {
-    throw new Error(`Gemini audit-advisor request failed: HTTP ${response.status}`);
+    throw new Error(`OpenAI audit-advisor request failed: HTTP ${response.status}`);
   }
   const body = (await response.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+    choices?: Array<{ message?: { content?: string | null } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
   return {
-    text: body.candidates?.[0]?.content?.parts?.[0]?.text ?? '',
-    promptTokens: body.usageMetadata?.promptTokenCount ?? null,
-    responseTokens: body.usageMetadata?.candidatesTokenCount ?? null,
+    text: body.choices?.[0]?.message?.content ?? '',
+    promptTokens: body.usage?.prompt_tokens ?? null,
+    responseTokens: body.usage?.completion_tokens ?? null,
   };
 }
 
 /**
- * High-level entry point. Returns `null` when `GEMINI_API_KEY` is unset
+ * High-level entry point. Returns `null` when `OPENAI_API_KEY` is unset
  * (caller falls back to Tier 2/3) or when the call throws — never
  * surfaces an exception to the audit pipeline.
  */
 export async function suggestAuditFix(
   input: AuditFixAdvisorInput,
-  opts?: { apiKey?: string; fetcher?: AuditGeminiFetcher },
+  opts?: { apiKey?: string; fetcher?: AuditAdvisorFetcher },
 ): Promise<AuditFixAdvisorResult | null> {
-  const apiKey = opts?.apiKey ?? process.env.GEMINI_API_KEY;
+  const apiKey = opts?.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
   try {
     const { text } = await callAuditAdvisor({

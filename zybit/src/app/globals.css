@@ -36,6 +36,111 @@ body {
   font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
+.mono-text {
+  font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* ---------------------------------------------------------------------------
+ * Brutalist dashboard system
+ * ---------------------------------------------------------------------------
+ * The app surfaces (cockpit, findings, experiments, demo) share one visual
+ * language with the marketing site: ink-on-cream, square corners, 1.5px ink
+ * borders, hard offset shadows instead of soft blur. These utilities replace
+ * the default "SaaS" round-card / soft-shadow look across the dashboard.
+ */
+.brut-label {
+  font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Flat, square, ink-bordered card — the static surface */
+.brut-card {
+  background: #ffffff;
+  border: 1.5px solid var(--color-text-primary);
+  border-radius: 0;
+}
+
+/* Interactive card — hard offset shadow that the card slides into on hover */
+.brut-card-link {
+  background: #ffffff;
+  border: 1.5px solid var(--color-text-primary);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 var(--color-text-primary);
+  transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
+}
+.brut-card-link:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--color-text-primary);
+}
+.brut-card-link:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--color-text-primary);
+}
+
+/* Square status/severity chip */
+.brut-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border: 1.5px solid var(--color-text-primary);
+  border-radius: 0;
+  background: #ffffff;
+  color: var(--color-text-primary);
+}
+
+/* Inline monospace tag (path refs, metrics) */
+.brut-tag {
+  font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 0;
+  padding: 1px 6px;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+/* Solid ink action button — square, hard shadow */
+.brut-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-text-primary);
+  color: var(--color-primary-bg);
+  border: 1.5px solid var(--color-text-primary);
+  border-radius: 0;
+  padding: 11px 20px;
+  font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--color-text-primary);
+  transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
+}
+.brut-action:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 5px 5px 0 var(--color-text-primary);
+}
+.brut-action:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--color-text-primary);
+}
+.brut-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: 3px 3px 0 var(--color-text-primary);
+  transform: none;
+}
+
 
 .bg-dots {
   background-image: radial-gradient(rgba(0, 0, 0, 0.15) 1.5px, transparent 1.5px);

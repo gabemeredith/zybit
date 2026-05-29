@@ -114,11 +114,11 @@ describe('validateVisualSignals', () => {
 describe('captureVisualSignals', () => {
   function makeBody(text: string) {
     return {
-      candidates: [{ content: { parts: [{ text }] } }],
+      choices: [{ message: { content: text } }],
     };
   }
 
-  it('returns null when GEMINI_API_KEY is not set', async () => {
+  it('returns null when OPENAI_API_KEY is not set', async () => {
     const out = await captureVisualSignals(
       { url: 'https://example.com', domain: 'example.com', screenshot: Buffer.from('fake') },
       { apiKey: null },
@@ -151,7 +151,7 @@ describe('captureVisualSignals', () => {
 
   it('returns null when the response body is the JSON literal null', async () => {
     // `null` is valid JSON. Without a guard, extractText would access
-    // `.candidates` on null and throw a TypeError that rejects the
+    // `.choices` on null and throw a TypeError that rejects the
     // captureVisualSignals promise and breaks the page snapshot loop.
     const out = await captureVisualSignals(
       { url: 'https://example.com', domain: 'example.com', screenshot: Buffer.from('fake') },
@@ -196,7 +196,7 @@ describe('captureVisualSignals', () => {
     expect(out!.modelVersion).toBe(VISION_MODEL);
   });
 
-  it('passes the screenshot as base64-encoded inline data', async () => {
+  it('passes the screenshot as a base64-encoded image_url data URL', async () => {
     const captured: { body?: string } = {};
     await captureVisualSignals(
       { url: 'https://example.com', domain: 'example.com', screenshot: Buffer.from('hello') },
@@ -212,13 +212,14 @@ describe('captureVisualSignals', () => {
     );
     expect(captured.body).toBeTruthy();
     const parsed = JSON.parse(captured.body!);
-    const inline = parsed.contents[0].parts[0].inlineData;
-    expect(inline.mimeType).toBe('image/jpeg');
+    const imagePart = parsed.messages[0].content.find(
+      (p: { type: string }) => p.type === 'image_url',
+    );
     // 'hello' base64 = 'aGVsbG8='
-    expect(inline.data).toBe('aGVsbG8=');
+    expect(imagePart.image_url.url).toBe('data:image/jpeg;base64,aGVsbG8=');
   });
 
-  it('passes the API key as x-goog-api-key header (never in URL)', async () => {
+  it('passes the API key in the Authorization header (never in URL)', async () => {
     const captured: { url?: string; headers?: Record<string, string> } = {};
     await captureVisualSignals(
       { url: 'https://example.com', domain: 'example.com', screenshot: Buffer.from('hello') },
@@ -234,6 +235,6 @@ describe('captureVisualSignals', () => {
       },
     );
     expect(captured.url!.includes('secret-token-123')).toBe(false);
-    expect(captured.headers!['x-goog-api-key']).toBe('secret-token-123');
+    expect(captured.headers!.authorization).toBe('Bearer secret-token-123');
   });
 });

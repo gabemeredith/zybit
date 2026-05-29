@@ -22,17 +22,17 @@ function timeAgo(isoDate: string | Date): string {
 }
 
 const SEVERITY_STYLES = {
-  critical: "bg-red-50 text-red-700 border-red-100",
-  warn: "bg-amber-50 text-amber-700 border-amber-100",
-  info: "bg-sky-50 text-sky-700 border-sky-100",
+  critical: "bg-[#FF4A5A] text-white",
+  warn: "bg-amber-300 text-[#111]",
+  info: "bg-[#00E5FF] text-[#111]",
 } as const;
 
 const STATUS_STYLES = {
-  open: "bg-black/[0.05] text-[#6B6B6B]",
-  approved: "bg-emerald-50 text-emerald-700",
-  dismissed: "bg-black/[0.04] text-[#9B9B9B]",
-  shipped: "bg-sky-50 text-sky-700",
-  measured: "bg-violet-50 text-violet-700",
+  open: "bg-white text-[#6B6B6B]",
+  approved: "bg-emerald-300 text-[#111]",
+  dismissed: "bg-black/[0.06] text-[#9B9B9B]",
+  shipped: "bg-[#00E5FF] text-[#111]",
+  measured: "bg-[#8A2BE2] text-white",
 } as const;
 
 const ALL_STATUSES = ["open", "approved", "dismissed", "shipped", "measured"] as const;
@@ -118,10 +118,8 @@ export default async function FindingsPage({
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-1">
-            Findings
-          </div>
-          <h1 className="text-3xl font-bold tracking-tighter text-[#111]">
+          <div className="brut-label mb-1 tracking-[0.2em]">Findings</div>
+          <h1 className="text-4xl font-bold tracking-tighter text-[#111]">
             {countsByStatus.open} open finding{countsByStatus.open !== 1 ? "s" : ""}
           </h1>
         </div>
@@ -129,7 +127,7 @@ export default async function FindingsPage({
       </div>
 
       {/* Filter tabs */}
-      <div className="flex items-center gap-1 mb-6 border-b border-black/[0.06] pb-0">
+      <div className="flex items-center gap-1 mb-6 border-b-[1.5px] border-black/[0.1] pb-0">
         {FILTER_TABS.map((tab) => {
           const count = countsByStatus[tab.key] ?? 0;
           const isActive = activeFilter === tab.key;
@@ -137,16 +135,16 @@ export default async function FindingsPage({
             <Link
               key={tab.key}
               href={`/app/findings?status=${tab.key}`}
-              className={`relative px-4 py-2.5 text-sm font-bold transition-colors ${
+              className={`relative mono-text px-4 py-2.5 text-xs font-bold uppercase tracking-[0.08em] transition-colors ${
                 isActive
-                  ? "text-[#111] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-[#111]"
+                  ? "text-[#111] after:absolute after:-bottom-[1.5px] after:left-0 after:right-0 after:h-[2.5px] after:bg-[#111]"
                   : "text-[#6B6B6B] hover:text-[#111]"
               }`}
             >
               {tab.label}
               {count > 0 && (
                 <span
-                  className={`ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ${
+                  className={`ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold ${
                     isActive ? "bg-[#111] text-[#FAFAF8]" : "bg-black/[0.06] text-[#6B6B6B]"
                   }`}
                 >
@@ -159,7 +157,7 @@ export default async function FindingsPage({
       </div>
 
       {findings.length === 0 ? (
-        <div className="bg-white border border-black/[0.05] rounded-2xl p-10">
+        <div className="brut-card p-10">
           {allFindings.length === 0 ? (
             <div className="max-w-sm mx-auto text-center">
               <p className="text-base font-semibold text-[#111] mb-1">
@@ -177,9 +175,9 @@ export default async function FindingsPage({
                   <span>{currentSessions.toLocaleString()} sessions recorded</span>
                   <span>~{sessionThreshold.toLocaleString()} needed</span>
                 </div>
-                <div className="w-full h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
+                <div className="w-full h-2 bg-black/[0.06] border border-black/10 overflow-hidden">
                   <div
-                    className="h-full bg-[#111] rounded-full transition-all"
+                    className="h-full bg-[#111] transition-all"
                     style={{ width: `${Math.min(100, Math.round((currentSessions / sessionThreshold) * 100))}%` }}
                   />
                 </div>
@@ -207,92 +205,83 @@ export default async function FindingsPage({
 
             return (
               <div key={finding.id} className="group relative">
-                <Link
-                  href={`/app/findings/${finding.id}`}
-                  className="block"
-                >
-                  <div className="bg-white border border-black/[0.05] rounded-2xl px-5 py-4 transition-all group-hover:-translate-y-0.5 group-hover:shadow-sm">
-                    <div className="flex items-start gap-3">
-                      {/* Priority bar */}
-                      <div className="shrink-0 mt-1">
-                        <div className="w-1 h-8 rounded-full bg-black/[0.06] overflow-hidden">
-                          <div
-                            className="w-full rounded-full bg-[#111] transition-all"
-                            style={{ height: `${Math.round(finding.priorityScore * 100)}%` }}
-                          />
-                        </div>
+                <Link href={`/app/findings/${finding.id}`} className="block brut-card-link px-5 py-4">
+                  <div className="flex items-start gap-3">
+                    {/* Priority bar */}
+                    <div className="shrink-0 mt-1">
+                      <div className="w-1.5 h-8 bg-black/[0.06] overflow-hidden flex flex-col justify-end">
+                        <div
+                          className="w-full bg-[#111] transition-all"
+                          style={{ height: `${Math.round(finding.priorityScore * 100)}%` }}
+                        />
                       </div>
+                    </div>
 
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${
-                              SEVERITY_STYLES[finding.severity as keyof typeof SEVERITY_STYLES] ??
-                              SEVERITY_STYLES.info
-                            }`}
-                          >
-                            {finding.severity}
-                          </span>
-                          {finding.pathRef && (
-                            <span className="font-mono text-xs text-[#6B6B6B] bg-black/[0.04] px-1.5 py-0.5 rounded">
-                              {finding.pathRef}
-                            </span>
-                          )}
-                          {impactLabel && (
-                            <span className="text-xs font-bold text-[#111] bg-black/[0.04] px-1.5 py-0.5 rounded">
-                              {impactLabel}
-                            </span>
-                          )}
-                          {finding.learnAdjustment?.visible && (
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${
-                                finding.learnAdjustment.direction === 'boost'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                  : 'bg-slate-50 text-slate-700 border-slate-200'
-                              }`}
-                              title={finding.learnAdjustment.reason}
-                            >
-                              {finding.learnAdjustment.direction === 'boost' ? '↑' : '↓'}{' '}
-                              {finding.learnAdjustment.delta >= 0 ? '+' : '−'}
-                              {Math.abs(finding.learnAdjustment.delta).toFixed(2)} from past tests
-                            </span>
-                          )}
-                          {(finding.learnAdjustment as { calibration?: { direction: string } } | null)?.calibration && (
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${
-                                (finding.learnAdjustment as { calibration?: { direction: string } })?.calibration?.direction === 'loosen'
-                                  ? 'bg-violet-50 text-violet-700 border-violet-100'
-                                  : 'bg-orange-50 text-orange-700 border-orange-100'
-                              }`}
-                              title={(finding.learnAdjustment as { calibration?: { reason: string } })?.calibration?.reason}
-                            >
-                              Tuned
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm font-semibold text-[#111] leading-snug mb-1 truncate">
-                          {finding.title}
-                        </p>
-                        <p className="text-xs text-[#6B6B6B] leading-relaxed line-clamp-2">
-                          {finding.summary}
-                        </p>
-                      </div>
-
-                      {/* Right meta */}
-                      <div className="shrink-0 flex flex-col items-end gap-1.5 ml-2">
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center flex-wrap gap-1.5 mb-1.5">
                         <span
-                          className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                            STATUS_STYLES[finding.status as keyof typeof STATUS_STYLES] ??
-                            STATUS_STYLES.open
+                          className={`brut-badge ${
+                            SEVERITY_STYLES[finding.severity as keyof typeof SEVERITY_STYLES] ??
+                            SEVERITY_STYLES.info
                           }`}
                         >
-                          {finding.status}
+                          {finding.severity}
                         </span>
-                        <span className="text-xs text-[#9B9B9B]">
-                          {timeAgo(finding.lastSeenAt)}
-                        </span>
+                        {finding.pathRef && (
+                          <span className="brut-tag text-[#6B6B6B]">{finding.pathRef}</span>
+                        )}
+                        {impactLabel && (
+                          <span className="brut-tag font-bold text-[#111]">{impactLabel}</span>
+                        )}
+                        {finding.learnAdjustment?.visible && (
+                          <span
+                            className={`brut-badge ${
+                              finding.learnAdjustment.direction === 'boost'
+                                ? 'bg-emerald-300 text-[#111]'
+                                : 'bg-slate-200 text-slate-700'
+                            }`}
+                            title={finding.learnAdjustment.reason}
+                          >
+                            {finding.learnAdjustment.direction === 'boost' ? '↑' : '↓'}{' '}
+                            {finding.learnAdjustment.delta >= 0 ? '+' : '−'}
+                            {Math.abs(finding.learnAdjustment.delta).toFixed(2)} past tests
+                          </span>
+                        )}
+                        {(finding.learnAdjustment as { calibration?: { direction: string } } | null)?.calibration && (
+                          <span
+                            className={`brut-badge ${
+                              (finding.learnAdjustment as { calibration?: { direction: string } })?.calibration?.direction === 'loosen'
+                                ? 'bg-[#8A2BE2] text-white'
+                                : 'bg-orange-300 text-[#111]'
+                            }`}
+                            title={(finding.learnAdjustment as { calibration?: { reason: string } })?.calibration?.reason}
+                          >
+                            Tuned
+                          </span>
+                        )}
                       </div>
+                      <p className="text-sm font-semibold text-[#111] leading-snug mb-1 truncate">
+                        {finding.title}
+                      </p>
+                      <p className="text-xs text-[#6B6B6B] leading-relaxed line-clamp-2">
+                        {finding.summary}
+                      </p>
+                    </div>
+
+                    {/* Right meta */}
+                    <div className="shrink-0 flex flex-col items-end gap-1.5 ml-2">
+                      <span
+                        className={`brut-badge ${
+                          STATUS_STYLES[finding.status as keyof typeof STATUS_STYLES] ??
+                          STATUS_STYLES.open
+                        }`}
+                      >
+                        {finding.status}
+                      </span>
+                      <span className="mono-text text-[11px] text-[#9B9B9B]">
+                        {timeAgo(finding.lastSeenAt)}
+                      </span>
                     </div>
                   </div>
                 </Link>

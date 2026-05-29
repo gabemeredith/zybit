@@ -33,10 +33,9 @@
  */
 
 import type { PageType, VisualHeroBlock } from '@/lib/phase2/snapshots/types';
+import { OPENAI_CHAT_ENDPOINT, OPENAI_FAST_MODEL, extractChatText } from '@/lib/ai/openai';
 
-export const COPY_CRITIQUE_MODEL = 'gemini-3.5-flash';
-const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+export const COPY_CRITIQUE_MODEL = OPENAI_FAST_MODEL;
 
 export interface CopyCritique {
   /**
@@ -116,7 +115,7 @@ Rules:
 
 /**
  * Capture structured copy critique for one page. Returns `null` when:
- *   - `GEMINI_API_KEY` is not set.
+ *   - `OPENAI_API_KEY` is not set.
  *   - `heroBlock` has no readable text (headline/subheadline/firstParagraph all null).
  *   - The Gemini call fails (network, rate limit, model error).
  *   - The model output cannot be parsed as valid JSON.
@@ -135,7 +134,7 @@ export async function captureCopyCritique(
   // caller did not pass the field at all (`undefined`). This is the same
   // semantic as a normal feature-flag override.
   const apiKey =
-    deps.apiKey === undefined ? process.env.GEMINI_API_KEY ?? null : deps.apiKey;
+    deps.apiKey === undefined ? process.env.OPENAI_API_KEY ?? null : deps.apiKey;
   const now = deps.now ?? (() => new Date());
 
   if (!apiKey) return null;
@@ -155,25 +154,17 @@ export async function captureCopyCritique(
 
   let resp: Response;
   try {
-    resp = await fetchImpl(GEMINI_ENDPOINT, {
+    resp = await fetchImpl(OPENAI_CHAT_ENDPOINT, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-goog-api-key': apiKey,
+        authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: COPY_CRITIQUE_PROMPT + '\n\n' + promptInput }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          maxOutputTokens: 1024,
-          temperature: 0.2,
-          // See note in `captureVisualSignals.ts`: gemini-3.5-flash spends
-          // its `maxOutputTokens` budget on thinking-mode reasoning before
-          // emitting any text, so structured-output calls return empty
-          // content. Disable thinking — this rule family is entirely
-          // schema-bound; reasoning adds no quality.
-          thinkingConfig: { thinkingBudget: 0 },
-        },
+        model: COPY_CRITIQUE_MODEL,
+        messages: [{ role: 'user', content: COPY_CRITIQUE_PROMPT + '\n\n' + promptInput }],
+        response_format: { type: 'json_object' },
+        max_completion_tokens: 1024,
       }),
       signal: AbortSignal.timeout(30_000),
     });
@@ -186,7 +177,7 @@ export async function captureCopyCritique(
   }
 
   if (!resp.ok) {
-    console.warn('[captureCopyCritique] Gemini API error', {
+    console.warn('[captureCopyCritique] OpenAI API error', {
       url: args.url,
       status: resp.status,
     });
@@ -200,7 +191,7 @@ export async function captureCopyCritique(
     return null;
   }
 
-  const rawText = extractText(body);
+  const rawText = extractChatText(body);
   if (!rawText) return null;
 
   const parsed = safeJsonParse(rawText);
@@ -219,16 +210,6 @@ export async function captureCopyCritique(
 // ---------------------------------------------------------------------------
 // Pure helpers — exported for tests.
 // ---------------------------------------------------------------------------
-
-interface GeminiBody {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-}
-
-function extractText(body: unknown): string | null {
-  if (!body || typeof body !== 'object') return null;
-  const b = body as GeminiBody;
-  return b.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
-}
 
 function safeJsonParse(text: string): unknown {
   try {

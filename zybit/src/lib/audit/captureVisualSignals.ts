@@ -30,10 +30,9 @@ import type {
   VisualHeroBlock,
   VisualSignals,
 } from '@/lib/phase2/snapshots/types';
+import { OPENAI_CHAT_ENDPOINT, OPENAI_FAST_MODEL, extractChatText } from '@/lib/ai/openai';
 
-export const VISION_MODEL = 'gemini-3.5-flash';
-const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+export const VISION_MODEL = OPENAI_FAST_MODEL;
 
 const VALID_PAGE_TYPES: ReadonlySet<PageType> = new Set([
   'home',
@@ -60,7 +59,7 @@ export interface CaptureVisualSignalsArgs {
 export interface CaptureVisualSignalsDeps {
   /** Override-able for tests. Defaults to the global `fetch`. */
   fetch?: typeof fetch;
-  /** Override-able for tests. Defaults to `process.env.GEMINI_API_KEY`. */
+  /** Override-able for tests. Defaults to `process.env.OPENAI_API_KEY`. */
   apiKey?: string | null;
   /** Override-able for tests so the result is deterministic. */
   now?: () => Date;
@@ -86,7 +85,7 @@ Rules:
 /**
  * Capture structured vision signals for a single above-fold screenshot.
  * Returns `null` when:
- *   - `GEMINI_API_KEY` is not set (no API access).
+ *   - `OPENAI_API_KEY` is not set (no API access).
  *   - The Gemini call fails (network, rate limit, model error).
  *   - The model output cannot be parsed as valid JSON.
  *   - The parsed JSON does not match the schema.
@@ -99,7 +98,7 @@ export async function captureVisualSignals(
   deps: CaptureVisualSignalsDeps = {},
 ): Promise<VisualSignals | null> {
   const fetchImpl = deps.fetch ?? fetch;
-  const apiKey = deps.apiKey ?? process.env.GEMINI_API_KEY ?? null;
+  const apiKey = deps.apiKey ?? process.env.OPENAI_API_KEY ?? null;
   const now = deps.now ?? (() => new Date());
 
   if (!apiKey) return null;
@@ -107,34 +106,28 @@ export async function captureVisualSignals(
   let resp: Response;
   try {
     const base64 = args.screenshot.toString('base64');
-    resp = await fetchImpl(GEMINI_ENDPOINT, {
+    resp = await fetchImpl(OPENAI_CHAT_ENDPOINT, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-goog-api-key': apiKey,
+        authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        contents: [
+        model: VISION_MODEL,
+        messages: [
           {
-            parts: [
-              { inlineData: { mimeType: 'image/jpeg', data: base64 } },
-              { text: VISION_PROMPT },
+            role: 'user',
+            content: [
+              { type: 'text', text: VISION_PROMPT },
+              {
+                type: 'image_url',
+                image_url: { url: `data:image/jpeg;base64,${base64}` },
+              },
             ],
           },
         ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          maxOutputTokens: 1024,
-          temperature: 0.2,
-          // gemini-3.5-flash defaults to thinking-mode on, and the reasoning
-          // tokens get counted against `maxOutputTokens` — the model will
-          // burn the entire budget on internal thinking and return
-          // `content: {}` with `finishReason: MAX_TOKENS`. For structured-
-          // output capture work the reasoning adds no quality, so disable
-          // the thinking budget entirely. Without this, every vision call
-          // returns null and downstream rules degrade to structural-only.
-          thinkingConfig: { thinkingBudget: 0 },
-        },
+        response_format: { type: 'json_object' },
+        max_completion_tokens: 1024,
       }),
       signal: AbortSignal.timeout(30_000),
     });
@@ -147,7 +140,7 @@ export async function captureVisualSignals(
   }
 
   if (!resp.ok) {
-    console.warn('[captureVisualSignals] Gemini API error', {
+    console.warn('[captureVisualSignals] OpenAI API error', {
       url: args.url,
       status: resp.status,
     });
@@ -181,16 +174,10 @@ export async function captureVisualSignals(
 // Pure helpers — exported for tests.
 // ---------------------------------------------------------------------------
 
-interface GeminiBody {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-}
-
 function extractText(body: unknown): string | null {
-  // Gemini can return the JSON literal `null` (valid JSON, parses to JS null),
-  // and `b.candidates` would throw `TypeError` before optional chaining kicks in.
-  if (!body || typeof body !== 'object') return null;
-  const b = body as GeminiBody;
-  return b.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
+  // OpenAI can return the JSON literal `null` (valid JSON, parses to JS null),
+  // and `b.choices` would throw `TypeError` before optional chaining kicks in.
+  return extractChatText(body);
 }
 
 function safeJsonParse(text: string): unknown {

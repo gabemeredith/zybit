@@ -1,37 +1,32 @@
 /**
- * Tier 2 fallback: vision-driven "after" via Gemini 2.5 Flash Image
- * (a.k.a. nano-banana).
+ * Tier 2 fallback: vision-driven "after" via the OpenAI image-edit model
+ * (`gpt-image-1` by default).
  *
  * When Tier 1 declines (no advisor mods survived, no mod resolved against
  * the captured HTML, or Tier 1 simply produced a control-identical render),
  * we hand the real before screenshot to the image model with a prompt
  * derived from the finding + the design tokens, and ask it to edit just
- * the offending region. Because the model edits the *real* screenshot —
- * not a freehand mockup — brand colour, fonts, type scale, and the
- * surrounding layout are preserved by construction. Trust comes from
- * "everything outside the edit is the real site", not from "the model
- * guessed the brand right."
+ * the offending region. The model edits the *real* screenshot — not a
+ * freehand mockup — so brand colour, fonts, and surrounding layout are
+ * largely preserved. (Caveat: `gpt-image-1` edits do a soft-mask full
+ * recreation rather than pixel-level mask replacement, so fidelity is
+ * good-but-not-guaranteed — the no-op / blank guards below plus the Tier 3
+ * annotated-before fallback catch the cases where it drifts.)
  *
- * The model takes a single image + text prompt and returns one image.
- * No explicit mask channel — the prompt names the region. This is the
- * shape the current `gemini-2.5-flash-image-preview` endpoint exposes;
- * we keep the contract narrow so a future mask-supporting model can be
- * dropped in without changing callers.
+ * The model takes a single image + text prompt and returns one image via the
+ * multipart Images Edits endpoint. No explicit mask channel — the prompt
+ * names the region. We keep the contract narrow so a future mask-supporting
+ * model can be dropped in without changing callers.
  */
 
 import { put } from '@vercel/blob';
 import { isVisiblyChanged, isLikelyBlankFrame } from './renderBeforeAfter';
+import { OPENAI_IMAGE_EDIT_ENDPOINT, OPENAI_IMAGE_MODEL } from '@/lib/ai/openai';
 
-// Nano Banana 2 — Gemini 3.1 Flash Image Preview, released Feb 2026. 4K
-// output, faster than Nano Banana Pro, image-in / image-out via the
-// standard generateContent endpoint. The earlier 2.5 model still works
-// but produces softer edges and lower fidelity on logo / typography
-// preservation. Override at runtime by exporting `INPAINT_MODEL` to
-// e.g. `gemini-3-pro-image-preview` (Nano Banana Pro) for higher-budget
-// runs.
-const INPAINT_MODEL_NAME =
-  process.env.INPAINT_MODEL || 'gemini-3.1-flash-image-preview';
-const INPAINT_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${INPAINT_MODEL_NAME}:generateContent`;
+// `gpt-image-1` by default; override at runtime with `OPENAI_IMAGE_MODEL`
+// (e.g. `gpt-image-1.5` / `gpt-image-2` for higher fidelity) or the legacy
+// `INPAINT_MODEL` var for back-compat.
+const INPAINT_MODEL_NAME = process.env.INPAINT_MODEL || OPENAI_IMAGE_MODEL;
 
 export interface VisionInpaintInput {
   findingId: string;
@@ -57,7 +52,7 @@ export interface VisionInpaintResult {
 
 export type InpaintFetcher = (
   url: string,
-  init: { method: 'POST'; headers: Record<string, string>; body: string },
+  init: { method: 'POST'; headers: Record<string, string>; body: string | FormData },
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 const defaultFetcher: InpaintFetcher = (url, init) =>
@@ -147,15 +142,6 @@ export function buildInpaintPrompt(args: {
   ].join('\n');
 }
 
-// Nano Banana responses are camelCase (`inlineData`, `mimeType`) while
-// requests accept snake_case. Cover both shapes so a future API tweak
-// can't silently break extraction.
-interface InpaintPart {
-  text?: string;
-  inline_data?: { mime_type?: string; mimeType?: string; data: string };
-  inlineData?: { mime_type?: string; mimeType?: string; data: string };
-}
-
 export interface InpaintOutput {
   buffer: Buffer;
   mimeType: string;
@@ -168,48 +154,34 @@ export async function callInpaint(args: {
   fetcher?: InpaintFetcher;
 }): Promise<InpaintOutput | null> {
   const fetcher = args.fetcher ?? defaultFetcher;
-  const response = await fetcher(INPAINT_ENDPOINT, {
+  // Multipart form for the Images Edits endpoint: model + prompt + the real
+  // "before" PNG as the source image.
+  const form = new FormData();
+  form.append('model', INPAINT_MODEL_NAME);
+  form.append('prompt', args.prompt);
+  form.append(
+    'image',
+    new Blob([new Uint8Array(args.beforeBuffer)], { type: 'image/png' }),
+    'before.png',
+  );
+  const response = await fetcher(OPENAI_IMAGE_EDIT_ENDPOINT, {
     method: 'POST',
     headers: {
-      'content-type': 'application/json',
-      'x-goog-api-key': args.apiKey,
+      // No content-type — fetch sets the multipart boundary itself.
+      authorization: `Bearer ${args.apiKey}`,
     },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: args.prompt },
-            {
-              inline_data: {
-                mime_type: 'image/png',
-                data: args.beforeBuffer.toString('base64'),
-              },
-            },
-          ],
-        },
-      ],
-      // Nano Banana family REQUIRES `responseModalities: ['TEXT', 'IMAGE']`
-      // or the endpoint returns a 400 (the default modality is TEXT only).
-      // Don't set responseMimeType — that's a text-endpoint shape and
-      // produces 400 here.
-      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
-    }),
+    body: form,
   });
   if (!response.ok) {
-    throw new Error(`Gemini inpaint failed: HTTP ${response.status}`);
+    throw new Error(`OpenAI inpaint failed: HTTP ${response.status}`);
   }
   const body = (await response.json()) as {
-    candidates?: Array<{ content?: { parts?: InpaintPart[] } }>;
+    data?: Array<{ b64_json?: string }>;
   };
-  const parts = body.candidates?.[0]?.content?.parts ?? [];
-  for (const part of parts) {
-    const inline = part.inline_data ?? part.inlineData;
-    if (inline?.data) {
-      const mimeType = inline.mime_type ?? inline.mimeType ?? 'image/png';
-      return { buffer: Buffer.from(inline.data, 'base64'), mimeType };
-    }
-  }
-  return null;
+  const b64 = body.data?.[0]?.b64_json;
+  if (!b64) return null;
+  // The Images Edits endpoint returns PNG bytes.
+  return { buffer: Buffer.from(b64, 'base64'), mimeType: 'image/png' };
 }
 
 /**
@@ -220,7 +192,7 @@ export async function inpaintFixAfter(
   input: VisionInpaintInput,
   opts?: { apiKey?: string; fetcher?: InpaintFetcher },
 ): Promise<VisionInpaintResult | null> {
-  const apiKey = opts?.apiKey ?? process.env.GEMINI_API_KEY;
+  const apiKey = opts?.apiKey ?? process.env.OPENAI_API_KEY;
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
   if (!apiKey || !blobToken) return null;
 
@@ -251,7 +223,7 @@ export async function inpaintFixAfter(
     return null;
   }
 
-  // Nano Banana 2's silent failure mode is to echo the input image when it
+  // The image model's silent failure mode is to echo the input image when it
   // can't synthesize the requested edit (most often on "add logos" /
   // "insert a trust row" prompts). Catch the no-op + blank cases so we
   // fall through to Tier 3 instead of mailing an identical pair.
@@ -273,9 +245,8 @@ export async function inpaintFixAfter(
     return null;
   }
 
-  // Nano Banana sometimes returns JPEG even when given a PNG input — honor
-  // the response's mime type when uploading so the blob extension matches
-  // (otherwise a `.png` URL serves bytes that begin with `\xFF\xD8`).
+  // Honor the response's mime type when uploading so the blob extension
+  // matches the bytes (the Images Edits endpoint returns PNG).
   const ext = edited.mimeType.endsWith('jpeg') ? 'jpg' : 'png';
   try {
     const filename = `fix-preview/${input.findingId}/${Date.now()}-after.${ext}`;
