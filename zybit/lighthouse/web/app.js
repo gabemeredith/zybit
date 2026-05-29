@@ -123,17 +123,29 @@ async function renderDashboard() {
   ]);
   const layerBInput = el('input', { type: 'checkbox', name: 'layerB' });
   const generateBtn = el('button', { class: 'primary', type: 'button' }, 'generate');
+  const compareBtn = el(
+    'button',
+    {
+      class: 'primary',
+      type: 'button',
+      title: 'Run once with Layer B forced ON for every finding (facts derived from evidence) — see LLM vs template side by side',
+    },
+    'compare LLM vs template',
+  );
 
-  generateBtn.addEventListener('click', async () => {
+  async function runGenerate(extra) {
     generateBtn.setAttribute('disabled', 'disabled');
-    const scenarioId = scenarioSelect.value;
-    const sessions = Number(sessionsInput.value);
-    const mode = modeSelect.value;
-    const layerB = layerBInput.checked;
+    compareBtn.setAttribute('disabled', 'disabled');
+    const body = {
+      scenarioId: scenarioSelect.value,
+      sessions: Number(sessionsInput.value),
+      mode: modeSelect.value,
+      ...extra,
+    };
     try {
       const r = await api('/lighthouse/api/generate', {
         method: 'POST',
-        body: JSON.stringify({ scenarioId, sessions, mode, layerB }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error((r.body && r.body.error) || `http ${r.status}`);
       await pollRun(r.body.runId, runPane);
@@ -142,8 +154,12 @@ async function renderDashboard() {
       runPane.appendChild(el('p', { class: 'error' }, `error: ${err.message}`));
     } finally {
       generateBtn.removeAttribute('disabled');
+      compareBtn.removeAttribute('disabled');
     }
-  });
+  }
+
+  generateBtn.addEventListener('click', () => runGenerate({ layerB: layerBInput.checked }));
+  compareBtn.addEventListener('click', () => runGenerate({ layerB: true, layerBDeriveFacts: true }));
 
   controls.appendChild(
     el('div', { class: 'control-row' }, [
@@ -155,6 +171,7 @@ async function renderDashboard() {
         ' Layer B (LLM prose)',
       ]),
       generateBtn,
+      compareBtn,
     ]),
   );
 }

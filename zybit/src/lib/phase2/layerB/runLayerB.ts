@@ -77,11 +77,13 @@ export const LAYER_B_MODEL_NAME = process.env.LAYER_B_MODEL ?? 'gemini-2.5-flash
 const LAYER_B_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${LAYER_B_MODEL_NAME}:generateContent`;
 
 // Per-field length caps. The LLM is told these in the prompt; we re-clamp
-// on parse so a runaway response can't poison the persisted finding.
-const SUMMARY_MAX = 400;
-const RECOMMENDATION_PARA_MAX = 600;
-const RECOMMENDATION_COUNT_MAX = 3;
-const PRESCRIPTION_FIELD_MAX = 500;
+// on parse so a runaway response can't poison the persisted finding. Kept
+// tight on purpose — a PM skims, and shorter prose has less room to drift
+// off the grounded facts (conciseness ⇒ trust).
+const SUMMARY_MAX = 280;
+const RECOMMENDATION_PARA_MAX = 360;
+const RECOMMENDATION_COUNT_MAX = 2;
+const PRESCRIPTION_FIELD_MAX = 320;
 
 // Low temperature — Layer B writes prose grounded in FACTS, not creative
 // design work. Anything above ~0.3 widens the hallucination surface.
@@ -161,11 +163,16 @@ export function buildLayerBPrompt(input: LayerBInput): string {
     '}',
     '',
     'Constraints:',
+    '- BE CONCISE. A PM skims. Prefer the shortest phrasing that stays specific;',
+    '  one idea per sentence; cut filler ("in order to", "it is important to").',
     '- PM tone, not engineer tone. No "DOM", "selector", "viewport pixel".',
     '- Concrete over abstract. Name elements ("the Get Started button", "the',
     '  pricing table") not categories ("a CTA", "a section").',
     '- No hedging ("might", "could", "potentially") unless the FACTS warrant it.',
-    '- No fabricated dollar amounts or percentages — quote FACTS only.',
+    '- Every number you write MUST appear in FACTS. If you are unsure a number',
+    '  is in FACTS, OMIT it rather than guess — an ungrounded number is rejected',
+    '  and your whole answer is discarded. Never invent dollar amounts, percentages,',
+    '  counts, or ratios.',
   ].join('\n');
 }
 
@@ -276,6 +283,25 @@ export function collectFactNumbers(facts: Record<string, unknown>): {
       }
       // A whole-number percent is also a fact-shaped number.
       if (v >= 0 && v <= 100) percents.add(v);
+    } else if (typeof v === 'string') {
+      // Numbers embedded in string fact values ("22.3%", "67%") are valid
+      // grounding sources too — this is what makes evidence-derived facts
+      // (factsFromEvidence) groundable. The number regex mirrors the prose
+      // extractor's identifier guard so we don't harvest "1" out of "/v1/api".
+      for (const m of v.matchAll(/(\d+(?:\.\d+)?)\s*%/g)) {
+        const p = Number(m[1]);
+        if (!Number.isFinite(p)) continue;
+        percents.add(p);
+        percents.add(Math.round(p));
+        percents.add(Math.round(p * 10) / 10);
+      }
+      for (const m of v.matchAll(/(?<![\w/.-])(\d+(?:\.\d+)?)(?![\w/.-])/g)) {
+        const n = Number(m[1]);
+        if (!Number.isFinite(n)) continue;
+        counts.add(n);
+        counts.add(Math.round(n));
+        if (n >= 0 && n <= 100) percents.add(n);
+      }
     } else if (Array.isArray(v)) {
       v.forEach(walk);
     } else if (v && typeof v === 'object') {
@@ -292,8 +318,18 @@ interface NumericClaim {
   raw: string;
 }
 
-const PERCENT_RE = /(\d+(?:\.\d+)?)\s*%/g;
-const NUMBER_RE = /(?<![\w/.-])(\d+(?:\.\d+)?)(?![\w/.-])/g;
+// Allow thousands separators ("6,030", "1,234,567") so a grounded large
+// number the model writes with commas isn't split into bogus, ungrounded
+// fragments ("6" + "030") and wrongly rejected. The comma in the lookbehind
+// stops a trailing group ("030") from matching on its own.
+const NUM = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?`;
+const PERCENT_RE = new RegExp(`(${NUM})\\s*%`, 'g');
+const NUMBER_RE = new RegExp(`(?<![\\w/.,-])(${NUM})(?![\\w/.-])`, 'g');
+
+/** Parse a matched numeric token, stripping thousands-separator commas. */
+function parseNum(raw: string): number {
+  return Number(raw.replace(/,/g, ''));
+}
 
 /** Pull material numeric claims out of one prose string. */
 export function extractClaims(text: string): NumericClaim[] {
@@ -302,13 +338,13 @@ export function extractClaims(text: string): NumericClaim[] {
   for (const m of text.matchAll(PERCENT_RE)) {
     const start = m.index ?? 0;
     percentRanges.push([start, start + m[0].length]);
-    claims.push({ value: Number(m[1]), kind: 'percent', raw: m[0] });
+    claims.push({ value: parseNum(m[1]), kind: 'percent', raw: m[0] });
   }
   for (const m of text.matchAll(NUMBER_RE)) {
     const start = m.index ?? 0;
     // Skip a number that's the body of a `\d+%` we already captured.
     if (percentRanges.some(([s, e]) => start >= s && start < e)) continue;
-    const value = Number(m[1]);
+    const value = parseNum(m[1]);
     if (!Number.isFinite(value)) continue;
     // Small ordinals aren't material claims — "1 to 3 paragraphs", "first",
     // "second" written numerically are not what we're defending against.

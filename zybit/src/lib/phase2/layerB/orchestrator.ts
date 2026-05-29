@@ -28,6 +28,7 @@ import {
   type LayerBInput,
   type LayerBRunOpts,
 } from './runLayerB';
+import { factsFromEvidence } from './factsFromEvidence';
 
 /** Default number of top findings (by priorityScore) sent to Layer B. */
 export const LAYER_B_TOP_N = 4;
@@ -93,6 +94,14 @@ export interface ApplyLayerBOpts extends LayerBRunOpts {
   enabled?: boolean;
   /** Override the top-N cap (tests). */
   topN?: number;
+  /**
+   * Compare mode: make findings that lack `factsJson` eligible by deriving
+   * their facts from `evidence` (see `factsFromEvidence`). Lets Lighthouse
+   * compare LLM vs template prose across the WHOLE audit before every rule is
+   * individually converted. Off by default — only Lighthouse's Compare button
+   * sets it.
+   */
+  deriveFactsFromEvidence?: boolean;
 }
 
 function proseOf(finding: AuditFinding): LayerBProse {
@@ -128,7 +137,19 @@ export async function applyLayerB(
   opts?: ApplyLayerBOpts,
 ): Promise<{ findings: AuditFinding[]; telemetry: LayerBRunTelemetry }> {
   const enabled = isLayerBEnabled(opts?.enabled);
-  const topN = opts?.topN ?? LAYER_B_TOP_N;
+  const deriveFacts = opts?.deriveFactsFromEvidence ?? false;
+  // Compare mode usually wants to see more than 4 rows; the cap still bounds cost.
+  const topN = opts?.topN ?? (deriveFacts ? 8 : LAYER_B_TOP_N);
+
+  // Resolve the facts blob a finding will feed Layer B: its own factsJson, or
+  // (in compare mode) facts derived from its evidence. Returns null when there
+  // is nothing groundable to send.
+  const resolveFacts = (f: AuditFinding): Record<string, unknown> | null => {
+    if (f.factsJson) return f.factsJson;
+    if (!deriveFacts) return null;
+    const derived = factsFromEvidence(f);
+    return Object.keys(derived).length > 0 ? derived : null;
+  };
 
   const empty: LayerBRunTelemetry = {
     enabled,
@@ -150,10 +171,11 @@ export async function applyLayerB(
 
   if (!enabled) return { findings, telemetry: empty };
 
-  // Eligible = converted rules (carry factsJson), ranked by priority, capped.
+  // Eligible = anything with groundable facts (own factsJson, or derived from
+  // evidence in compare mode), ranked by priority, capped.
   const eligibleIds = new Set(
     [...findings]
-      .filter((f) => f.factsJson)
+      .filter((f) => resolveFacts(f) !== null)
       .sort((a, b) => b.priorityScore - a.priorityScore)
       .slice(0, topN)
       .map((f) => f.id),
@@ -165,7 +187,8 @@ export async function applyLayerB(
 
   const out = await Promise.all(
     findings.map(async (finding): Promise<AuditFinding> => {
-      if (!eligibleIds.has(finding.id) || !finding.factsJson) return finding;
+      const facts = eligibleIds.has(finding.id) ? resolveFacts(finding) : null;
+      if (!facts) return finding;
 
       const template = proseOf(finding);
       const input: LayerBInput = {
@@ -174,7 +197,7 @@ export async function applyLayerB(
         title: finding.title,
         pageType: pageTypeFor(finding, ctx),
         pathRef: finding.pathRef,
-        factsJson: finding.factsJson,
+        factsJson: facts,
         // Brand tokens live on a separate design-snapshot row; enriching the
         // input with them is a Layer 1B (brand-voice) concern, not the wire.
         designTokens: null,

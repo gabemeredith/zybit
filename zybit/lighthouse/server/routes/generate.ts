@@ -32,6 +32,7 @@ export async function postGenerate(req: IncomingMessage, res: ServerResponse): P
     sessions?: unknown;
     mode?: unknown;
     layerB?: unknown;
+    layerBDeriveFacts?: unknown;
   };
   const scenarioId = typeof params.scenarioId === 'string' ? params.scenarioId : '';
   const sessions =
@@ -41,6 +42,9 @@ export async function postGenerate(req: IncomingMessage, res: ServerResponse): P
   const mode: EventSinkMode = params.mode === 'posthog' ? 'posthog' : 'direct';
   // Layer B (LLM finding prose) on/off for this run. Omit → env flag decides.
   const layerB = typeof params.layerB === 'boolean' ? params.layerB : undefined;
+  // Compare mode — derive facts from evidence so every finding is eligible.
+  const layerBDeriveFacts =
+    typeof params.layerBDeriveFacts === 'boolean' ? params.layerBDeriveFacts : undefined;
 
   if (!scenarioId) return badRequest(res, 'missing_scenarioId');
   if (sessions <= 0) return badRequest(res, 'invalid_sessions');
@@ -59,6 +63,7 @@ export async function postGenerate(req: IncomingMessage, res: ServerResponse): P
         mode,
         onProgress: (event) => appendProgress(state.runId, event),
         ...(typeof layerB === 'boolean' ? { layerB } : {}),
+        ...(layerBDeriveFacts ? { layerBDeriveFacts } : {}),
       });
       completeRun(state.runId, result);
     } catch (err) {

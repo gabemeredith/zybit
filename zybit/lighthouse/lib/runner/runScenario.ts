@@ -56,6 +56,8 @@ export interface RunScenarioOpts {
    * an operator can A/B the same scenario without restarting the server.
    */
   layerB?: boolean;
+  /** Compare mode — derive facts from evidence so every finding is eligible. */
+  layerBDeriveFacts?: boolean;
 }
 
 function now(): string {
@@ -266,6 +268,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     },
     maxFindings: 50,
     ...(typeof opts.layerB === 'boolean' ? { layerB: opts.layerB } : {}),
+    ...(opts.layerBDeriveFacts ? { layerBDeriveFacts: true } : {}),
   });
   // `auditReport` is typed as optional on the pipeline result for legacy
   // reasons; in practice runPhase2InsightsPipeline always returns it.

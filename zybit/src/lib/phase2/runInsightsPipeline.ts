@@ -34,6 +34,12 @@ export interface RunPhase2InsightsArgs {
    * the same audit both ways and compare.
    */
   layerB?: boolean;
+  /**
+   * Compare mode — derive facts from evidence so EVERY finding is Layer-B
+   * eligible (not just rules with their own factsJson). Lighthouse's Compare
+   * button sets this with `layerB: true`.
+   */
+  layerBDeriveFacts?: boolean;
 }
 
 function emptyConfig(siteId: string, organizationId: string): Phase2SiteConfig {
@@ -64,7 +70,7 @@ function buildSnapshotIndex(snapshots: PageSnapshot[]): Map<string, PageSnapshot
 export async function runPhase2InsightsPipeline(
   args: RunPhase2InsightsArgs
 ): Promise<RunInsightsResponse> {
-  const { organizationId, siteId, window, maxFindings, mode, layerB } = args;
+  const { organizationId, siteId, window, maxFindings, mode, layerB, layerBDeriveFacts } = args;
   const repository = createPhase1Repository();
 
   const captureEnabled = await isCaptureV2Enabled();
@@ -145,11 +151,10 @@ export async function runPhase2InsightsPipeline(
   // when enabled, falling back to the rule's template on any failure. Never
   // touches the deterministic decision or any number. Telemetry is surfaced
   // for Lighthouse + the eval harness.
-  const layerBResult = await applyLayerB(
-    auditReport.findings,
-    { pageSnapshotsByPath },
-    typeof layerB === 'boolean' ? { enabled: layerB } : undefined,
-  );
+  const layerBResult = await applyLayerB(auditReport.findings, { pageSnapshotsByPath }, {
+    ...(typeof layerB === 'boolean' ? { enabled: layerB } : {}),
+    ...(layerBDeriveFacts ? { deriveFactsFromEvidence: true } : {}),
+  });
   auditReport.findings = layerBResult.findings;
 
   // Best-effort: never block or fail an insights run on a usage write.

@@ -132,6 +132,40 @@ describe('applyLayerB', () => {
     expect(telemetry.attempted).toBe(0);
   });
 
+  it('compare mode makes a finding without factsJson eligible via derived facts', async () => {
+    const noFacts = makeFinding({
+      id: 'bounce:/x',
+      ruleId: 'bounce-on-key-page',
+      factsJson: undefined,
+      evidence: [
+        { label: 'Entries', value: 300 },
+        { label: 'Bounce rate', value: '67%' },
+      ],
+    });
+    // Without compare mode → not eligible.
+    const off = await applyLayerB(
+      [noFacts],
+      { pageSnapshotsByPath: emptySnapshots },
+      { enabled: true, apiKey: 'k', fetcher: okFetcher(VALID_LLM), now: clock },
+    );
+    expect(off.telemetry.attempted).toBe(0);
+
+    // With compare mode → eligible (facts derived from evidence).
+    const on = await applyLayerB(
+      [noFacts],
+      { pageSnapshotsByPath: emptySnapshots },
+      {
+        enabled: true,
+        deriveFactsFromEvidence: true,
+        apiKey: 'k',
+        fetcher: okFetcher(VALID_LLM),
+        now: clock,
+      },
+    );
+    expect(on.telemetry.attempted).toBe(1);
+    expect(on.telemetry.findings[0].prose.template.summary).toBe('TEMPLATE summary');
+  });
+
   it('only sends the top-N eligible findings by priorityScore', async () => {
     const findings = [
       makeFinding({ id: 'a', priorityScore: 0.9 }),

@@ -287,6 +287,18 @@ describe('verifyOutputAgainstFacts', () => {
     const out = makeOutput('1951 sessions touched the page.');
     expect(verifyOutputAgainstFacts(out, facts).ok).toBe(true);
   });
+
+  it('accepts a grounded number written with a thousands separator', () => {
+    // Regression: the model writes "6,030"; the claim extractor must read it
+    // as 6030 (not split into 6 + 030) so a grounded large number isn't
+    // wrongly rejected. Live-caught on a bounce finding (impact value 6030).
+    const out = makeOutput('That loses about 6,030 sessions a month.');
+    expect(verifyOutputAgainstFacts(out, { lost: 6030 }).ok).toBe(true);
+    // And a comma-grouped number NOT in facts is still rejected.
+    expect(verifyOutputAgainstFacts(makeOutput('A loss of 9,999 sessions.'), { lost: 6030 }).ok).toBe(
+      false,
+    );
+  });
 });
 
 describe('runLayerB', () => {
