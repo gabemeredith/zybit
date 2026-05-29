@@ -1,4 +1,5 @@
 import {
+  boolean,
   decimal,
   index,
   integer,
@@ -214,6 +215,11 @@ export const organizations = pgTable('organizations', {
   stripeSubscriptionId: text('stripe_subscription_id'),
   stripePriceId: text('stripe_price_id'),
   planUpdatedAt: timestamp('plan_updated_at', { withTimezone: true }),
+  // Set the first time an unpaid org launches its single free experiment
+  // (free-experiment loop, docs/sprints/free-experiment-loop.md §6). Stays
+  // null for orgs that never used the free on-ramp, so the gate is inert for
+  // every existing org until the free flow claims it. Lifetime, not per-period.
+  freeExperimentUsedAt: timestamp('free_experiment_used_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -591,6 +597,11 @@ export const zybitExperiments = pgTable(
     audienceVariantPct: integer('audience_variant_pct').notNull().default(50),
     durationDays: integer('duration_days').notNull().default(14),
     status: text('status').notNull().default('draft'), // 'draft'|'running'|'completed'|'stopped'
+    // Preview-only experiments (free-experiment loop, docs/sprints/free-experiment-loop.md §5)
+    // are projected, never served to real visitors. The proxy config query
+    // excludes preview_only rows so a preview can never reach production traffic,
+    // while the cockpit + loop timeline still render it as a "Projected" entry.
+    previewOnly: boolean('preview_only').notNull().default(false),
     externalUrl: text('external_url'), // link to PostHog / LaunchDarkly etc
     externalProvider: text('external_provider'), // 'posthog'|'custom'
     externalId: text('external_id'),
