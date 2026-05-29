@@ -29,6 +29,7 @@ import {
   type LayerBRunOpts,
 } from './runLayerB';
 import { factsFromEvidence } from './factsFromEvidence';
+import { deriveBrandProfile } from './brandProfile';
 
 /** Default number of top findings (by priorityScore) sent to Layer B. */
 export const LAYER_B_TOP_N = 4;
@@ -183,6 +184,10 @@ export async function applyLayerB(
 
   if (eligibleIds.size === 0) return { findings, telemetry: empty };
 
+  // Brand DNA is a site-wide property — derive once from all snapshots, reuse
+  // per finding so the prose matches the brand's voice + reuses its CTA verbs.
+  const brandProfile = deriveBrandProfile([...ctx.pageSnapshotsByPath.values()]);
+
   const perFinding: LayerBFindingTelemetry[] = [];
 
   const out = await Promise.all(
@@ -198,8 +203,10 @@ export async function applyLayerB(
         pageType: pageTypeFor(finding, ctx),
         pathRef: finding.pathRef,
         factsJson: facts,
-        // Brand tokens live on a separate design-snapshot row; enriching the
-        // input with them is a Layer 1B (brand-voice) concern, not the wire.
+        brandProfile,
+        // Colours/fonts live on a separate design-snapshot row; for PROSE the
+        // textual brandProfile above carries the brand voice. Visual tokens are
+        // a later, variant-rendering concern.
         designTokens: null,
       };
 

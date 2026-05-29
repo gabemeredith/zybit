@@ -86,6 +86,13 @@ const FINDINGS: Array<{ finding: AuditFinding; pageType: 'home' | 'pricing' | 'u
   },
 ];
 
+// Stand-in AcmeBank brand DNA (in the real pipeline this is derived from the
+// site's snapshots by deriveBrandProfile). Lets us see the brand-voice effect.
+const ACME_BRAND = {
+  ctaVocabulary: ['Open an account', 'Apply now', 'Compare checking accounts', 'Find a branch'],
+  voiceSamples: ['Banking that moves with you', 'No monthly fees, no minimums'],
+};
+
 function hr(label: string): void {
   console.log(`\n${'─'.repeat(72)}\n${label}\n${'─'.repeat(72)}`);
 }
@@ -103,6 +110,7 @@ function hr(label: string): void {
       pathRef: finding.pathRef,
       factsJson: facts,
       designTokens: null,
+      brandProfile: ACME_BRAND,
     });
 
     console.log(

@@ -32,6 +32,7 @@
 import type { PageType } from '@/lib/phase2/snapshots/types';
 import type { DesignTokens } from '@/lib/phase2/snapshots/tokenExtractor';
 import type { AuditFindingCategory } from '@/lib/phase2/rules/types';
+import type { BrandProfile } from './brandProfile';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,6 +56,11 @@ export interface LayerBInput {
   factsJson: Record<string, unknown>;
   /** Site design tokens for brand-coherent prose. May be `null`. */
   designTokens: DesignTokens | null;
+  /**
+   * Textual brand DNA — the site's own CTA vocabulary + voice samples, so the
+   * prose matches the brand's register and reuses its verbs. May be `null`.
+   */
+  brandProfile?: BrandProfile | null;
 }
 
 export interface LayerBPrescription {
@@ -124,6 +130,7 @@ function sanitizeForPrompt(s: string): string {
 export function buildLayerBPrompt(input: LayerBInput): string {
   const tokensJson = JSON.stringify(input.designTokens ?? {});
   const factsJson = JSON.stringify(input.factsJson ?? {});
+  const brand = input.brandProfile;
   const pathClause = input.pathRef
     ? `The finding is about the page ${sanitizeForPrompt(input.pathRef)}.`
     : 'The finding is site-wide.';
@@ -150,6 +157,17 @@ export function buildLayerBPrompt(input: LayerBInput): string {
     'DESIGN TOKENS (site brand — match this register where natural):',
     tokensJson,
     '',
+    ...(brand
+      ? [
+          "BRAND VOICE — the site's own words. Match this register and reuse this",
+          'CTA vocabulary where natural; never invent product or feature names:',
+          brand.ctaVocabulary.length
+            ? `  CTA labels: ${brand.ctaVocabulary.map(sanitizeForPrompt).join(' · ')}`
+            : '',
+          ...brand.voiceSamples.map((v) => `  voice: "${sanitizeForPrompt(v)}"`),
+          '',
+        ].filter(Boolean)
+      : []),
     'OUTPUT — JSON only. No markdown fences, no commentary. Shape:',
     '{',
     `  "summary": "one paragraph PM-readable diagnosis, max ${SUMMARY_MAX} chars, names the page/element and the friction",`,
