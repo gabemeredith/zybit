@@ -54,6 +54,14 @@ export function deriveBrandProfile(snapshots: PageSnapshot[]): BrandProfile | nu
       const t = clean(line);
       if (t) voice.add(t);
     }
+    // <title> + OG/meta description carry brand voice and are present even on
+    // JS-rendered shells where CTA/heading parse comes back thin — so brand DNA
+    // survives sites like Stripe that paint client-side.
+    const meta = data.meta;
+    for (const m of [meta?.title, meta?.ogTitle, meta?.ogDescription, meta?.description]) {
+      const t = clean(m);
+      if (t) voice.add(t);
+    }
     // h1/h2 carry the brand's framing vocabulary; deeper headings are noise.
     for (const head of data.headings ?? []) {
       if (head.level > 2) continue;

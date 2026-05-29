@@ -43,6 +43,23 @@ describe('deriveBrandProfile', () => {
     expect(profile?.ctaVocabulary).toEqual(['Compare plans', 'Talk to sales']);
   });
 
+  it('pulls voice from meta title/description even when CTAs+headings are thin', () => {
+    // The JS-shell case (e.g. Stripe): no parseable CTAs/headings, but meta is
+    // always present in the HTML, so brand voice still survives.
+    const profile = deriveBrandProfile([
+      snap({
+        ctas: [],
+        headings: [],
+        meta: {
+          title: 'Stripe | Payment Processing Platform',
+          ogDescription: 'Millions of businesses use Stripe to accept payments.',
+        },
+      }),
+    ]);
+    expect(profile?.voiceSamples).toContain('Stripe | Payment Processing Platform');
+    expect(profile?.voiceSamples).toContain('Millions of businesses use Stripe to accept payments.');
+  });
+
   it('returns null when there is no brand signal', () => {
     expect(deriveBrandProfile([])).toBeNull();
     expect(deriveBrandProfile([snap({ ctas: [], headings: [] })])).toBeNull();

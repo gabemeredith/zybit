@@ -356,7 +356,7 @@ function buildLayerBPanel(layerB) {
       ]
         .filter(Boolean)
         .join('  —  ') || 'derived (empty)'
-    : 'none — no snapshot brand signal (0 snapshots?)';
+    : 'none — no brand text extracted from the audited pages (thin / JS-rendered?)';
 
   const agg = el('table', { class: 'counts' }, [
     el('tr', {}, [el('th', {}, 'model'), el('td', {}, layerB.model || 'n/a')]),
