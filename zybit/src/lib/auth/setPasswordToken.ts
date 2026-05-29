@@ -1,11 +1,14 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-// One-time-ish signed token for the "set your password" link in the welcome
-// email sent at approval. Stateless HMAC over `email|expiry` — same pattern as
-// src/lib/audit/cookies.ts. The link is single-use in practice because once a
-// password is set the user signs in normally; the token stays valid until
-// expiry as a "reset" affordance for the closed pilot (no separate reset flow
-// yet). Format: `email-b64url.expiry.sigHex`.
+// Signed token for the "set your password" link in the welcome email sent at
+// approval. Stateless HMAC over `email|expiry` — same pattern as
+// src/lib/audit/cookies.ts. Format: `email-b64url.expiry.sigHex`.
+//
+// Effectively single-use: the consuming route (/api/auth/set-password) rejects
+// the token once the account already has a password (first-set-only), so a
+// leaked/forwarded welcome email can't be replayed as a password-reset vector
+// during the 7-day window. There is no link-based reset yet — a user who needs
+// a new password is re-invited from /admin.
 const SET_PASSWORD_TOKEN_DAYS = 7;
 
 function secret(): string {

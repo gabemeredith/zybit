@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
         status: 'approved',
         roleTitle: req.roleTitle ?? null,
         source: req.source,
-      }),
+      }).onConflictDoNothing(),
     ]);
   } else {
     // Re-approving a previously-revoked or existing user: ensure approved.

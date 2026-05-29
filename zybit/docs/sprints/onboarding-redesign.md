@@ -35,10 +35,12 @@ and instant.
 
 **Phase 1 — real login.** Reuses the owned session layer
 (`authSessions` + `zb_session` + `createSession`).
-- Email+password: scrypt hash/verify (`src/lib/auth/password.ts`, no new dep),
-  `POST /api/auth/login`. First password set after approval via a one-time
-  HMAC-signed link (`src/lib/auth/setPasswordToken.ts` → `POST
-  /api/auth/set-password` → `/set-password` page).
+- Email+password: async scrypt hash/verify (`src/lib/auth/password.ts`,
+  promisified so the derivation never blocks the event loop, no new dep),
+  `POST /api/auth/login`. First password set after approval via an HMAC-signed
+  link (`src/lib/auth/setPasswordToken.ts` → `POST /api/auth/set-password` →
+  `/set-password` page) that is **first-set-only** — the route rejects it once
+  a password exists, so a forwarded welcome email can't replay as a reset.
 - Google OAuth: hand-rolled authorization-code flow
   (`src/lib/auth/google.ts` + `/api/auth/google/start` + `/callback`), CSRF
   state cookie, scopes `openid email profile`. New env `GOOGLE_CLIENT_ID`,

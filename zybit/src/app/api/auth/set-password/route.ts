@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
   const db = getDb();
   const [user] = await db
-    .select({ id: appUsers.id })
+    .select({ id: appUsers.id, passwordHash: appUsers.passwordHash })
     .from(appUsers)
     .where(and(eq(appUsers.email, email), eq(appUsers.status, 'approved')))
     .limit(1);
@@ -54,6 +54,18 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: 'This link is invalid or has expired. Ask us for a fresh one.' },
       { status: 400 },
+    );
+  }
+
+  // First-set-only: the set-password link is consumed the moment a password
+  // exists. The token is a stateless 7-day HMAC, so without this guard a
+  // forwarded/leaked welcome email would stay a password-reset vector for the
+  // whole window. Once a password is set, the link is dead — a user who needs
+  // a reset gets re-invited from /admin (no link-based reset flow yet).
+  if (user.passwordHash) {
+    return NextResponse.json(
+      { error: 'This link has already been used. Sign in with your password, or ask us to re-send it.' },
+      { status: 409 },
     );
   }
 
