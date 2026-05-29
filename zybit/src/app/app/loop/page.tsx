@@ -65,6 +65,8 @@ type DeploymentEntry = {
   /** Free-experiment loop §5: a projected preview, never deployed to traffic. */
   previewOnly?: boolean;
   variantDescription?: string | null;
+  /** The finding this proposal addresses, so the detect → propose arc connects. */
+  fromFindingTitle?: string | null;
 };
 
 type ResultEntry = {
@@ -169,6 +171,7 @@ async function loadTimeline(
   ]);
 
   const outcomeByExperiment = new Map(outcomes.map((o) => [o.experimentId, o]));
+  const findingTitleById = new Map(findings.map((f) => [f.id, f.title]));
   const entries: TimelineEntry[] = [];
 
   for (const f of findings) {
@@ -206,6 +209,7 @@ async function loadTimeline(
         variantPct: exp.audienceVariantPct,
         previewOnly: true,
         variantDescription: preview?.variantDescription ?? null,
+        fromFindingTitle: exp.findingId ? findingTitleById.get(exp.findingId) ?? null : null,
       });
       if (preview) {
         entries.push({
@@ -352,6 +356,14 @@ function EntryLabel({ entry }: { entry: TimelineEntry }) {
             ? entry.variantDescription ?? 'Proposed experiment — not yet deployed to real traffic.'
             : `${entry.controlPct}% control / ${entry.variantPct}% variant`}
         </p>
+        {entry.previewOnly && entry.fromFindingTitle && entry.findingId && (
+          <p className="text-xs text-[#9B9B9B] mt-1">
+            From finding:{' '}
+            <Link href={`/app/findings/${entry.findingId}`} className="underline hover:text-[#111]">
+              {entry.fromFindingTitle}
+            </Link>
+          </p>
+        )}
       </div>
     );
   }
@@ -362,7 +374,7 @@ function EntryLabel({ entry }: { entry: TimelineEntry }) {
       return (
         <div>
           <Link href={`/app/experiments/${entry.experimentId}`} className="font-medium hover:underline">
-            Projected{' '}
+            Conversion lift{' '}
             <span className="brut-badge bg-[#00E5FF] text-[#111] align-middle">
               +{liftPctRange.min}–{liftPctRange.max}%
             </span>
