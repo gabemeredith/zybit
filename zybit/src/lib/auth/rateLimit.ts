@@ -8,16 +8,30 @@ const WINDOW_MS = 10 * 60 * 1000;
 const EMAIL_LIMIT = 3;
 const IP_LIMIT = 10;
 
+// Password login needs a more forgiving per-email ceiling than the magic-link
+// "email me a link" path: a legitimate user who mistypes their password a few
+// times should not be locked out for 10 minutes. Still bounded enough to blunt
+// online brute-force (10 tries / 10 min / email, IP ceiling unchanged).
+const LOGIN_EMAIL_LIMIT = 10;
+
 type CountRow = { count: string };
 
 export type RateLimitResult =
   | { allowed: true }
   | { allowed: false; retryAfterSeconds: number };
 
+export interface RateLimitOptions {
+  emailLimit?: number;
+  ipLimit?: number;
+}
+
 export async function checkAuthRateLimit(
   email: string,
-  ip: string
+  ip: string,
+  options: RateLimitOptions = {}
 ): Promise<RateLimitResult> {
+  const emailLimit = options.emailLimit ?? EMAIL_LIMIT;
+  const ipLimit = options.ipLimit ?? IP_LIMIT;
   const db = getDb();
   const now = Date.now();
   const currentWindowStart = new Date(Math.floor(now / WINDOW_MS) * WINDOW_MS);
@@ -71,8 +85,11 @@ export async function checkAuthRateLimit(
     DELETE FROM auth_rate_limits WHERE window_start < ${prevWindowStart}
   `).catch(() => { /* non-fatal */ });
 
-  if (emailEffective > EMAIL_LIMIT || ipEffective > IP_LIMIT) {
+  if (emailEffective > emailLimit || ipEffective > ipLimit) {
     return { allowed: false, retryAfterSeconds };
   }
   return { allowed: true };
 }
+
+/** Exported so the login route and tests share the forgiving login ceiling. */
+export { LOGIN_EMAIL_LIMIT };

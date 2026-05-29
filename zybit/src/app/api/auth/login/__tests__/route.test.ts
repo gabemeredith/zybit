@@ -10,6 +10,7 @@ let limitResults: unknown[][] = [];
 
 vi.mock('@/lib/auth/rateLimit', () => ({
   checkAuthRateLimit: (...args: unknown[]) => checkAuthRateLimit(...args),
+  LOGIN_EMAIL_LIMIT: 10,
 }));
 
 vi.mock('@/lib/auth/password', () => ({

@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db/client';
 import { accessRequests, appUsers } from '@/lib/db/schema';
 import { verifyPassword } from '@/lib/auth/password';
 import { createSession, sessionCookieOptions } from '@/lib/auth/session';
-import { checkAuthRateLimit } from '@/lib/auth/rateLimit';
+import { checkAuthRateLimit, LOGIN_EMAIL_LIMIT } from '@/lib/auth/rateLimit';
 
 // node:crypto (scrypt) + drizzle require the Node runtime.
 export const runtime = 'nodejs';
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   }
 
   const ip = extractIp(request);
-  const rateLimit = await checkAuthRateLimit(email, ip);
+  const rateLimit = await checkAuthRateLimit(email, ip, { emailLimit: LOGIN_EMAIL_LIMIT });
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: 'Too many attempts. Please wait before trying again.' },
