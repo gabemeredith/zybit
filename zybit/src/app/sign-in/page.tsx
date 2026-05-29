@@ -53,8 +53,8 @@ function SignInForm() {
         window.location.assign("/app");
         return;
       }
-      analytics.magicLinkSent();
-      setState("sent");
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      throw new Error(data.error ?? "Invalid email or password.");
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Something went wrong.";
       analytics.signInError(reason);
