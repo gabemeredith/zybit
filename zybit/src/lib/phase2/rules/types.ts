@@ -198,6 +198,14 @@ export interface AuditFinding {
    */
   factsJson?: Record<string, unknown>;
   /**
+   * Which path produced the narrative prose (`summary` / `recommendation` /
+   * `prescription`). `'template'` = the rule's deterministic templating;
+   * `'llm-v1'` = Layer B generated it (and passed strict-JSON validation +
+   * numeric grounding). Absent on rules not yet converted to Layer A/B, or
+   * when Layer B is disabled. Set by the Layer B orchestrator, never a rule.
+   */
+  proseSource?: 'template' | 'llm-v1';
+  /**
    * Opinionated fix brief. More concrete than `recommendation` — tells the
    * operator exactly what to change, not just what the problem is.
    */

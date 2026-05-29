@@ -326,6 +326,14 @@ export interface RunInsightsResponse {
     }>;
     groundedInSnapshots: boolean;
   };
+  /**
+   * Layer B (LLM finding prose) telemetry for this run — per-finding outcomes,
+   * both prose versions, tokens/cost/latency, and run aggregates. Present
+   * whenever the pipeline ran the Layer B post-pass (which records
+   * `enabled: false` when the flag is off). Consumed by Lighthouse + the eval
+   * harness. Type-only import; no runtime dependency.
+   */
+  layerB?: import('@/lib/phase2/layerB/orchestrator').LayerBRunTelemetry;
 }
 
 /**

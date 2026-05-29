@@ -50,6 +50,12 @@ export interface RunScenarioOpts {
   /** Override the manifest baseUrl (e.g. tunneled URL from Step 10). */
   baseUrl?: string;
   onProgress?: (event: GenerateProgressEvent) => void;
+  /**
+   * Layer B (LLM finding prose) on/off for this run. Omit to defer to the
+   * `LLM_REFACTOR_ENABLED` env flag. The GUI toggle sets this explicitly so
+   * an operator can A/B the same scenario without restarting the server.
+   */
+  layerB?: boolean;
 }
 
 function now(): string {
@@ -259,6 +265,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
       end: new Date(sessionEnd.getTime() + padMs).toISOString(),
     },
     maxFindings: 50,
+    ...(typeof opts.layerB === 'boolean' ? { layerB: opts.layerB } : {}),
   });
   // `auditReport` is typed as optional on the pipeline result for legacy
   // reasons; in practice runPhase2InsightsPipeline always returns it.
@@ -516,6 +523,7 @@ export async function runScenario(opts: RunScenarioOpts): Promise<GenerateResult
     ...(flowGraphResult ? { flowGraph: flowGraphResult } : {}),
     ...(experimentSummary ? { experiment: experimentSummary } : {}),
     ...(layer2Result ? { layer2: layer2Result } : {}),
+    ...(insights.layerB ? { layerB: insights.layerB } : {}),
     ...(snapshotErrors.length ? { snapshotErrors } : {}),
   };
 }

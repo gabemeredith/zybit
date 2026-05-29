@@ -197,6 +197,13 @@ export interface GenerateResult {
     calibrationSummary: Array<{ ruleId: string; direction: string; multiplier: number }>;
   };
   /**
+   * Layer B (LLM finding prose) telemetry — present when the run exercised
+   * the Layer B post-pass. Carries per-finding template-vs-LLM prose pairs,
+   * outcomes, tokens/cost/latency, and run aggregates. The Lighthouse GUI
+   * renders this as the AI-engineering panel (Step 1b).
+   */
+  layerB?: import('@/lib/phase2/layerB/orchestrator').LayerBRunTelemetry;
+  /**
    * URL-audit crawl summary (URL-audit mode only). Present when the run was
    * driven by `runUrlAudit` rather than a hand-authored scenario.
    */

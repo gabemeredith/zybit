@@ -58,6 +58,11 @@ export interface RunUrlAuditOpts {
    * Browserless + Gemini.
    */
   visionPagesLimit?: number;
+  /**
+   * Layer B (LLM finding prose) on/off for this run. Omit to defer to the
+   * `LLM_REFACTOR_ENABLED` env flag. The GUI toggle sets this explicitly.
+   */
+  layerB?: boolean;
 }
 
 function now(): string {
@@ -290,6 +295,7 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
     },
     maxFindings: 50,
     ...(mode ? { mode } : {}),
+    ...(typeof opts.layerB === 'boolean' ? { layerB: opts.layerB } : {}),
   });
   let auditFindings = (insights.auditReport?.findings ?? []) as AuditFinding[];
 
@@ -392,6 +398,7 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
     },
     startedAt,
     finishedAt: now(),
+    ...(insights.layerB ? { layerB: insights.layerB } : {}),
     crawl: {
       requestedUrl: map.requestedUrl,
       pagesDiscovered: map.discovered,

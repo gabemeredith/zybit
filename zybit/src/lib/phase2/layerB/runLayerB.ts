@@ -429,6 +429,133 @@ export async function callLayerB(args: {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Telemetry — every Layer B call records what it did, so Lighthouse (and the
+// eval harness) can answer "is the model better, and what is it costing?"
+// without re-deriving anything. Captured on the fallback path too — the
+// fallback REASON is the most operationally interesting signal.
+// ---------------------------------------------------------------------------
+
+export type LayerBOutcome =
+  | 'success'
+  | 'no-key'
+  | 'http-error'
+  | 'parse-fail'
+  | 'fabrication-reject';
+
+// Placeholder pricing for `gemini-3.5-flash`, USD per 1M tokens. Confirm
+// against the live rate card before trusting absolute cost numbers — the
+// ratio (output ≫ input) is what matters for relative comparisons either way.
+export const LAYER_B_PRICE_PER_1M_USD = { input: 0.3, output: 2.5 } as const;
+
+export function estimateLayerBCostUsd(
+  promptTokens: number | null,
+  responseTokens: number | null,
+): number | null {
+  if (promptTokens === null && responseTokens === null) return null;
+  const inCost = ((promptTokens ?? 0) / 1_000_000) * LAYER_B_PRICE_PER_1M_USD.input;
+  const outCost = ((responseTokens ?? 0) / 1_000_000) * LAYER_B_PRICE_PER_1M_USD.output;
+  return inCost + outCost;
+}
+
+export interface LayerBCallTelemetry {
+  outcome: LayerBOutcome;
+  model: string;
+  temperature: number;
+  /** Wall-clock ms around the Gemini call. 0 when no call was made. */
+  latencyMs: number;
+  /** Full prompt sent — kept for reproducibility/debugging in the dev tool. */
+  prompt: string;
+  /** Raw model text, before parse. Empty when no call was made. */
+  rawResponse: string;
+  promptTokens: number | null;
+  responseTokens: number | null;
+  estCostUsd: number | null;
+  /** Raw claim strings the grounding verifier rejected (fabrication-reject). */
+  fabricationFailures: string[];
+}
+
+export interface LayerBTracedResult {
+  output: LayerBOutput | null;
+  telemetry: LayerBCallTelemetry;
+}
+
+export interface LayerBRunOpts {
+  apiKey?: string;
+  fetcher?: LayerBFetcher;
+  /** Injectable clock for deterministic latency in tests. Defaults to Date.now. */
+  now?: () => number;
+}
+
+/**
+ * Like `runLayerB`, but always returns a telemetry record alongside the
+ * output — including (especially) on every fallback path. This is the entry
+ * point the orchestrator uses; `runLayerB` is the thin output-only wrapper.
+ */
+export async function runLayerBTraced(
+  input: LayerBInput,
+  opts?: LayerBRunOpts,
+): Promise<LayerBTracedResult> {
+  const now = opts?.now ?? Date.now;
+  const prompt = buildLayerBPrompt(input);
+  const base: Omit<LayerBCallTelemetry, 'outcome' | 'latencyMs'> = {
+    model: LAYER_B_MODEL_NAME,
+    temperature: LAYER_B_TEMPERATURE,
+    prompt,
+    rawResponse: '',
+    promptTokens: null,
+    responseTokens: null,
+    estCostUsd: null,
+    fabricationFailures: [],
+  };
+
+  const apiKey = opts?.apiKey ?? process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return { output: null, telemetry: { ...base, outcome: 'no-key', latencyMs: 0 } };
+  }
+
+  const startedAt = now();
+  try {
+    const call = await callLayerB({
+      prompt,
+      apiKey,
+      ...(opts?.fetcher ? { fetcher: opts.fetcher } : {}),
+    });
+    const latencyMs = now() - startedAt;
+    const common: LayerBCallTelemetry = {
+      ...base,
+      outcome: 'success',
+      latencyMs,
+      rawResponse: call.text,
+      promptTokens: call.promptTokens,
+      responseTokens: call.responseTokens,
+      estCostUsd: estimateLayerBCostUsd(call.promptTokens, call.responseTokens),
+    };
+
+    const parsed = parseLayerBResponse(call.text);
+    if (!parsed) {
+      return { output: null, telemetry: { ...common, outcome: 'parse-fail' } };
+    }
+    const verification = verifyOutputAgainstFacts(parsed, input.factsJson);
+    if (!verification.ok) {
+      return {
+        output: null,
+        telemetry: {
+          ...common,
+          outcome: 'fabrication-reject',
+          fabricationFailures: verification.failures.map((f) => f.raw),
+        },
+      };
+    }
+    return { output: parsed, telemetry: common };
+  } catch {
+    return {
+      output: null,
+      telemetry: { ...base, outcome: 'http-error', latencyMs: now() - startedAt },
+    };
+  }
+}
+
 /**
  * High-level entry point. Returns `null` when:
  *   - `GEMINI_API_KEY` is unset
@@ -444,29 +571,16 @@ export async function callLayerB(args: {
  */
 export async function runLayerB(
   input: LayerBInput,
-  opts?: { apiKey?: string; fetcher?: LayerBFetcher },
+  opts?: LayerBRunOpts,
 ): Promise<LayerBOutput | null> {
-  const apiKey = opts?.apiKey ?? process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const { text } = await callLayerB({
-      prompt: buildLayerBPrompt(input),
-      apiKey,
-      ...(opts?.fetcher ? { fetcher: opts.fetcher } : {}),
+  const { output, telemetry } = await runLayerBTraced(input, opts);
+  if (telemetry.outcome === 'fabrication-reject') {
+    console.warn('[layer-b] numeric grounding failed — falling back to template', {
+      ruleId: input.ruleId,
+      failures: telemetry.fabricationFailures,
     });
-    const parsed = parseLayerBResponse(text);
-    if (!parsed) return null;
-    const verification = verifyOutputAgainstFacts(parsed, input.factsJson);
-    if (!verification.ok) {
-      console.warn('[layer-b] numeric grounding failed — falling back to template', {
-        ruleId: input.ruleId,
-        failures: verification.failures.map((f) => f.raw),
-      });
-      return null;
-    }
-    return parsed;
-  } catch (err) {
-    console.error('[layer-b] call failed', { ruleId: input.ruleId, err });
-    return null;
+  } else if (telemetry.outcome === 'http-error') {
+    console.error('[layer-b] call failed', { ruleId: input.ruleId });
   }
+  return output;
 }

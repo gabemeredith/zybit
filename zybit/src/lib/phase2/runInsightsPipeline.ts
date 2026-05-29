@@ -13,6 +13,7 @@ import type { PageCapture } from '@/lib/phase2/capture/types';
 import { createOutcomesRepository } from '@/lib/phase2/outcomes/repository';
 import { deriveFlowGraph } from '@/lib/phase2/flow';
 import { classifySiteFromSnapshots } from '@/lib/phase2/classification/siteClassifier';
+import { applyLayerB } from '@/lib/phase2/layerB/orchestrator';
 
 export interface RunPhase2InsightsArgs {
   organizationId: string;
@@ -26,6 +27,13 @@ export interface RunPhase2InsightsArgs {
    * before persistence. Defaults to `'in-app'`.
    */
   mode?: AuditMode;
+  /**
+   * Layer B (LLM finding prose) on/off override. When omitted, the
+   * `LLM_REFACTOR_ENABLED` env flag decides (production default: off).
+   * The Lighthouse GUI passes an explicit boolean so an operator can run
+   * the same audit both ways and compare.
+   */
+  layerB?: boolean;
 }
 
 function emptyConfig(siteId: string, organizationId: string): Phase2SiteConfig {
@@ -56,7 +64,7 @@ function buildSnapshotIndex(snapshots: PageSnapshot[]): Map<string, PageSnapshot
 export async function runPhase2InsightsPipeline(
   args: RunPhase2InsightsArgs
 ): Promise<RunInsightsResponse> {
-  const { organizationId, siteId, window, maxFindings, mode } = args;
+  const { organizationId, siteId, window, maxFindings, mode, layerB } = args;
   const repository = createPhase1Repository();
 
   const captureEnabled = await isCaptureV2Enabled();
@@ -132,6 +140,18 @@ export async function runPhase2InsightsPipeline(
   // change. Findings still surface — order and learnAdjustment metadata shift.
   auditReport.findings = applyLearnRerank(auditReport.findings, pastOutcomes);
 
+  // Layer B (LLM finding prose) — post-pass over the ranked findings. Off by
+  // default; swaps narrative prose for grounded LLM prose on the top findings
+  // when enabled, falling back to the rule's template on any failure. Never
+  // touches the deterministic decision or any number. Telemetry is surfaced
+  // for Lighthouse + the eval harness.
+  const layerBResult = await applyLayerB(
+    auditReport.findings,
+    { pageSnapshotsByPath },
+    typeof layerB === 'boolean' ? { enabled: layerB } : undefined,
+  );
+  auditReport.findings = layerBResult.findings;
+
   // Best-effort: never block or fail an insights run on a usage write.
   incrementUsage(organizationId, 'insightsRuns', 1).catch(() => {});
 
@@ -145,5 +165,6 @@ export async function runPhase2InsightsPipeline(
     trustworthy: gate.ok,
     flowGraph,
     auditReport,
+    layerB: layerBResult.telemetry,
   };
 }
