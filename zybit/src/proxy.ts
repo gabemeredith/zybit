@@ -4,6 +4,7 @@ import { isProxyHost } from '@/lib/experiments/proxy/host';
 
 const PUBLIC_PREFIXES = [
   '/sign-in',
+  '/set-password',
   '/admin/login',
   '/api/auth',
   '/api/admin',
