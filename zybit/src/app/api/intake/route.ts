@@ -1,5 +1,10 @@
 import { NextResponse, after } from 'next/server';
 import { Resend } from 'resend';
+import { upsertAccessRequest } from '@/lib/auth/accessRequests';
+import { isPersonalEmail, rejectionMessage } from '@/lib/audit/personalEmailDomains';
+
+// randomUUID + drizzle in the access-request upsert require the Node runtime.
+export const runtime = 'nodejs';
 
 const ANALYTICS_LABELS: Record<string, string> = {
   posthog: 'PostHog',
@@ -49,6 +54,28 @@ export async function POST(request: Request) {
         { error: 'Please choose a valid analytics tool.' },
         { status: 400 }
       );
+    }
+
+    // Parity with the /audit funnel: this is a product-team front door, not a
+    // consumer one. Personal-email addresses bounce with a helpful nudge.
+    if (isPersonalEmail(email)) {
+      return NextResponse.json({ error: rejectionMessage() }, { status: 400 });
+    }
+
+    // Persist the lead into the single pending queue. This is the front door
+    // into the gated motion — approval happens deliberately in /admin. Keyed
+    // on email so re-requests upsert rather than duplicate. Fail-soft: if the
+    // DB write throws, the founder still gets the notification email below, so
+    // the lead isn't lost.
+    try {
+      await upsertAccessRequest({
+        email,
+        source: 'request_form',
+        domain: url,
+        analyticsTool: analytics,
+      });
+    } catch (err) {
+      console.error('[intake] access_request upsert failed:', err);
     }
 
     const safeEmail = escapeHtml(email);

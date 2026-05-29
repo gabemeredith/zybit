@@ -149,10 +149,10 @@ export function IntakeModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 lineHeight: 1.25,
               }}
             >
-              We review every domain personally.
+              Got it.
             </h3>
             <p style={{ fontSize: '15px', color: '#6B6B6B', margin: '0 0 28px', lineHeight: 1.55 }}>
-              We&rsquo;ll be in touch within 3 business days with a real finding from your product.
+              We review every request personally and onboard each customer 1:1. We&rsquo;ll reach out to set up a call.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', marginBottom: '28px' }}>
               <a

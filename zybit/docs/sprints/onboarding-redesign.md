@@ -1,8 +1,71 @@
 # Onboarding — current audit and proposed simplification
 
-**Status:** Proposal. **Date:** 2026-05-23.
+**Status:** Proposal (wizard trim — §§1-6). **Date:** 2026-05-23.
 **Owner:** triggered by founder feedback — "heavily complex, doesn't really
 make sense even for a closed rollout."
+
+> **Login & access-request redesign — SHIPPED 2026-05-29 (Phases 0-3).** See
+> §0 below. The wizard-trim proposal (§§1-6) is still pending — it is Phase 5
+> of the same plan and not in the login-redesign PR.
+
+---
+
+## 0. Login & access-request redesign (shipped 2026-05-29)
+
+Two front-door actions only — **Request access** (primary) and **Log in**
+(secondary). Magic-link is retired from the user-facing path; login is real
+and instant.
+
+**Phase 0 — data model (migration `0024`).**
+- `access_requests` — the single pending-lead queue. `email` uniquely indexed
+  (upsert on re-request). Columns: `domain`, `role_title`, `analytics_tool`,
+  `source` (`'request_form'|'public_audit'`), `status`
+  (`'pending'|'invited'|'rejected'`), `notes`, `stripe_payment_link`,
+  `requested_at`, `reviewed_at`, `reviewed_by`. Pending leads live HERE; an
+  `app_users`+`organizations` row is minted only at approval, so `/app` auth
+  logic is unchanged (a session always maps to an approved user with an org).
+- `app_users` gains `password_hash`, `auth_provider` (`'password'|'google'`),
+  `google_sub` (unique).
+
+**Phase 1 — real login.** Reuses the owned session layer
+(`authSessions` + `zb_session` + `createSession`).
+- Email+password: scrypt hash/verify (`src/lib/auth/password.ts`, no new dep),
+  `POST /api/auth/login`. First password set after approval via a one-time
+  HMAC-signed link (`src/lib/auth/setPasswordToken.ts` → `POST
+  /api/auth/set-password` → `/set-password` page).
+- Google OAuth: hand-rolled authorization-code flow
+  (`src/lib/auth/google.ts` + `/api/auth/google/start` + `/callback`), CSRF
+  state cookie, scopes `openid email profile`. New env `GOOGLE_CLIENT_ID`,
+  `GOOGLE_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URL`. Auth.js/Better Auth was
+  considered and rejected — it would replace the clean owned session layer.
+- Sign-in page replaced the "send me a link" UI with password + Google and a
+  "Request access" link.
+
+**Phase 2 — Request access is real.** `POST /api/intake` upserts an
+`access_requests` row (`source='request_form'`, personal-email reject for
+parity with `/audit`), keeps the founder notification, and the success copy is
+the honest 1:1 onboarding line (no "3 business days" promise).
+
+**Phase 3 — audit funnel feeds the queue.** `/api/audit/public/confirm` no
+longer auto-provisions an approved account — it upserts
+`source='public_audit'` into the same queue. The audit still runs and the
+report still ships; the report-email CTA is the human-touch book-a-call, not
+an instant dashboard hand-off. This closes the hole where anyone confirming an
+audit email got an approved account.
+
+**Not in this PR (deliberate):** Phase 4 (admin approval queue → mint org+user
+→ welcome email with the set-password link) and Phase 5 (wizard trim, §§1-6).
+
+### Enumeration vs. humaneness tradeoff
+
+The login route returns an explicit *"We haven't approved you yet — we'll be
+in touch soon"* (HTTP 403, `code: 'pending'`) for an email that exists in
+`access_requests` as a known pending lead, and the same for a Google sign-in
+by a pending lead (bounced to `/sign-in?notice=pending`). Unknown emails get a
+generic `Incorrect email or password.` This deliberately confirms that a known
+email is a lead — an acceptable tradeoff for a closed pilot where the humane
+message matters more than perfect enumeration resistance. Revisit before any
+open/self-serve signup.
 
 This document audits the current four-step wizard with concrete file
 references, lists what's wrong, and proposes a contracted flow aligned with

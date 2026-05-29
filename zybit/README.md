@@ -33,6 +33,10 @@ Open `http://localhost:3000`. Before opening a PR: `npm run verify` (lint + Type
 |----------|----------|---------|
 | `DATABASE_URL` | Yes (postgres driver) | Neon/Postgres connection |
 | `RESEND_API_KEY` | Yes | Email delivery |
+| `AUTH_FROM_EMAIL` | Auth emails | `from` address for welcome / set-password emails (must be a verified Resend sender). |
+| `AUTH_SIGNING_SECRET` | Auth (set-password) | HMAC secret for one-time set-password tokens. Falls back to `PUBLIC_AUDIT_SIGNING_SECRET` if unset; required in production. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in | OAuth 2.0 client credentials. Leave unset to disable the "Continue with Google" button (email+password still works). |
+| `GOOGLE_OAUTH_REDIRECT_URL` | Google sign-in | Must equal `<APP_BASE_URL>/api/auth/google/callback` and match the redirect URI registered in Google Cloud Console. |
 | `BLOB_READ_WRITE_TOKEN` | Optional locally | Vercel Blob for discovery + Phase 1 fallback |
 | `PHASE1_STORAGE_DRIVER` | Optional (`auto`) | `auto` \| `blob` \| `postgres` |
 | `NEXT_PUBLIC_DEFAULT_ORG_ID` | Optional | Fallback org context in dev |

@@ -24,6 +24,12 @@ export const appUsers = pgTable(
     organizationId: text('organization_id').notNull(),
     role: text('role').notNull().default('member'), // 'member' | 'admin'
     status: text('status').notNull().default('approved'), // 'approved' | 'revoked'
+    /** scrypt password hash (set post-approval via the set-password link). NULL until set. */
+    passwordHash: text('password_hash'),
+    /** 'password' | 'google' — which credential the row last authenticated with. */
+    authProvider: text('auth_provider'),
+    /** Stable Google OIDC `sub`. Unique — a Google login resolves to one user. */
+    googleSub: text('google_sub'),
     source: text('source'), // origin tag: 'public_audit' for auto-provisioned audit users; NULL for pre-existing users.
     sourceAuditId: text('source_audit_id'),
     /** Auto-detected from first audit URL (e.g. 'saas', 'ecommerce', 'media', 'fintech'). */
@@ -40,6 +46,44 @@ export const appUsers = pgTable(
     emailIdx: uniqueIndex('app_users_email_idx').on(table.email),
     orgIdx: index('app_users_org_idx').on(table.organizationId),
     sourceAuditIdx: index('app_users_source_audit_idx').on(table.sourceAuditId),
+    googleSubIdx: uniqueIndex('app_users_google_sub_idx').on(table.googleSub),
+  })
+);
+
+/**
+ * The single pending-lead queue. Every front-door action — the "Request
+ * access" form (`source='request_form'`) and the free public audit
+ * (`source='public_audit'`) — upserts a row here with status='pending'.
+ *
+ * Approval is a deliberate human act in /admin: it mints an organizations +
+ * app_users row and flips the request to 'invited'. Pending leads live HERE,
+ * not in app_users, so /app auth logic stays simple (a session always maps to
+ * an approved user that already has an org).
+ *
+ * `email` is uniquely indexed — re-requesting upserts the existing row instead
+ * of piling up duplicates.
+ */
+export const accessRequests = pgTable(
+  'access_requests',
+  {
+    id: text('id').primaryKey(),
+    email: text('email').notNull(),
+    domain: text('domain'),
+    roleTitle: text('role_title'),
+    analyticsTool: text('analytics_tool'),
+    /** 'request_form' | 'public_audit' */
+    source: text('source').notNull(),
+    /** 'pending' | 'invited' | 'rejected' */
+    status: text('status').notNull().default('pending'),
+    notes: text('notes'),
+    stripePaymentLink: text('stripe_payment_link'),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    reviewedBy: text('reviewed_by'),
+  },
+  (table) => ({
+    emailIdx: uniqueIndex('access_requests_email_idx').on(table.email),
+    statusIdx: index('access_requests_status_idx').on(table.status),
   })
 );
 
