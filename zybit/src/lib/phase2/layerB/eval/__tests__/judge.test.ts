@@ -45,8 +45,8 @@ describe('parseJudgeVerdict', () => {
 });
 
 describe('runJudge', () => {
-  it('returns null when no API key is available', async () => {
-    expect(await runJudge(INPUT, { apiKey: null })).toBeNull();
+  it('returns null when no judge key is available', async () => {
+    expect(await runJudge(INPUT, { apiKey: null, geminiApiKey: null })).toBeNull();
   });
   it('returns the parsed verdict from the model', async () => {
     const fetcher: OpenAIFetcher = async () => ({

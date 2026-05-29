@@ -91,24 +91,71 @@ export function parseJudgeVerdict(raw: string): JudgeVerdict | null {
   return { winner, reason };
 }
 
+export type JudgeProvider = 'openai' | 'gemini' | 'none';
+
+/** Which judge will run given the available keys. `gemini` is same-family as
+ *  the generator → directional only (self-preference risk); `openai` is the
+ *  rigorous cross-family judge. */
+export function judgeProvider(opts?: JudgeOpts): JudgeProvider {
+  if (resolveOpenAIKey(opts?.apiKey)) return 'openai';
+  if ((opts?.geminiApiKey ?? process.env.GEMINI_API_KEY) ?? null) return 'gemini';
+  return 'none';
+}
+
+const GEMINI_JUDGE_MODEL = process.env.LAYER_B_JUDGE_GEMINI_MODEL || 'gemini-2.5-flash';
+
+async function callGeminiJudge(prompt: string, apiKey: string, fetcher?: OpenAIFetcher): Promise<string> {
+  const f = fetcher ?? ((url, init) => fetch(url, init) as unknown as ReturnType<OpenAIFetcher>);
+  const res = await f(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_JUDGE_MODEL}:generateContent`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+      }),
+    },
+  );
+  if (!res.ok) throw new Error(`Gemini judge HTTP ${res.status}`);
+  const body = (await res.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  return body.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+}
+
 export interface JudgeOpts {
+  /** OpenAI key override; explicit `null` disables the OpenAI path. */
   apiKey?: string | null;
+  /** Gemini key override for the fallback judge. */
+  geminiApiKey?: string | null;
   fetcher?: OpenAIFetcher;
   model?: string;
 }
 
-/** Returns the verdict, or `null` when the judge is unavailable / unparseable. */
+/**
+ * Returns the verdict, or `null` when no judge is available / unparseable.
+ * Prefers OpenAI (cross-family, rigorous); falls back to Gemini (same-family,
+ * directional) when no OpenAI key is set.
+ */
 export async function runJudge(input: JudgeInput, opts?: JudgeOpts): Promise<JudgeVerdict | null> {
-  const apiKey = resolveOpenAIKey(opts?.apiKey);
-  if (!apiKey) return null;
+  const prompt = buildJudgePrompt(input);
+  const openaiKey = resolveOpenAIKey(opts?.apiKey);
   try {
-    const { text } = await callOpenAIChat({
-      prompt: buildJudgePrompt(input),
-      apiKey,
-      model: opts?.model ?? OPENAI_REASONING_MODEL,
-      json: true,
-      ...(opts?.fetcher ? { fetcher: opts.fetcher } : {}),
-    });
+    let text: string;
+    if (openaiKey) {
+      ({ text } = await callOpenAIChat({
+        prompt,
+        apiKey: openaiKey,
+        model: opts?.model ?? OPENAI_REASONING_MODEL,
+        json: true,
+        ...(opts?.fetcher ? { fetcher: opts.fetcher } : {}),
+      }));
+    } else {
+      const geminiKey = opts?.geminiApiKey ?? process.env.GEMINI_API_KEY ?? null;
+      if (!geminiKey) return null;
+      text = await callGeminiJudge(prompt, geminiKey, opts?.fetcher);
+    }
     return parseJudgeVerdict(text);
   } catch {
     return null;

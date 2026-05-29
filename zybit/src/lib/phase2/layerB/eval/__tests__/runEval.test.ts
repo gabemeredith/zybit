@@ -72,7 +72,7 @@ describe('runEval', () => {
   });
 
   it('reports a tie when the judge is unavailable', async () => {
-    const report = await runEval(telemetry(), { apiKey: null });
+    const report = await runEval(telemetry(), { apiKey: null, geminiApiKey: null });
     expect(report.ties).toBe(2);
     expect(report.judged).toBe(2);
   });

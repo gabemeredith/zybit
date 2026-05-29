@@ -8,6 +8,7 @@
 
 import { runUrlAudit } from '../lighthouse/lib/runner/runUrlAudit';
 import { runEval } from '../src/lib/phase2/layerB/eval/runEval';
+import { judgeProvider } from '../src/lib/phase2/layerB/eval/judge';
 
 const url = process.argv[2] ?? 'https://news.ycombinator.com';
 
@@ -24,7 +25,18 @@ const url = process.argv[2] ?? 'https://news.ycombinator.com';
       `${lb.fabricationRejections} fabrication-reject, cost=$${lb.estTotalCostUsd.toFixed(4)}`,
   );
 
-  console.log('Judging (OpenAI, pairwise, both orders)…');
+  const provider = judgeProvider();
+  if (provider === 'openai') {
+    console.log('Judging with OpenAI (cross-family, rigorous), pairwise, both orders…');
+  } else if (provider === 'gemini') {
+    console.log(
+      '⚠️  No OPENAI_API_KEY — judging with GEMINI (SAME family as the generator).\n' +
+        '   DIRECTIONAL ONLY: a model judging its own family has self-preference bias.\n' +
+        '   Add OPENAI_API_KEY for the trustworthy cross-family number.',
+    );
+  } else {
+    console.log('No judge key available — every pair will tie. Set OPENAI_API_KEY or GEMINI_API_KEY.');
+  }
   const report = await runEval(lb);
 
   console.log('\n=== EVAL REPORT ===');
