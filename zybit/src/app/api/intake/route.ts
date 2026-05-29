@@ -1,5 +1,10 @@
 import { NextResponse, after } from 'next/server';
 import { Resend } from 'resend';
+import { upsertAccessRequest } from '@/lib/auth/accessRequests';
+import { isPersonalEmail, rejectionMessage } from '@/lib/audit/personalEmailDomains';
+
+// randomUUID + drizzle in the access-request upsert require the Node runtime.
+export const runtime = 'nodejs';
 
 const ANALYTICS_LABELS: Record<string, string> = {
   posthog: 'PostHog',
@@ -51,6 +56,28 @@ export async function POST(request: Request) {
       );
     }
 
+    // Parity with the /audit funnel: this is a product-team front door, not a
+    // consumer one. Personal-email addresses bounce with a helpful nudge.
+    if (isPersonalEmail(email)) {
+      return NextResponse.json({ error: rejectionMessage() }, { status: 400 });
+    }
+
+    // Persist the lead into the single pending queue. This is the front door
+    // into the gated motion — approval happens deliberately in /admin. Keyed
+    // on email so re-requests upsert rather than duplicate. Fail-soft: if the
+    // DB write throws, the founder still gets the notification email below, so
+    // the lead isn't lost.
+    try {
+      await upsertAccessRequest({
+        email,
+        source: 'request_form',
+        domain: url,
+        analyticsTool: analytics,
+      });
+    } catch (err) {
+      console.error('[intake] access_request upsert failed:', err);
+    }
+
     const safeEmail = escapeHtml(email);
     const safeUrl = escapeHtml(url);
     const analyticsLabel = ANALYTICS_LABELS[analytics];
@@ -62,8 +89,8 @@ export async function POST(request: Request) {
     });
 
     const { data, error } = await getResendClient().emails.send({
-      from: 'Zybit Intake <onboarding@resend.dev>',
-      to: 'sar367@cornell.edu',
+      from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@mail.getzybit.com>',
+      to: process.env.INTAKE_NOTIFY_EMAIL ?? 'asad@getzybit.com',
       subject: `New Zybit Survey Request — ${url}`,
       html: `
         <div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; color: #0E0C09;">

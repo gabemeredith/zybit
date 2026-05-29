@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     await resend.emails.send({
-      from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@getzybit.com>',
+      from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@mail.getzybit.com>',
       to: email,
       subject: 'Your Zybit sign-in link',
       html: `

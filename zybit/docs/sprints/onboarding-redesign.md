@@ -1,8 +1,91 @@
 # Onboarding — current audit and proposed simplification
 
-**Status:** Proposal. **Date:** 2026-05-23.
-**Owner:** triggered by founder feedback — "heavily complex, doesn't really
-make sense even for a closed rollout."
+**Status:** Wizard trim (§§1-6) **SHIPPED**. **Date:** 2026-05-23 (proposal),
+shipped 2026-05-29. **Owner:** triggered by founder feedback — "heavily
+complex, doesn't really make sense even for a closed rollout."
+
+> **Onboarding/login redesign — SHIPPED 2026-05-29 (Phases 0-6).** See §0
+> below for Phases 0-4 (data model, real login, request-access queue, audit
+> funnel, founder approval). The wizard trim (§§1-6 / Phase 5) is now built:
+> `OnboardingWizard.tsx` is the 3-step site → analytics → revenue flow with
+> the proxy moved to `/app/settings`, the flow pre-flight wired into the
+> analytics step, and a skippable revenue step. Phase 6 (landing/nav
+> coherence) shipped too: `SiteNav` leads with Request access (primary) + Log
+> in (secondary), and the landing final CTA leads with Request access with the
+> free audit demoted to the lower-commitment path.
+
+---
+
+## 0. Login & access-request redesign (shipped 2026-05-29)
+
+Two front-door actions only — **Request access** (primary) and **Log in**
+(secondary). Magic-link is retired from the user-facing path; login is real
+and instant.
+
+**Phase 0 — data model (migration `0024`).**
+- `access_requests` — the single pending-lead queue. `email` uniquely indexed
+  (upsert on re-request). Columns: `domain`, `role_title`, `analytics_tool`,
+  `source` (`'request_form'|'public_audit'`), `status`
+  (`'pending'|'invited'|'rejected'`), `notes`, `stripe_payment_link`,
+  `requested_at`, `reviewed_at`, `reviewed_by`. Pending leads live HERE; an
+  `app_users`+`organizations` row is minted only at approval, so `/app` auth
+  logic is unchanged (a session always maps to an approved user with an org).
+- `app_users` gains `password_hash`, `auth_provider` (`'password'|'google'`),
+  `google_sub` (unique).
+
+**Phase 1 — real login.** Reuses the owned session layer
+(`authSessions` + `zb_session` + `createSession`).
+- Email+password: async scrypt hash/verify (`src/lib/auth/password.ts`,
+  promisified so the derivation never blocks the event loop, no new dep),
+  `POST /api/auth/login`. First password set after approval via an HMAC-signed
+  link (`src/lib/auth/setPasswordToken.ts` → `POST /api/auth/set-password` →
+  `/set-password` page) that is **first-set-only** — the route rejects it once
+  a password exists, so a forwarded welcome email can't replay as a reset.
+- Google OAuth: hand-rolled authorization-code flow
+  (`src/lib/auth/google.ts` + `/api/auth/google/start` + `/callback`), CSRF
+  state cookie, scopes `openid email profile`. New env `GOOGLE_CLIENT_ID`,
+  `GOOGLE_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URL`. Auth.js/Better Auth was
+  considered and rejected — it would replace the clean owned session layer.
+- Sign-in page replaced the "send me a link" UI with password + Google and a
+  "Request access" link.
+
+**Phase 2 — Request access is real.** `POST /api/intake` upserts an
+`access_requests` row (`source='request_form'`, personal-email reject for
+parity with `/audit`), keeps the founder notification, and the success copy is
+the honest 1:1 onboarding line (no "3 business days" promise).
+
+**Phase 3 — audit funnel feeds the queue.** `/api/audit/public/confirm` no
+longer auto-provisions an approved account — it upserts
+`source='public_audit'` into the same queue. The audit still runs and the
+report still ships; the report-email CTA is the human-touch book-a-call, not
+an instant dashboard hand-off. This closes the hole where anyone confirming an
+audit email got an approved account.
+
+**Phase 4 — founder approval → onboard.** The `/admin` dashboard renders the
+unified pending queue (request-form + audit leads) with Approve / Reject /
+save-Stripe-link actions (`GET`/`POST /api/admin/access-requests`). Approve
+mints an `organizations` + approved `app_users` row, flips the request to
+`invited`, and sends a welcome email (`src/lib/email/welcomeEmail.ts`) with the
+one-time set-password link + "continue with Google". Stripe payment links are
+manual (paste + save on the request); no automated checkout yet.
+
+**Phase 5 — wizard trim.** See §§1-6 below — shipped: 3-step flow, proxy in
+settings, pre-flight in the analytics step, skippable revenue.
+
+**Phase 6 — landing coherence.** `SiteNav` and the landing final CTA lead with
+Request access; the free audit is the lower-commitment path, not a competing
+front door; the sign-in page is password + Google.
+
+### Enumeration vs. humaneness tradeoff
+
+The login route returns an explicit *"We haven't approved you yet — we'll be
+in touch soon"* (HTTP 403, `code: 'pending'`) for an email that exists in
+`access_requests` as a known pending lead, and the same for a Google sign-in
+by a pending lead (bounced to `/sign-in?notice=pending`). Unknown emails get a
+generic `Incorrect email or password.` This deliberately confirms that a known
+email is a lead — an acceptable tradeoff for a closed pilot where the humane
+message matters more than perfect enumeration resistance. Revisit before any
+open/self-serve signup.
 
 This document audits the current four-step wizard with concrete file
 references, lists what's wrong, and proposes a contracted flow aligned with

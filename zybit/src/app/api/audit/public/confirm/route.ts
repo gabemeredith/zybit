@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { after } from 'next/server';
 import { getDb } from '@/lib/db/client';
 import { auditCookieOptions, signAuditCookie } from '@/lib/audit/cookies';
+import { upsertAccessRequest } from '@/lib/auth/accessRequests';
 
 // node:crypto + after() require the Node runtime — pin so an Edge default
 // flip can't break this route silently.
@@ -92,13 +93,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return redirectToAudit(audit.id, { setCookie: false });
   }
 
-  // Auto-provision an approved appUsers row + organization for this email so
-  // the report-email signup CTA can drop them straight into the dashboard.
-  // Fail-soft: if either insert errors, the audit still runs and the user
-  // still gets the report. The signup CTA falls back to the existing
-  // request-link flow which will surface "no account" and let them request
-  // access manually.
-  await autoProvisionUser(audit.email, audit.domain, audit.id, audit.role);
+  // The free audit is top-of-funnel lead-gen — it no longer mints an approved
+  // account. Instead it lands the confirmer in the single pending queue
+  // (source='public_audit'). The audit still runs and the report still ships;
+  // approval is a deliberate human act in /admin. Fail-soft: if the upsert
+  // throws, the audit still runs and the user still gets the report.
+  try {
+    await upsertAccessRequest({
+      email: audit.email,
+      source: 'public_audit',
+      domain: audit.domain,
+      roleTitle: audit.role,
+    });
+  } catch (err) {
+    console.error('[audit/confirm] access_request upsert failed', {
+      auditId: audit.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // Kick off the pipeline asynchronously. The confirm endpoint responds
   // immediately; the run endpoint does the heavy lifting (45-90s) and sends
@@ -150,50 +162,6 @@ function redirectToAudit(
     });
   }
   return response;
-}
-
-async function autoProvisionUser(
-  email: string,
-  domain: string,
-  auditId: string,
-  roleTitle: string,
-): Promise<void> {
-  const db = getDb();
-  try {
-    // Skip everything if the user already exists — they keep their existing
-    // org. Cheaper than catching a unique-constraint violation downstream.
-    const existing = await db.execute<{ id: string }>(sql`
-      SELECT id FROM app_users WHERE email = ${email} LIMIT 1
-    `);
-    if (existing.rows.length > 0) return;
-
-    // Org + user in a single CTE — neon-http has no transaction support, but
-    // a single statement is atomic per Postgres semantics. If the user
-    // INSERT fails (e.g. unique-conflict on email from a race), the org
-    // is still committed. That's tolerable per the fail-soft contract:
-    // worst case is one orphaned organizations row.
-    const orgId = randomUUID();
-    const userId = randomUUID();
-    await db.execute(sql`
-      WITH new_org AS (
-        INSERT INTO organizations (id, name)
-        VALUES (${orgId}, ${domain})
-        RETURNING id
-      )
-      INSERT INTO app_users (id, email, organization_id, role, role_title, source, source_audit_id)
-      SELECT ${userId}, ${email}, new_org.id, 'admin', ${roleTitle}, 'public_audit', ${auditId}
-      FROM new_org
-      ON CONFLICT (email) DO NOTHING
-    `);
-  } catch (err) {
-    // Log auditId only — operators can join back to the audit row in psql /
-    // /admin/ops to recover the email. Keeps PII out of platform access logs,
-    // matching the privacy posture in request-link-from-audit/route.ts.
-    console.error('[audit/confirm] auto-provision failed', {
-      auditId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
 }
 
 function htmlError(message: string): NextResponse {
