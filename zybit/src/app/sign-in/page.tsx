@@ -32,8 +32,9 @@ function SignInForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "error" | "no-password">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [setupLinkState, setSetupLinkState] = useState<"idle" | "sending" | "sent">("idle");
   const analytics = useAnalytics();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -53,7 +54,11 @@ function SignInForm() {
         window.location.assign("/app");
         return;
       }
-      const data = await res.json().catch(() => ({})) as { error?: string };
+      const data = await res.json().catch(() => ({})) as { code?: string; error?: string };
+      if (data.code === "no-password") {
+        setState("no-password");
+        return;
+      }
       throw new Error(data.error ?? "Invalid email or password.");
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Something went wrong.";
@@ -61,6 +66,20 @@ function SignInForm() {
       setErrorMsg(reason);
       setState("error");
     }
+  }
+
+  async function handleResendSetup() {
+    setSetupLinkState("sending");
+    try {
+      await fetch("/api/auth/resend-setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+    } catch {
+      // Fail silently — the generic message covers it.
+    }
+    setSetupLinkState("sent");
   }
 
   return (
@@ -128,6 +147,28 @@ function SignInForm() {
 
       {state === "error" && (
         <p className="mt-4 text-sm text-red-600">{errorMsg}</p>
+      )}
+
+      {state === "no-password" && (
+        <div className="mt-4 p-3 border border-[#111] bg-[#F4F3EE] text-sm text-[#111]">
+          <p className="mb-3">
+            No password is set for this account yet. Use Google to sign in, or get a new set-up link.
+          </p>
+          {setupLinkState === "sent" ? (
+            <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B]">
+              Check your inbox — link sent.
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={handleResendSetup}
+              disabled={setupLinkState === "sending"}
+              className="text-[11px] font-bold uppercase tracking-[0.15em] underline text-[#111] disabled:opacity-50"
+            >
+              {setupLinkState === "sending" ? "Sending…" : "Send me a set-up link"}
+            </button>
+          )}
+        </div>
       )}
 
       <p className="mt-6 text-[11px] text-[#6B6B6B] text-center leading-relaxed">
