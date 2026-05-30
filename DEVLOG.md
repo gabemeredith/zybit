@@ -4,6 +4,57 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-30 (follow-up — docs archaeology cut)
+
+**Session:** Core-refocus — cut documentation bloat
+**Branch:** `claude/zybit-core-refocus-32VPy`
+
+### What shipped
+
+Removed **19 markdown files** of session/sprint archaeology — the lowest-risk
+slice of the docs trim (no code coupling):
+
+- **`docs/sprints/` (entire dir)** — sprint-0…5, `-R`/`_archive` variants,
+  REMEDIATION, ROADMAP, pilot-readiness, operator-dashboard,
+  onboarding-redesign, preview-system, posthog-from-zero, next-bets,
+  url-audit-lead-magnet, sprint-3-deferred, niche-categorization-engine.
+- **`docs/handover.md`** + **`docs/handover-fix-preview.md`** — stale
+  point-in-time handoffs.
+
+Session history is already captured here in DEVLOG; build state is in
+`AGENTS.md`. Anything older is recoverable from git history.
+
+### Dangling-reference cleanup
+
+- Scrubbed the three clickable markdown links to deleted sprint docs from
+  `DOCTRINE.md` (immediate-priorities list).
+- Rewrote `docs/INDEX.md` to map only the surviving doc set (added a note
+  explaining the sprint-log removal + where history now lives).
+- Confirmed **zero** clickable links to deleted docs remain repo-wide, and
+  no source code reads any of the removed files (grep-verified). Stale
+  *code-span mentions* of old `docs/sprints/...` paths still sit inside a
+  few `AGENTS.md` build-state cells + `ARCHITECTURE.md`/`curriculum.md`;
+  these are plain text (not 404 links) and will be rewritten when their
+  subsystems are cut in the behavioral pass.
+
+### Not done (deferred to the behavioral-cut pass, by decision)
+
+The overlapping strategy/subsystem docs (`pivot.md`,
+`competitive-landscape.md`, `curriculum.md`, `PHASE2_EVIDENCE_MODEL.md`,
+`phase2-rules-architecture.md`, `PHASE2_LIVE_TUNING_PLAYBOOK.md`,
+`CAPTURE_RUNBOOK.md`, `fix-tn.md`, root `product_gap.md`) are the
+fold/consolidate tier — several document the behavioral subsystem queued
+for removal, so they get deleted **in the same commit as their code** to
+avoid desync. Order agreed with operator: **cut first, then build** the
+region-replace macro-structural feature.
+
+### Verify
+
+Docs-only change (+ INDEX rewrite, DOCTRINE link scrub). No source touched;
+build/test state unchanged from the prior commit.
+
+---
+
 ## 2026-05-30
 
 **Session:** Core-refocus — first pass: cut clearly-dead legacy UI surfaces
