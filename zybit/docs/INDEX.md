@@ -73,3 +73,4 @@ mention points back to it.
 | [`CAPTURE_RUNBOOK.md`](./CAPTURE_RUNBOOK.md) | Headless-capture (Browserless) ops |
 | [`PHASE2_LIVE_TUNING_PLAYBOOK.md`](./PHASE2_LIVE_TUNING_PLAYBOOK.md) | Tuning rule constants against live data |
 | [`fix-tn.md`](./fix-tn.md) | Fix/troubleshooting notes |
+| [`region-replace-handover.md`](./region-replace-handover.md) | Build spec / handover for the `region-replace` modification type + fail-loud anchor guard (not started) |

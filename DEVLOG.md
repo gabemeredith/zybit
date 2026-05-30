@@ -4,6 +4,40 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-30 (follow-up — region-replace handover doc)
+
+**Session:** Core-refocus — author the next-feature spec for handover
+**Branch:** `claude/zybit-core-refocus-32VPy`
+
+### What shipped
+
+Added **`docs/region-replace-handover.md`** — a self-contained build spec for
+the `region-replace` modification type + a fail-loud anchor guard, written so
+a fresh session can pick it up cold. Covers: the product bet, the two
+deliverables (new mod type + launch-time fail-loud guard), every file to
+touch with exact integration points, the 32 KB size cap, what explicitly does
+*not* change (bucketing/stats stay 2-arm), open decisions, the test plan
+mirroring element-insert coverage, doc obligations, and a quick-start.
+
+### Strategic context (resolved this session)
+
+Reviewed the co-founder's 3 open draft PRs (#107 Layer-B LLM prose, #108
+free-experiment loop, #91 audit timing/perf). Conclusion: all three are
+architecturally sound and orthogonal to this work — #107 keeps the
+deterministic decision + numbers and only rewrites prose (flag-off, numeric
+grounding guard), which does **not** violate the "no LLM inside rule logic"
+doctrine. Behavioral subsystem: **keep the code, don't block on it** — the 13
+snapshot rules are shippable today; behavioral lights up when a customer
+connects PostHog. No hard cut needed now.
+
+### Next
+
+This branch is the **code-cleanup PR** (dead UI surfaces + docs archaeology +
+this handover doc). The `region-replace` build happens in a fresh session off
+`main` per the handover doc's §10.
+
+---
+
 ## 2026-05-30 (follow-up — docs archaeology cut)
 
 **Session:** Core-refocus — cut documentation bloat
