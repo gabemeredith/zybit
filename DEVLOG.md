@@ -188,6 +188,13 @@ on a network upload path in envs with outbound network; documented in the
   underlying error (`[layer-b] LLM call failed { ruleId, error }`); `brandProfile`
   `clean()` is `unknown` + strict `typeof` guard so a non-string from a bad parse
   can't crash brand-DNA derivation (+ defensive unit test).
+- **Eval harness spine finished (PRD §1A).** `evals/golden-sites.json` (10 real
+  varied sites) + `scripts/eval-prose.ts` extended to `--golden [--limit N]`:
+  audits each site twice (template vs LLM), judges pairwise/both-orders, writes an
+  aggregate win-rate report (per-site + overall, fallback/fab-reject/p50-p95/cost)
+  to `evals/out/` (gitignored). Report embeds the "win-rate only trustworthy after
+  human calibration" caveat. Live-verified on commitmint + stripe. Corrected the
+  stale judge-family framing in the script (OpenAI judge is now same-family).
 
 ### Verify
 
@@ -200,16 +207,22 @@ Confirms the OpenAI generator + judge round-trips work against the real API.
 
 ### What's next
 
-- **Layer A/B rollout to more rules (started, not finished).** Only
-  `return-visit-thrash` carries a hand-written `factsJson`; the rest rely on the
-  generic `factsFromEvidence` derivation (compare-mode). Rolling out = give the
-  next high-value rules rule-specific `factsJson` for richer grounding. Scope
-  (which rules / how many) is an open decision — PRD NG2 says Phase 1 is a small
-  pilot, not all 23.
-- Eval harness golden set (`evals/golden-sites.json`) + `scripts/eval-prose.ts`
-  batch runner (PRD §1A) still open.
+- **PR #107 pilot scope is code-complete.** Remaining before it leaves draft:
+  (1) run the **human calibration** (~20 labels, ≥80% judge agreement) via the
+  Lighthouse "Eval calibration" panel — a manual gate, tooling is in place;
+  (2) update `AGENTS.md` / `DOCTRINE.md` doctrine (the "no LLM in expression"
+  line) — the spec earmarks this for "PR 2".
+- **Next PR — Layer A/B rule rollout.** Only `return-visit-thrash` carries a
+  hand-written `factsJson`; the rest use the generic `factsFromEvidence`
+  derivation. First target is `link-text-generic`: the live Stripe run showed it
+  fabrication-rejecting because its facts don't expose the link-count as a
+  groundable number — a hand-written `factsJson` fixes it and the eval measures
+  the lift. (PRD NG2: small pilot, not all 23.)
+- **Later PRs:** Phase 2 (owned/editable Brand DNA profile + cockpit card,
+  migration 0025); Layer C detection (closed-registry, deferred NG1).
 - Two untracked files on the branch predate this session:
-  `docs/sprints/llm-refactor-prd.md`, `scripts/try-layer-b.ts`.
+  `docs/sprints/llm-refactor-prd.md` (the governing spec — probably should be
+  committed), `scripts/try-layer-b.ts` (manual dev harness).
 
 ---
 
