@@ -3,7 +3,7 @@
  *
  * Sends a notification via Resend when a site's first insight run
  * produces findings. Follows the same Resend pattern used in
- * `src/app/api/intake/route.ts` and `src/app/api/discovery/route.ts`.
+ * `src/app/api/intake/route.ts`.
  *
  * Integration point: call `sendFirstInsightEmail` from the POST handler
  * in `/api/dashboard/findings/route.ts` after a successful upsert when
@@ -46,7 +46,7 @@ export async function sendFirstInsightEmail(
       ? `<p style="margin: 0 0 16px; font-size: 15px; color: #111;">Estimated revenue at risk: <strong>${fmtDollars(estimatedImpact)}/mo</strong></p>`
       : '';
 
-    const dashboardUrl = `https://app.zybit.dev/dashboard`;
+    const dashboardUrl = `https://app.zybit.dev/app/findings`;
 
     const { error } = await getResendClient().emails.send({
       from: 'Zybit <notifications@resend.dev>',
