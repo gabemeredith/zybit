@@ -160,7 +160,6 @@ narrower "if you're modifying code, update this doc when…" map.
 | `README.md` | Project overview, local setup, env vars | Env vars added or removed |
 | `docs/PHASE2_EVIDENCE_MODEL.md` | Canonical event schema, audit rule contracts | Event schema or rule interface changes |
 | `docs/PHASE2_LIVE_TUNING_PLAYBOOK.md` | Operator runbook for rule calibration | Rule thresholds or tuning approach changes |
-| `docs/sprints/next-bets.md` | Forward-looking priority list | Priorities reshuffle or a bet completes |
 | `docs/competitive-landscape.md` | Competitor map, wedge analysis, threats | Quarterly re-read; update when a competitor materially shifts |
 | `docs/curriculum.md` | Founders' reading list | New essential reading is discovered |
 

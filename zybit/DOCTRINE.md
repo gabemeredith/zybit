@@ -215,8 +215,7 @@ deliberately **one milestone**, not a platform build.
    `runUrlAudit` pipeline → 4-finding HTML report by email.
    Phase C (founder approval queue) + Phase D (landing-page surface)
    deferred.
-3. Forward-looking priorities live in
-   [`docs/sprints/next-bets.md`](./docs/sprints/next-bets.md) (preview
+3. Forward-looking priorities (preview
    pipeline → manual outcome entry → richer modifications → one-click
    deploy).
 
