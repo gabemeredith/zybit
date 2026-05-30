@@ -1,100 +1,105 @@
 "use server";
 
 /**
- * `/app/try` — the in-app "Try one free experiment" funnel glue
- * (docs/sprints/free-experiment-loop.md §1, Phase 7/8 step-2).
+ * `/app/try` — the in-app "Try one free experiment" funnel
+ * (docs/sprints/free-experiment-loop.md §1).
  *
- * This is the cold-URL entry surface the handoff calls the "un-wired
- * centerpiece": until now `createPreviewExperiment` was only ever called by the
- * demo seed. These two actions finally mint a projected preview from a *real*
- * pasted URL for an authenticated PM.
+ * Option 2 (render-only): for a cold URL we run the SAME real audit pipeline the
+ * public `/audit` lead magnet uses (`runUrlAudit` → top finding →
+ * `generateFixPreviews`), then render the result inline — the "why" (evidence +
+ * prescription), the before/after fix preview as the hero, and a projected
+ * dollar range from the PM's own numbers. The whole experience builds to a
+ * "Launch on real traffic" button that is the upgrade wall: the projected
+ * before/after is the free value; running it on real traffic is the paid unlock.
  *
- * The split mirrors `freeExperimentFlow.ts` exactly, which is the whole point of
- * locked-decision #8 (auth timing is a pluggable seam):
- *
- *   1. `generateFreeExperimentAction` — the RENDER half. Validates the URL,
- *      checks the gate (cheap, so a blocked org never pays for an audit), and
- *      runs `runFreeExperimentFlow` (audit → proposal → projection). Touches NO
- *      DB state and returns a fully renderable result + a serializable payload.
- *   2. `saveFreeExperimentAction` — the PERSIST half. Re-checks + atomically
- *      claims the org's one free slot, resolves/creates the site, and writes the
- *      `previewOnly` experiment, then lands the PM in the cockpit.
- *
- * Keeping (1) free of (2) means the projected result can render inline-before or
- * behind a sign-in gate without rework — the cofounder's public funnel layers on
- * top of the same two halves.
+ * Deliberately NO persistence into the PM's org (that's what made Option 1
+ * heavier): `runUrlAudit` provisions its own `lighthouse_*` org for the findings
+ * to hang off, and we only READ that to render. Keeping the viewer's org out of
+ * it means a cold prospect feels the value with zero cockpit clutter.
  */
 
-import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
+import { desc, eq } from "drizzle-orm";
 import { getServerAuth } from "@/lib/auth/serverAuth";
-import { createPhase1Repository } from "@/lib/phase1";
+import { getDb } from "@/lib/db/client";
+import { zybitFindings } from "@/lib/db/schema";
 import { validatePublicUrl } from "@/lib/audit/urlValidator";
-import { DEMO_ORG_ID } from "@/lib/demo/constants";
-import {
-  loadFreeExperimentGate,
-  claimFreeExperimentSlot,
-} from "@/lib/billing/freeExperimentGate";
-import {
-  runFreeExperimentFlow,
-  persistFreeExperiment,
-} from "@/lib/experiments/freeExperimentFlow";
-import type { ManufacturedExperiment } from "@/lib/experiments/auditFindingBrief";
-import type { ProjectedImpact } from "@/lib/experiments/projectedImpact";
+import { generateFixPreviews } from "@/lib/audit/fixPreview";
+import type {
+  AuditFindingEvidence,
+  AuditFindingPrescription,
+  AuditFindingImpactEstimate,
+} from "@/lib/phase2/rules/types";
+import { runUrlAudit } from "../../../../lighthouse/lib/runner/runUrlAudit";
 
 export interface FreeExperimentNumbersInput {
   monthlyVisitors: number | null;
   monthlyRevenue: number | null;
 }
 
-/**
- * The bundle the client carries from generate → save. It is the *already
- * computed* proposal + projection, so saving never re-runs the (expensive)
- * audit. An authenticated PM can only ever persist a preview into their own org,
- * and a preview never touches real traffic, so trusting these client-held
- * fields carries no cross-tenant risk — but `saveFreeExperimentAction` still
- * re-validates the URL and re-checks the gate before writing anything.
- */
-export interface FreeExperimentSavePayload {
-  url: string;
-  source: "finding" | "starter";
-  experiment: ManufacturedExperiment;
-  projection: ProjectedImpact;
+/** The renderable finding — plain props for EvidencePanel, no DB coupling. */
+export interface RichFinding {
+  title: string;
+  summary: string;
+  severity: string;
+  ruleId: string;
+  pathRef: string | null;
+  evidence: AuditFindingEvidence[];
+  recommendation: string[];
+  prescription: AuditFindingPrescription | null;
+  impactEstimate: AuditFindingImpactEstimate | null;
+}
+
+/** Projected lift/$ from the PM's own numbers — always a benchmark forecast. */
+export interface ProjectedRange {
+  liftPctRange: { min: number; max: number };
+  revenueRange: { min: number; max: number } | null;
 }
 
 export type GenerateFreeExperimentResult =
   | {
       status: "ok";
-      source: "finding" | "starter";
       domain: string;
-      /** Present only for a real finding (null for the clean-page starter). */
-      findingTitle: string | null;
-      experiment: ManufacturedExperiment;
-      projection: ProjectedImpact;
-      payload: FreeExperimentSavePayload;
+      finding: RichFinding;
+      beforeUrl: string | null;
+      afterUrl: string | null;
+      fixTier: number | null;
+      fixRationale: string | null;
+      projection: ProjectedRange;
     }
-  // Client-rendered page — we can't proxy-modify it; client pivots to "connect
-  // your data" (§3 SPA fallback).
-  | { status: "spa" }
-  // Audit failed even after one retry — client pivots to connect-data (§3 error).
+  // Audit ran but the page is clean / structurally sound — nothing to show.
+  | { status: "no_finding"; domain: string }
+  // Crawl/render failed or the page was unreachable (bot wall, login, JS-only).
   | { status: "error"; reason: string }
   // Bad / unsafe URL — surfaced inline on the form.
-  | { status: "invalid"; reason: string }
-  // Unpaid org has already used its one free experiment → render upgrade moment.
-  | { status: "blocked" };
+  | { status: "invalid"; reason: string };
 
-function deriveTargetPath(url: string): string {
-  try {
-    return new URL(url).pathname || "/";
-  } catch {
-    return "/";
-  }
+// A generic structural-fix conversion-lift band (published-heuristic range),
+// surfaced to the PM as a *projection*, never a measured result. Kept as a
+// fixed constant so it can never read as an invented per-site number.
+const BENCHMARK_LIFT = { min: 5, max: 12 };
+
+function buildProjection(monthlyRevenue: number | null): ProjectedRange {
+  const rev =
+    typeof monthlyRevenue === "number" && Number.isFinite(monthlyRevenue) && monthlyRevenue > 0
+      ? monthlyRevenue
+      : null;
+  return {
+    liftPctRange: BENCHMARK_LIFT,
+    revenueRange: rev
+      ? {
+          min: Math.round((rev * BENCHMARK_LIFT.min) / 100),
+          max: Math.round((rev * BENCHMARK_LIFT.max) / 100),
+        }
+      : null,
+  };
 }
 
 /**
- * Render half — audit → proposal → projection, no DB writes. Gate is checked up
- * front purely to avoid spending an audit on an org that can't save the result;
- * the authoritative, race-safe claim happens in `saveFreeExperimentAction`.
+ * Run the real audit on a cold URL and return a fully renderable rich preview.
+ * Heavy: crawls + snapshots + runs the rule engine + renders a before/after
+ * screenshot pair (Browserless + AI). Bounded to a single page to keep it as
+ * fast as the pipeline allows. No DB writes into the viewer's org.
  */
 export async function generateFreeExperimentAction(
   url: string,
@@ -104,115 +109,104 @@ export async function generateFreeExperimentAction(
   if (!auth.ok) redirect("/sign-in");
 
   const validation = await validatePublicUrl(url);
-  if (!validation.valid) {
-    return { status: "invalid", reason: validation.reason };
-  }
+  if (!validation.valid) return { status: "invalid", reason: validation.reason };
   const safeUrl = validation.url.toString();
+  const domain = validation.url.hostname.replace(/^www\./, "");
 
-  // Cheap gate pre-check: an unpaid org that already used its free slot should
-  // see the upgrade moment, not burn an audit. The demo org is exempt — it
-  // stages several experiments by design.
-  if (auth.orgId !== DEMO_ORG_ID) {
-    const gate = await loadFreeExperimentGate(auth.orgId);
-    if (!gate.allowed) return { status: "blocked" };
+  // Run the real pipeline (same as the public /audit lead magnet). One page,
+  // prospect-safe copy, one vision pass — bounded for latency/cost.
+  let result;
+  try {
+    result = await runUrlAudit({
+      url: safeUrl,
+      maxPages: 1,
+      mode: "public-audit",
+      visionPagesLimit: 1,
+    });
+  } catch (err) {
+    return { status: "error", reason: err instanceof Error ? err.message : "Audit failed" };
   }
 
-  // Run the flow. On a transient audit error, retry once, then pivot (§3).
-  let result = await runFreeExperimentFlow(safeUrl, numbers);
-  if (result.status === "error") {
-    result = await runFreeExperimentFlow(safeUrl, numbers);
+  const { siteId, organizationId, counts } = result;
+  // Zero crawled pages ⇒ bot wall / login / JS-only nav. Don't fake a finding.
+  if (counts.snapshots === 0) {
+    return { status: "error", reason: "unreachable" };
   }
 
-  if (result.status === "spa") return { status: "spa" };
-  if (result.status === "error") return { status: "error", reason: result.reason };
+  // Top finding by priority (read from the lighthouse org runUrlAudit provisioned).
+  const db = getDb();
+  const [top] = await db
+    .select()
+    .from(zybitFindings)
+    .where(eq(zybitFindings.siteId, siteId))
+    .orderBy(desc(zybitFindings.priorityScore))
+    .limit(1);
+
+  if (!top) return { status: "no_finding", domain };
+
+  const prescription = (top.prescription ?? null) as AuditFindingPrescription | null;
+
+  // Before/after fix preview — the hero. Fail-soft: a thrown error or empty
+  // result just drops the visual; the rest of the preview still renders.
+  let beforeUrl: string | null = null;
+  let afterUrl: string | null = null;
+  let fixTier: number | null = null;
+  let fixRationale: string | null = null;
+  try {
+    const outcomes = await generateFixPreviews({
+      organizationId,
+      siteId,
+      auditUrl: safeUrl,
+      findings: [
+        {
+          id: top.id,
+          ruleId: top.ruleId,
+          title: top.title,
+          pathRef: top.pathRef,
+          prescription: prescription
+            ? {
+                ...(prescription.whyItMatters !== undefined
+                  ? { whyItMatters: prescription.whyItMatters }
+                  : {}),
+                whatToChange: prescription.whatToChange,
+                whyItWorks: prescription.whyItWorks,
+                experimentVariantDescription: prescription.experimentVariantDescription,
+              }
+            : null,
+        },
+      ],
+    });
+    const preview = outcomes.find((o) => o.preview)?.preview ?? null;
+    if (preview) {
+      beforeUrl = preview.beforeUrl;
+      afterUrl = preview.afterUrl;
+      fixTier = preview.tier;
+      fixRationale = preview.rationale;
+    }
+  } catch (err) {
+    console.error("[app/try] generateFixPreviews threw", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   return {
     status: "ok",
-    source: result.source,
-    domain: validation.url.hostname.replace(/^www\./, ""),
-    findingTitle: result.finding?.title ?? null,
-    experiment: result.experiment,
-    projection: result.projection,
-    payload: {
-      url: safeUrl,
-      source: result.source,
-      experiment: result.experiment,
-      projection: result.projection,
+    domain,
+    finding: {
+      title: top.title,
+      summary: top.summary,
+      severity: top.severity,
+      ruleId: top.ruleId,
+      pathRef: top.pathRef,
+      evidence: (top.evidence ?? []) as AuditFindingEvidence[],
+      recommendation: (top.recommendation ?? []) as string[],
+      prescription,
+      impactEstimate: (top.impactEstimate ?? null) as AuditFindingImpactEstimate | null,
     },
+    beforeUrl,
+    afterUrl,
+    fixTier,
+    fixRationale,
+    projection: buildProjection(numbers.monthlyRevenue),
   };
-}
-
-export type SaveFreeExperimentResult =
-  | { status: "blocked" }
-  | { status: "invalid"; reason: string };
-// On success the action redirects (throws), so there is no success variant.
-
-/**
- * Persist half — claim the one free slot atomically, resolve/create the site,
- * and write the `previewOnly` experiment, then land the PM on the experiment
- * detail page (which renders the projected arc). Returns only on the blocked /
- * invalid branches; the happy path ends in a redirect.
- */
-export async function saveFreeExperimentAction(
-  payload: FreeExperimentSavePayload,
-): Promise<SaveFreeExperimentResult> {
-  const auth = await getServerAuth();
-  if (!auth.ok) redirect("/sign-in");
-
-  // Re-validate the URL server-side — never trust a client-held value to drive
-  // a site row, even from an authenticated user.
-  const validation = await validatePublicUrl(payload.url);
-  if (!validation.valid) return { status: "invalid", reason: validation.reason };
-
-  const isDemoOrg = auth.orgId === DEMO_ORG_ID;
-  const now = new Date();
-
-  // Authoritative gate + atomic claim. The `IS NULL` guard inside
-  // claimFreeExperimentSlot makes two concurrent saves race-safe: only the first
-  // flips the column; the loser falls through to the upgrade moment.
-  if (!isDemoOrg) {
-    const gate = await loadFreeExperimentGate(auth.orgId);
-    if (!gate.allowed) return { status: "blocked" };
-    if (gate.reason === "free-slot-available") {
-      const claimed = await claimFreeExperimentSlot(auth.orgId, now);
-      if (!claimed) return { status: "blocked" };
-    }
-    // reason 'paid' falls through without consuming a slot.
-  }
-
-  // Resolve the site to attach the preview to. Mirror the onboarding pilot model
-  // (`createSiteAction`): one org = one site — reuse the org's site if it has
-  // one, else create it from the audited domain. Both `/app/loop` and
-  // `/app/experiments` default to the org's primary site, so attaching here is
-  // what makes the projected arc show up in the cockpit.
-  const domain = validation.url.hostname.replace(/^www\./, "");
-  const repository = createPhase1Repository();
-  const existing = await repository.listSites({ organizationId: auth.orgId, limit: 1 });
-  const site =
-    existing[0] ??
-    (await repository.createSite({
-      id: randomUUID(),
-      organizationId: auth.orgId,
-      name: domain,
-      domain,
-      createdAt: now.toISOString(),
-    }));
-
-  const experimentId = await persistFreeExperiment(
-    {
-      status: "ok",
-      source: payload.source,
-      finding: null,
-      experiment: payload.experiment,
-      projection: payload.projection,
-    },
-    {
-      organizationId: auth.orgId,
-      siteId: site.id,
-      findingId: null,
-      targetPath: deriveTargetPath(payload.url),
-    },
-  );
-
-  redirect(`/app/experiments/${experimentId}`);
 }

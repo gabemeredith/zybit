@@ -2,27 +2,25 @@
 
 /**
  * Client surface for `/app/try` — the "Try one free experiment" funnel
- * (docs/sprints/free-experiment-loop.md §1).
+ * (docs/sprints/free-experiment-loop.md §1, Option 2: rich render-only preview).
  *
- * Two-step, mirroring the server-action split (render half → persist half):
- *   1. URL + the §4 numbers micro-step → `generateFreeExperimentAction` runs the
- *      silent audit and returns a projected result (no DB write).
- *   2. The PM reviews the projected before/after, then "Save to my cockpit" →
- *      `saveFreeExperimentAction` claims the free slot and persists the preview.
- *
- * SPA / error results pivot to "connect your data" (we don't fake a preview for
- * a page we can't proxy-modify); a used-up gate renders the upgrade moment.
+ * Flow: URL + the §4 numbers micro-step → `generateFreeExperimentAction` runs the
+ * real audit and returns one rich finding + a before/after fix preview. We render
+ * the "why" (EvidencePanel), the before/after as the hero (BeforeAfterSlider), and
+ * a projected dollar range — all building to a "Launch on real traffic" button
+ * that is the upgrade wall. The projected before/after is the free value; running
+ * it on live traffic is the paid unlock.
  */
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import EvidencePanel from "@/components/app/EvidencePanel";
+import { BeforeAfterSlider } from "@/components/audit/BeforeAfterSlider";
 import {
   generateFreeExperimentAction,
-  saveFreeExperimentAction,
   type GenerateFreeExperimentResult,
 } from "@/app/app/try/actions";
 
-/** Parse a loosely-typed money/count field into a positive number or null. */
 function parseNumber(raw: string): number | null {
   const cleaned = raw.replace(/[$,\s]/g, "");
   if (!cleaned) return null;
@@ -43,14 +41,13 @@ export default function TryExperimentForm() {
   const [visitors, setVisitors] = useState("");
   const [revenue, setRevenue] = useState("");
   const [result, setResult] = useState<GenerateFreeExperimentResult | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [walled, setWalled] = useState(false);
   const [generating, startGenerating] = useTransition();
-  const [saving, startSaving] = useTransition();
 
   function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     if (!url.trim() || generating) return;
-    setSaveError(null);
+    setWalled(false);
     startGenerating(async () => {
       const res = await generateFreeExperimentAction(url.trim(), {
         monthlyVisitors: parseNumber(visitors),
@@ -60,60 +57,53 @@ export default function TryExperimentForm() {
     });
   }
 
-  function handleSave() {
-    if (!result || result.status !== "ok" || saving) return;
-    setSaveError(null);
-    startSaving(async () => {
-      const res = await saveFreeExperimentAction(result.payload);
-      // A successful save redirects server-side; we only get here on a branch.
-      if (res.status === "blocked") {
-        setResult({ status: "blocked" });
-      } else if (res.status === "invalid") {
-        setSaveError(res.reason);
-      }
-    });
-  }
-
   function reset() {
     setResult(null);
-    setSaveError(null);
+    setWalled(false);
   }
 
-  // ---- Projected result (the payoff) -------------------------------------
+  // ---- The rich preview (the payoff) -------------------------------------
   if (result?.status === "ok") {
-    const { experiment, projection, findingTitle, domain, source } = result;
+    const { finding, beforeUrl, afterUrl, fixRationale, projection, domain } = result;
     return (
-      <div className="space-y-4">
+      <div className="space-y-5">
         <div className="brut-card p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div className="brut-label">Experiment we&apos;d run on you</div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="brut-label">An experiment we&apos;d run on you</div>
             <span className="brut-tag text-[#6B6B6B]">{domain}</span>
           </div>
-
-          <div className="space-y-4">
-            <div>
-              <div className={SECTION_LABEL}>
-                {source === "finding" ? "What we found" : "Where to start"}
-              </div>
-              <p className="text-[#111] leading-relaxed">
-                {findingTitle ??
-                  "Your page is structurally clean, so we'd start with a sharp copy test."}
-              </p>
-            </div>
-            <div>
-              <div className={SECTION_LABEL}>The experiment</div>
-              <p className="text-base font-bold text-[#111]">{experiment.experimentName}</p>
-              <p className="mt-1 text-[#6B6B6B] leading-relaxed">
-                {experiment.variantDescription}
-              </p>
-            </div>
-          </div>
+          <h2 className="text-2xl font-black tracking-tighter text-[#111] leading-tight mb-1">
+            {finding.title}
+          </h2>
+          <p className="text-[#6B6B6B] leading-relaxed">{finding.summary}</p>
         </div>
 
-        {/* Projected impact — honestly labelled, never a measured result. */}
+        {/* The why — evidence + prescription + the rule's own impact estimate. */}
+        <EvidencePanel
+          evidence={finding.evidence}
+          recommendation={finding.recommendation}
+          prescription={finding.prescription}
+          impactEstimate={finding.impactEstimate}
+        />
+
+        {/* The hero — the before/after fix rendered on the PM's own page. */}
+        {beforeUrl && (
+          <div className="brut-card p-6">
+            <div className="brut-label mb-3">The fix, rendered on your page</div>
+            <BeforeAfterSlider
+              beforeUrl={beforeUrl}
+              afterUrl={afterUrl}
+              rationale={fixRationale}
+              badge="Proposed fix"
+              alt={`${domain} hero`}
+            />
+          </div>
+        )}
+
+        {/* Projected impact — honestly labelled, from the PM's own numbers. */}
         <div className="brut-card p-6">
-          <div className="brut-label mb-5">Projected impact</div>
-          <div className="flex flex-wrap gap-8 mb-5">
+          <div className="brut-label mb-4">Projected impact</div>
+          <div className="flex flex-wrap gap-8 mb-4">
             <div>
               <div className={SECTION_LABEL}>Projected lift</div>
               <p className="text-2xl font-black text-[#111]">
@@ -131,51 +121,62 @@ export default function TryExperimentForm() {
           </div>
           <p className="text-sm text-[#6B6B6B] leading-relaxed">
             <span className="font-bold text-[#111]">Projected — not yet measured.</span>{" "}
-            {projection.basisNote}
+            A benchmark range for this kind of fix
+            {projection.revenueRange ? ", applied to the numbers you gave" : ""}. Running it on
+            your real traffic is how you measure the actual lift.
           </p>
         </div>
 
-        {saveError && (
-          <p className="text-sm text-red-600 font-medium">{saveError}</p>
+        {/* The wall — the whole preview builds to this. */}
+        {walled ? (
+          <div className="brut-card p-6 bg-[#111] text-white">
+            <div className="brut-label mb-2 text-white/60">Upgrade to launch</div>
+            <p className="text-lg font-bold mb-1">This is the paid part — and it&apos;s the point.</p>
+            <p className="text-white/70 leading-relaxed mb-5">
+              You&apos;ve seen the projected fix. Upgrade to deploy it on your real traffic with
+              zero install, measure the actual lift, and run the next one.
+            </p>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/app/settings"
+                className="bg-white text-[#111] px-5 py-3 text-xs font-bold uppercase tracking-[0.08em] hover:opacity-80 transition-opacity"
+              >
+                See upgrade options
+              </Link>
+              <button
+                type="button"
+                onClick={reset}
+                className="text-white/60 text-xs font-bold uppercase tracking-[0.08em] hover:text-white transition-colors"
+              >
+                Try another URL
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setWalled(true)} className="brut-action">
+              Launch on real traffic →
+            </button>
+            <button type="button" onClick={reset} className="brut-action-ghost">
+              Try another URL
+            </button>
+          </div>
         )}
-
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="brut-action"
-          >
-            {saving ? "Saving…" : "Save to my cockpit"}
-          </button>
-          <button
-            type="button"
-            onClick={reset}
-            disabled={saving}
-            className="brut-action-ghost"
-          >
-            Try another URL
-          </button>
-        </div>
       </div>
     );
   }
 
-  // ---- Pivots: SPA / persistent error → "connect your data" --------------
-  if (result?.status === "spa" || result?.status === "error") {
-    const isSpa = result.status === "spa";
+  // ---- Clean page — nothing to show --------------------------------------
+  if (result?.status === "no_finding") {
     return (
       <div className="brut-card p-8">
-        <div className="brut-label mb-3">Can&apos;t preview this page</div>
+        <div className="brut-label mb-3">Nothing obvious to fix</div>
         <p className="text-[#111] font-bold text-lg mb-1">
-          {isSpa
-            ? "This page renders in the browser, so we can't preview a change on it."
-            : "We couldn't read that page."}
+          {result.domain} looks structurally clean.
         </p>
         <p className="text-[#6B6B6B] leading-relaxed mb-6">
-          {isSpa
-            ? "Client-rendered pages need your analytics connected so we can find friction from real behaviour instead of static HTML."
-            : "It may be down, blocking us, or behind a login. Connect your analytics and we'll surface findings from real behaviour."}
+          We couldn&apos;t surface a high-confidence structural fix from the static page. Connect
+          your analytics and we&apos;ll find friction from real visitor behaviour instead.
         </p>
         <div className="flex items-center gap-3">
           <Link href="/app/onboarding" className="brut-action">
@@ -189,20 +190,26 @@ export default function TryExperimentForm() {
     );
   }
 
-  // ---- Gate used up mid-flow → upgrade moment ----------------------------
-  if (result?.status === "blocked") {
+  // ---- Couldn't read the page --------------------------------------------
+  if (result?.status === "error") {
     return (
-      <div className="brut-card p-8 text-center">
-        <div className="brut-label mb-3">Free experiment used</div>
+      <div className="brut-card p-8">
+        <div className="brut-label mb-3">Couldn&apos;t read this page</div>
         <p className="text-[#111] font-bold text-lg mb-1">
-          You&apos;ve run your one free experiment.
+          We couldn&apos;t audit that URL.
         </p>
         <p className="text-[#6B6B6B] leading-relaxed mb-6">
-          Upgrade to run experiments on real traffic and measure the actual lift.
+          It may be down, behind a login, or blocking automated visits. Try a public page, or
+          connect your analytics to surface findings from real behaviour.
         </p>
-        <Link href="/app/settings" className="brut-action">
-          See upgrade options
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/app/onboarding" className="brut-action">
+            Connect your data
+          </Link>
+          <button type="button" onClick={reset} className="brut-action-ghost">
+            Try another URL
+          </button>
+        </div>
       </div>
     );
   }
@@ -261,13 +268,19 @@ export default function TryExperimentForm() {
         </div>
       </div>
       <p className="text-xs text-[#6B6B6B] leading-relaxed">
-        Your numbers turn the benchmark lift into a dollar projection. We never
-        store them as a measured result — the projection is clearly labelled.
+        Your numbers turn the benchmark lift into a dollar projection. We never store them as a
+        measured result — the projection is clearly labelled.
       </p>
 
       <button type="submit" disabled={generating || !url.trim()} className="brut-action">
-        {generating ? "Auditing your page…" : "Generate my free experiment"}
+        {generating ? "Auditing your page… (~30–60s)" : "Generate my free experiment"}
       </button>
+      {generating && (
+        <p className="text-xs text-[#6B6B6B] leading-relaxed">
+          Crawling the page, running the rule engine, and rendering a before/after of the fix.
+          This is the real audit, so it takes a moment.
+        </p>
+      )}
     </form>
   );
 }

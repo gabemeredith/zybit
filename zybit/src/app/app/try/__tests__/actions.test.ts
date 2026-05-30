@@ -1,229 +1,144 @@
 /**
- * Tests for the `/app/try` funnel actions — the cold-URL → projected-preview
- * glue (docs/sprints/free-experiment-loop.md §1).
+ * Tests for the `/app/try` rich-preview action (Option 2) — cold URL → real
+ * audit → top finding + before/after → renderable result
+ * (docs/sprints/free-experiment-loop.md §1).
  *
- * Strategy: mock every boundary (auth, URL validator, gate, flow orchestration,
- * site repo, redirect) and assert the branching that matters — the gate
- * pre-check that avoids burning an audit, the retry-once-then-pivot on error,
- * the atomic-claim race, and site reuse-vs-create.
+ * Strategy: mock every heavy boundary (auth, URL validator, the lighthouse
+ * audit runner, the DB finding read, the fix-preview generator) and assert the
+ * branching that matters — invalid URL short-circuits before the audit,
+ * unreachable/no-finding map to their own states, and a successful run maps the
+ * finding + before/after + projection correctly.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockGetServerAuth = vi.hoisted(() => vi.fn());
 const mockValidatePublicUrl = vi.hoisted(() => vi.fn());
-const mockLoadGate = vi.hoisted(() => vi.fn());
-const mockClaimSlot = vi.hoisted(() => vi.fn());
-const mockRunFlow = vi.hoisted(() => vi.fn());
-const mockPersist = vi.hoisted(() => vi.fn());
-const mockListSites = vi.hoisted(() => vi.fn());
-const mockCreateSite = vi.hoisted(() => vi.fn());
+const mockRunUrlAudit = vi.hoisted(() => vi.fn());
+const mockGenerateFixPreviews = vi.hoisted(() => vi.fn());
+const mockLimit = vi.hoisted(() => vi.fn());
 const mockRedirect = vi.hoisted(() =>
-  vi.fn((path: string) => {
-    throw new Error(`REDIRECT:${path}`);
+  vi.fn((p: string) => {
+    throw new Error(`REDIRECT:${p}`);
   }),
 );
 
 vi.mock("@/lib/auth/serverAuth", () => ({ getServerAuth: mockGetServerAuth }));
 vi.mock("next/navigation", () => ({ redirect: mockRedirect }));
 vi.mock("@/lib/audit/urlValidator", () => ({ validatePublicUrl: mockValidatePublicUrl }));
-vi.mock("@/lib/billing/freeExperimentGate", () => ({
-  loadFreeExperimentGate: mockLoadGate,
-  claimFreeExperimentSlot: mockClaimSlot,
+vi.mock("@/lib/audit/fixPreview", () => ({ generateFixPreviews: mockGenerateFixPreviews }));
+vi.mock("../../../../../lighthouse/lib/runner/runUrlAudit", () => ({
+  runUrlAudit: mockRunUrlAudit,
 }));
-vi.mock("@/lib/experiments/freeExperimentFlow", () => ({
-  runFreeExperimentFlow: mockRunFlow,
-  persistFreeExperiment: mockPersist,
-}));
-vi.mock("@/lib/phase1", () => ({
-  createPhase1Repository: () => ({ listSites: mockListSites, createSite: mockCreateSite }),
+vi.mock("@/lib/db/client", () => ({
+  getDb: () => ({
+    select: () => ({
+      from: () => ({
+        where: () => ({ orderBy: () => ({ limit: mockLimit }) }),
+      }),
+    }),
+  }),
 }));
 
-import {
-  generateFreeExperimentAction,
-  saveFreeExperimentAction,
-  type FreeExperimentSavePayload,
-} from "../actions";
+import { generateFreeExperimentAction } from "../actions";
 
-const ORG = "org-1";
+const NUMBERS = { monthlyVisitors: 25_000, monthlyRevenue: 40_000 };
 
-const EXPERIMENT = {
-  basis: "no_above_fold_cta" as const,
-  experimentName: "Add a primary CTA above the fold",
-  changeType: "insert" as const,
-  variantDescription: "Insert a high-contrast primary button in the hero.",
-  hypothesis: "An obvious next action increases clicks.",
-  suggestedPrimaryMetric: "Primary CTA click-through rate",
+const TOP_FINDING = {
+  id: "f1",
+  ruleId: "hero-hierarchy-inversion",
+  title: "Your primary CTA is buried below the fold",
+  summary: "Visitors who don't scroll have no obvious next action.",
+  severity: "warn",
+  pathRef: "/",
+  evidence: [{ label: "Above-fold CTAs", value: 0 }],
+  recommendation: ["Add a high-contrast primary button in the hero."],
+  prescription: {
+    whatToChange: "Add a primary CTA above the fold.",
+    whyItWorks: "An obvious next action lifts click-through.",
+    experimentVariantDescription: "Insert a hero CTA button.",
+  },
+  impactEstimate: null,
 };
-const PROJECTION = {
-  liftPctRange: { min: 5, max: 15 },
-  revenueRange: { min: 2000, max: 6000 },
-  projected: true as const,
-  basisNote: "Projected from your numbers. Not yet measured.",
-};
-
-function okFlow(source: "finding" | "starter" = "finding") {
-  return {
-    status: "ok" as const,
-    source,
-    finding: source === "finding" ? { title: "No primary CTA above the fold" } : null,
-    experiment: EXPERIMENT,
-    projection: PROJECTION,
-  };
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetServerAuth.mockResolvedValue({ ok: true, orgId: ORG });
+  mockGetServerAuth.mockResolvedValue({ ok: true, orgId: "org-1" });
   mockValidatePublicUrl.mockResolvedValue({ valid: true, url: new URL("https://acme.com/pricing") });
-  mockLoadGate.mockResolvedValue({ allowed: true, reason: "free-slot-available" });
-  mockClaimSlot.mockResolvedValue(true);
+  mockRunUrlAudit.mockResolvedValue({
+    siteId: "lighthouse_sit_acme",
+    organizationId: "lighthouse_org_acme",
+    counts: { snapshots: 1 },
+  });
+  mockLimit.mockResolvedValue([TOP_FINDING]);
+  mockGenerateFixPreviews.mockResolvedValue([
+    {
+      findingId: "f1",
+      preview: { beforeUrl: "https://blob/before.png", afterUrl: "https://blob/after.png", tier: 1, rationale: "Added a hero CTA." },
+      reason: "ok",
+    },
+  ]);
 });
 
 describe("generateFreeExperimentAction", () => {
-  it("rejects an invalid URL before checking the gate or auditing", async () => {
+  it("rejects an invalid URL before running the audit", async () => {
     mockValidatePublicUrl.mockResolvedValueOnce({ valid: false, reason: "Bad URL." });
-
-    const res = await generateFreeExperimentAction("not a url", {
-      monthlyVisitors: null,
-      monthlyRevenue: null,
-    });
-
+    const res = await generateFreeExperimentAction("not a url", NUMBERS);
     expect(res).toEqual({ status: "invalid", reason: "Bad URL." });
-    expect(mockLoadGate).not.toHaveBeenCalled();
-    expect(mockRunFlow).not.toHaveBeenCalled();
+    expect(mockRunUrlAudit).not.toHaveBeenCalled();
   });
 
-  it("blocks a used-up org WITHOUT spending an audit", async () => {
-    mockLoadGate.mockResolvedValueOnce({ allowed: false, reason: "free-slot-used" });
-
-    const res = await generateFreeExperimentAction("acme.com", {
-      monthlyVisitors: null,
-      monthlyRevenue: null,
-    });
-
-    expect(res).toEqual({ status: "blocked" });
-    expect(mockRunFlow).not.toHaveBeenCalled();
-  });
-
-  it("returns the projected result + a save payload on success", async () => {
-    mockRunFlow.mockResolvedValueOnce(okFlow("finding"));
-
-    const res = await generateFreeExperimentAction("acme.com", {
-      monthlyVisitors: 25000,
-      monthlyRevenue: 40000,
-    });
-
+  it("maps a successful audit → rich finding + before/after + projection", async () => {
+    const res = await generateFreeExperimentAction("acme.com", NUMBERS);
     expect(res.status).toBe("ok");
     if (res.status !== "ok") throw new Error("expected ok");
     expect(res.domain).toBe("acme.com");
-    expect(res.findingTitle).toBe("No primary CTA above the fold");
-    expect(res.payload.experiment).toEqual(EXPERIMENT);
-    expect(res.payload.projection).toEqual(PROJECTION);
+    expect(res.finding.title).toBe(TOP_FINDING.title);
+    expect(res.finding.evidence).toEqual(TOP_FINDING.evidence);
+    expect(res.beforeUrl).toBe("https://blob/before.png");
+    expect(res.afterUrl).toBe("https://blob/after.png");
+    expect(res.fixTier).toBe(1);
+    // 5–12% of $40k → $2k–$4.8k
+    expect(res.projection.revenueRange).toEqual({ min: 2000, max: 4800 });
   });
 
-  it("pivots to SPA without retrying", async () => {
-    mockRunFlow.mockResolvedValueOnce({ status: "spa" });
-
+  it("omits the dollar range when no revenue is given", async () => {
     const res = await generateFreeExperimentAction("acme.com", {
       monthlyVisitors: null,
       monthlyRevenue: null,
     });
-
-    expect(res).toEqual({ status: "spa" });
-    expect(mockRunFlow).toHaveBeenCalledTimes(1);
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(res.projection.revenueRange).toBeNull();
+    expect(res.projection.liftPctRange).toEqual({ min: 5, max: 12 });
   });
 
-  it("retries once on error, then pivots to error", async () => {
-    mockRunFlow
-      .mockResolvedValueOnce({ status: "error", reason: "timeout" })
-      .mockResolvedValueOnce({ status: "error", reason: "timeout" });
-
-    const res = await generateFreeExperimentAction("acme.com", {
-      monthlyVisitors: null,
-      monthlyRevenue: null,
+  it("returns 'error' when the page is unreachable (zero snapshots)", async () => {
+    mockRunUrlAudit.mockResolvedValueOnce({
+      siteId: "s",
+      organizationId: "o",
+      counts: { snapshots: 0 },
     });
-
-    expect(res).toEqual({ status: "error", reason: "timeout" });
-    expect(mockRunFlow).toHaveBeenCalledTimes(2);
+    const res = await generateFreeExperimentAction("acme.com", NUMBERS);
+    expect(res).toEqual({ status: "error", reason: "unreachable" });
   });
 
-  it("recovers when the retry succeeds", async () => {
-    mockRunFlow
-      .mockResolvedValueOnce({ status: "error", reason: "timeout" })
-      .mockResolvedValueOnce(okFlow("starter"));
-
-    const res = await generateFreeExperimentAction("acme.com", {
-      monthlyVisitors: null,
-      monthlyRevenue: null,
-    });
-
-    expect(res.status).toBe("ok");
-    expect(mockRunFlow).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("saveFreeExperimentAction", () => {
-  const payload: FreeExperimentSavePayload = {
-    url: "https://acme.com/pricing",
-    source: "finding",
-    experiment: EXPERIMENT,
-    projection: PROJECTION,
-  };
-
-  it("claims the slot, reuses the existing site, persists, and redirects", async () => {
-    mockListSites.mockResolvedValueOnce([{ id: "site-1", domain: "acme.com" }]);
-    mockPersist.mockResolvedValueOnce("exp-1");
-
-    await expect(saveFreeExperimentAction(payload)).rejects.toThrow("REDIRECT:/app/experiments/exp-1");
-
-    expect(mockClaimSlot).toHaveBeenCalledWith(ORG, expect.any(Date));
-    expect(mockCreateSite).not.toHaveBeenCalled();
-    expect(mockPersist).toHaveBeenCalledOnce();
-    const [result, target] = mockPersist.mock.calls[0];
-    expect(result.experiment).toEqual(EXPERIMENT);
-    expect(target).toMatchObject({ organizationId: ORG, siteId: "site-1", targetPath: "/pricing" });
+  it("returns 'no_finding' when the audit surfaces nothing", async () => {
+    mockLimit.mockResolvedValueOnce([]);
+    const res = await generateFreeExperimentAction("acme.com", NUMBERS);
+    expect(res).toEqual({ status: "no_finding", domain: "acme.com" });
   });
 
-  it("creates a site from the audited domain when the org has none", async () => {
-    mockListSites.mockResolvedValueOnce([]);
-    mockCreateSite.mockResolvedValueOnce({ id: "site-new", domain: "acme.com" });
-    mockPersist.mockResolvedValueOnce("exp-2");
-
-    await expect(saveFreeExperimentAction(payload)).rejects.toThrow("REDIRECT:/app/experiments/exp-2");
-
-    expect(mockCreateSite).toHaveBeenCalledOnce();
-    expect(mockCreateSite.mock.calls[0][0]).toMatchObject({ organizationId: ORG, domain: "acme.com" });
+  it("still returns ok (no visual) when the fix preview fails", async () => {
+    mockGenerateFixPreviews.mockRejectedValueOnce(new Error("browserless down"));
+    const res = await generateFreeExperimentAction("acme.com", NUMBERS);
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(res.beforeUrl).toBeNull();
+    expect(res.afterUrl).toBeNull();
   });
 
-  it("blocks (no persist) when the slot claim loses the race", async () => {
-    mockClaimSlot.mockResolvedValueOnce(false);
-
-    const res = await saveFreeExperimentAction(payload);
-
-    expect(res).toEqual({ status: "blocked" });
-    expect(mockPersist).not.toHaveBeenCalled();
-    expect(mockRedirect).not.toHaveBeenCalled();
-  });
-
-  it("blocks (no claim, no persist) when the gate is already used", async () => {
-    mockLoadGate.mockResolvedValueOnce({ allowed: false, reason: "free-slot-used" });
-
-    const res = await saveFreeExperimentAction(payload);
-
-    expect(res).toEqual({ status: "blocked" });
-    expect(mockClaimSlot).not.toHaveBeenCalled();
-    expect(mockPersist).not.toHaveBeenCalled();
-  });
-
-  it("does NOT consume a slot for a paid org", async () => {
-    mockLoadGate.mockResolvedValueOnce({ allowed: true, reason: "paid" });
-    mockListSites.mockResolvedValueOnce([{ id: "site-1", domain: "acme.com" }]);
-    mockPersist.mockResolvedValueOnce("exp-3");
-
-    await expect(saveFreeExperimentAction(payload)).rejects.toThrow("REDIRECT:/app/experiments/exp-3");
-
-    expect(mockClaimSlot).not.toHaveBeenCalled();
-    expect(mockPersist).toHaveBeenCalledOnce();
+  it("returns 'error' when the audit throws", async () => {
+    mockRunUrlAudit.mockRejectedValueOnce(new Error("crawl failed"));
+    const res = await generateFreeExperimentAction("acme.com", NUMBERS);
+    expect(res).toEqual({ status: "error", reason: "crawl failed" });
   });
 });
