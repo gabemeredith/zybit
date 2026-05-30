@@ -94,6 +94,8 @@ export default function ExperimentBriefCard({
       } else if (result?.type === "spa_warning") {
         setOverlaps(null);
         setSpaUrl(result.targetUrl);
+      } else if (result?.type === "free_experiment_used") {
+        setLaunchError("You've used your free experiment. Upgrade to launch more.");
       } else if (result?.type === "validation_error") {
         setLaunchError(`${result.message} Edit the brief to fix.`);
       }

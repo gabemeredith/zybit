@@ -10,6 +10,14 @@ import ExperimentControls from "@/components/app/ExperimentControls";
 import ExperimentScreenshotPreview from "@/components/app/ExperimentScreenshotPreview";
 import type { VariantModification } from "@/lib/experiments/types";
 import { describeModification } from "@/lib/experiments/describeModification";
+import { readPreviewProjectionNote } from "@/lib/experiments/previewExperiment";
+
+/** Compact dollar label for projected revenue ($2,000 → "$2k"). */
+function money(dollars: number): string {
+  if (dollars >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)}M`;
+  if (dollars >= 1_000) return `$${Math.round(dollars / 1_000)}k`;
+  return `$${dollars}`;
+}
 
 function timeAgo(d: Date | string): string {
   const diff = Date.now() - new Date(d).getTime();
@@ -113,6 +121,11 @@ export default async function ExperimentDetailPage({
   const modifications = (exp.modifications ?? []) as VariantModification[];
   const hasResults = exp.resultVariantRate !== null && exp.resultControlRate !== null;
 
+  // Free-experiment loop §5: a projected preview, never run on real traffic. It
+  // shows projected impact instead of measured results, and hides the live-
+  // traffic affordances (DNS banner, status controls) that don't apply to it.
+  const preview = exp.previewOnly ? readPreviewProjectionNote(exp.notes) : null;
+
   return (
     <div className="p-8 max-w-3xl mx-auto">
       {/* Breadcrumb */}
@@ -127,11 +140,11 @@ export default async function ExperimentDetailPage({
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-3">
-          <span className={`brut-badge ${STATUS_STYLES[exp.status] ?? STATUS_STYLES.draft}`}>
-            {exp.status === "running" && (
+          <span className={`brut-badge ${preview ? "bg-[#00E5FF] text-[#111]" : STATUS_STYLES[exp.status] ?? STATUS_STYLES.draft}`}>
+            {exp.status === "running" && !preview && (
               <span className="w-1.5 h-1.5 bg-emerald-600 mr-1.5 animate-pulse" />
             )}
-            {exp.status}
+            {preview ? "projected" : exp.status}
           </span>
           {exp.targetPath && (
             <span className="brut-tag text-[#6B6B6B]">{pathLabel(exp.targetPath)}</span>
@@ -159,8 +172,9 @@ export default async function ExperimentDetailPage({
       </div>
 
       <div className="space-y-4">
-        {/* Proxy / DNS gating — experiments need proxy_slug to actually serve traffic */}
-        {!siteProxySlug && (
+        {/* Proxy / DNS gating — experiments need proxy_slug to actually serve traffic.
+            A projected preview is never served, so the banner doesn't apply. */}
+        {!siteProxySlug && !preview && (
           <div className="bg-amber-50 border-l-4 border-amber-300 p-4 flex items-center justify-between gap-4">
             <div className="text-sm text-amber-900">
               <span className="font-bold">Complete DNS setup to deploy this experiment.</span>{" "}
@@ -310,8 +324,33 @@ export default async function ExperimentDetailPage({
             (see banner above). A real "Deploy" CTA wired to the proxy will land
             in a future PR. */}
 
-        {/* Results card */}
-        {hasResults ? (
+        {/* Projected-impact card (preview experiments) — honestly labelled, never
+            a measured result. Real measurement is the paid, real-traffic unlock. */}
+        {preview ? (
+          <div className="brut-card p-6">
+            <div className="brut-label mb-5">Projected impact</div>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <div className={SECTION_LABEL}>Projected lift</div>
+                <p className="text-2xl font-bold tracking-tighter text-[#111]">
+                  +{preview.projection.liftPctRange.min}–{preview.projection.liftPctRange.max}%
+                </p>
+              </div>
+              {preview.projection.revenueRange && (
+                <div>
+                  <div className={SECTION_LABEL}>Projected revenue / mo</div>
+                  <p className="text-2xl font-bold tracking-tighter text-[#111]">
+                    {money(preview.projection.revenueRange.min)}–{money(preview.projection.revenueRange.max)}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="bg-amber-50 border-l-4 border-amber-300 px-4 py-3 text-xs text-amber-900">
+              <span className="font-bold">Projected — not yet measured.</span>{" "}
+              {preview.projection.basisNote}
+            </div>
+          </div>
+        ) : hasResults ? (
           <div className="brut-card p-6">
             <div className="brut-label mb-5">Results</div>
             <div className="grid grid-cols-3 gap-4 mb-4">
@@ -362,18 +401,27 @@ export default async function ExperimentDetailPage({
           </div>
         ) : null}
 
-        {/* Controls */}
-        <ExperimentControls
-          experimentId={id}
-          currentStatus={exp.status as "draft" | "running" | "completed" | "stopped"}
-          hasResults={hasResults}
-          defaultResults={{
-            controlRate: exp.resultControlRate ?? undefined,
-            variantRate: exp.resultVariantRate ?? undefined,
-            confidence: exp.resultConfidence ?? undefined,
-            participants: exp.resultParticipants ?? undefined,
-          }}
-        />
+        {/* Controls — a projected preview can't be started/stopped or have
+            results recorded. Running it on real traffic is the paid unlock
+            (the upgrade moment lands in Phase 6). */}
+        {preview ? (
+          <div className="brut-card p-6 text-sm text-[#6B6B6B] leading-relaxed">
+            This is a projected preview, not a live test. Running it on your real
+            traffic to measure the actual lift is a paid feature.
+          </div>
+        ) : (
+          <ExperimentControls
+            experimentId={id}
+            currentStatus={exp.status as "draft" | "running" | "completed" | "stopped"}
+            hasResults={hasResults}
+            defaultResults={{
+              controlRate: exp.resultControlRate ?? undefined,
+              variantRate: exp.resultVariantRate ?? undefined,
+              confidence: exp.resultConfidence ?? undefined,
+              participants: exp.resultParticipants ?? undefined,
+            }}
+          />
+        )}
       </div>
     </div>
   );

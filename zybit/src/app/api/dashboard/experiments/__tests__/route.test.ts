@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const resolveZybitActor = vi.fn();
 const assertSiteInOrganization = vi.fn();
 const checkPlanLimit = vi.fn();
+const loadFreeExperimentGate = vi.fn();
+const claimFreeExperimentSlot = vi.fn();
 const insertReturning = vi.fn();
 const updateSet = vi.fn();
 
@@ -18,6 +20,11 @@ vi.mock('@/lib/auth/tenantScope', () => ({
 
 vi.mock('@/lib/billing/checkPlanLimit', () => ({
   checkPlanLimit: (...args: unknown[]) => checkPlanLimit(...args),
+}));
+
+vi.mock('@/lib/billing/freeExperimentGate', () => ({
+  loadFreeExperimentGate: (...args: unknown[]) => loadFreeExperimentGate(...args),
+  claimFreeExperimentSlot: (...args: unknown[]) => claimFreeExperimentSlot(...args),
 }));
 
 vi.mock('@/lib/phase1', () => ({
@@ -64,6 +71,8 @@ beforeEach(() => {
   resolveZybitActor.mockReset();
   assertSiteInOrganization.mockReset();
   checkPlanLimit.mockReset();
+  loadFreeExperimentGate.mockReset();
+  claimFreeExperimentSlot.mockReset();
   insertReturning.mockReset();
   updateSet.mockReset();
 
@@ -73,6 +82,8 @@ beforeEach(() => {
   });
   assertSiteInOrganization.mockResolvedValue({ ok: true });
   checkPlanLimit.mockResolvedValue({ allowed: true, current: 0, limit: 3, plan: 'starter' });
+  loadFreeExperimentGate.mockResolvedValue({ allowed: true, reason: 'free-slot-available' });
+  claimFreeExperimentSlot.mockResolvedValue(true);
   insertReturning.mockResolvedValue([{ id: 'exp-new', organizationId: ORG_ID, status: 'draft' }]);
 });
 
@@ -111,11 +122,13 @@ describe('POST /api/dashboard/experiments', () => {
   });
 
   it('returns 402 PLAN_LIMIT_EXCEEDED when startImmediately=true and concurrent-experiments cap is hit', async () => {
+    // Paid org (free gate passes through) hitting the concurrency cap.
+    loadFreeExperimentGate.mockResolvedValueOnce({ allowed: true, reason: 'paid' });
     checkPlanLimit.mockResolvedValueOnce({
       allowed: false,
       current: 3,
       limit: 3,
-      plan: 'starter',
+      plan: 'growth',
     });
 
     const res = await POST(makeRequest({ ...baseBody, startImmediately: true }));
@@ -134,6 +147,39 @@ describe('POST /api/dashboard/experiments', () => {
     expect(res.status).toBe(201);
     expect(checkPlanLimit).toHaveBeenCalledWith(ORG_ID, 'experiments');
     expect(insertReturning).toHaveBeenCalled();
+  });
+
+  it('returns 402 FREE_EXPERIMENT_USED when an unpaid org has used its free experiment', async () => {
+    loadFreeExperimentGate.mockResolvedValueOnce({ allowed: false, reason: 'free-slot-used' });
+
+    const res = await POST(makeRequest({ ...baseBody, startImmediately: true }));
+
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.error.code).toBe('FREE_EXPERIMENT_USED');
+    // Blocked before consuming the slot, checking the plan, or inserting.
+    expect(claimFreeExperimentSlot).not.toHaveBeenCalled();
+    expect(checkPlanLimit).not.toHaveBeenCalled();
+    expect(insertReturning).not.toHaveBeenCalled();
+  });
+
+  it('atomically claims the free slot before launching an unpaid org first experiment', async () => {
+    const res = await POST(makeRequest({ ...baseBody, startImmediately: true }));
+
+    expect(res.status).toBe(201);
+    expect(claimFreeExperimentSlot).toHaveBeenCalledWith(ORG_ID, expect.any(Date));
+    expect(insertReturning).toHaveBeenCalled();
+  });
+
+  it('returns 402 when a concurrent launch already claimed the free slot', async () => {
+    claimFreeExperimentSlot.mockResolvedValueOnce(false);
+
+    const res = await POST(makeRequest({ ...baseBody, startImmediately: true }));
+
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.error.code).toBe('FREE_EXPERIMENT_USED');
+    expect(insertReturning).not.toHaveBeenCalled();
   });
 
   it('returns the site-scope failure response without inserting when site is not in org', async () => {

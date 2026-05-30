@@ -10,6 +10,11 @@ import type { VariantModification, InsertPosition } from "@/lib/experiments/type
 import { targetPageIsSpaShell } from "@/lib/experiments/spaGuard";
 import { DEMO_ORG_ID } from "@/lib/demo/constants";
 import {
+  loadFreeExperimentGate,
+  claimFreeExperimentSlot,
+  type FreeExperimentGateResult,
+} from "@/lib/billing/freeExperimentGate";
+import {
   validateBriefShape,
   INSERT_POSITIONS,
   type ValidationError as BriefValidationError,
@@ -146,11 +151,17 @@ export type SpaWarning = {
   targetUrl: string;
 };
 
+// Free-experiment loop §6: an unpaid org gets exactly one experiment. Once it's
+// used, further launches return this so the UI can render the upgrade moment.
+export type FreeExperimentUsedWarning = {
+  type: "free_experiment_used";
+};
+
 export async function launchExperimentAction(
   findingId: string,
   acknowledgedOverlapIds: string[] = [],
   acknowledgeSpa = false,
-): Promise<OverlapWarning | SpaWarning | ValidationError | void> {
+): Promise<OverlapWarning | SpaWarning | FreeExperimentUsedWarning | ValidationError | void> {
   const auth = await getServerAuth();
   if (!auth.ok) redirect("/sign-in");
 
@@ -181,6 +192,18 @@ export async function launchExperimentAction(
     finding.experimentBrief.insertPosition ?? undefined,
   );
   if (briefValidation) return briefValidation;
+
+  // Free-experiment gate (§6): an unpaid org gets exactly one experiment.
+  // Checked before the overlap/SPA prompts so a blocked PM sees the upgrade
+  // moment rather than acknowledging warnings for a launch that can't proceed.
+  // The demo org is exempt — it stages several experiments by design. The
+  // atomic claim happens later (right before insert), once warnings clear.
+  const isDemoOrg = auth.orgId === DEMO_ORG_ID;
+  let freeGate: FreeExperimentGateResult | null = null;
+  if (!isDemoOrg) {
+    freeGate = await loadFreeExperimentGate(auth.orgId);
+    if (!freeGate.allowed) return { type: "free_experiment_used" };
+  }
 
   // Check for running experiments on the same site (overlap detection).
   // Policy: overlap-allowed with mandatory acknowledgment (DOCTRINE.md).
@@ -249,6 +272,14 @@ export async function launchExperimentAction(
   const brief = finding.experimentBrief;
   const now = new Date();
   const experimentId = randomUUID();
+
+  // Claim the one free-experiment slot now that all pre-launch warnings have
+  // cleared. Atomic + race-safe: if a concurrent launch already took it, bail
+  // to the upgrade moment rather than launch a second free experiment. Only
+  // unpaid orgs claim; paid orgs (reason 'paid') and the demo org skip this.
+  if (freeGate?.reason === "free-slot-available" && !(await claimFreeExperimentSlot(auth.orgId, now))) {
+    return { type: "free_experiment_used" };
+  }
 
   // Demo polish: when the audit fix-preview already produced a brand-matched,
   // vision-validated variant (`fixModifications`) for this finding, launch with
