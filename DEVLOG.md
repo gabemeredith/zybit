@@ -4,6 +4,71 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-30
+
+**Session:** Core-refocus — first pass: cut clearly-dead legacy UI surfaces
+**Branch:** `claude/zybit-core-refocus-32VPy`
+
+### Why
+
+Direction set with the operator: Zybit is too broad. Steer it back toward a
+thin core — *find a small HTML/CSS/SEO issue → propose a small change → A/B
+test it → measure* — for a customer's own site. This pass removes only the
+**clearly-dead / non-customer-facing UI surfaces**; the riskier structural
+cuts (behavioral-analytics subsystem, AI pipeline, billing) are deferred to
+a planned pass.
+
+### What shipped (deletions)
+
+Removed five route trees that no customer-facing navigation points into,
+plus one self-contained dead feature. Each was verified unreferenced before
+removal (no external imports, no test references, all inbound links were
+either among the deleted set or stale):
+
+- **`/dashboard`** — was a redirect-only stub (`redirect('/audit')`).
+- **`/phase1` + `/phase2` pages** — internal dev control panels (inline-style
+  simulators), only cross-linked to each other and from `/docs`. **The
+  `/api/phase1`, `/api/phase2` routes and `src/lib/phase1`, `src/lib/phase2`
+  engines are untouched** — those are the live rules/insights engine.
+- **`/docs`** — internal Phase-1 API reference page; nothing linked in.
+- **`/discovery` feature** — secondary lead form. Removed the page,
+  `/api/discovery/route.ts`, and `src/lib/discovery/schema.ts` together
+  (closed loop — referenced only by each other + the middleware allowlist).
+- Cleaned the now-dangling `/dashboard`, `/docs`, `/discovery`,
+  `/api/discovery` entries from `PUBLIC_PREFIXES` in `src/proxy.ts`.
+
+### Evidence gathered this session (for the next, riskier pass)
+
+- **Behavioral analytics is severable from the HTML/CSS/SEO core.** Traced
+  all 23 audit rules: **13 fire with zero live-user data** (7 structural
+  Layer-E SEO/a11y + 3 Layer-F copy critique = pure snapshot; 3 design rules
+  are hybrid and degrade gracefully to snapshot-only). The other **10
+  (9 pain + 1 flow) require live events** and are the "differentiated moat,"
+  not the lean core. Cutting PostHog/Segment/GA4 + phase1 events + rollups +
+  flow-graph would drop 23→13 rules without touching the SEO/HTML/CSS engine.
+  Candidate for the next pass — **not cut here** (operator asked to evaluate,
+  not remove).
+- Latent bug noted (out of scope): `src/components/dashboard/WelcomeState.tsx`
+  (live, used by `CockpitView`) still links to `/dashboard/connect` +
+  `/dashboard/settings`, which don't exist — should point at `/app/settings`.
+
+### Verify
+
+`npx tsc --noEmit` clean · `npm run lint` 0 errors (11 pre-existing warnings)
+· `npm run build` clean (route manifest confirms the five trees are gone) ·
+test suite **1342 passed / 2 skipped, 1 pre-existing env-dependent failure**
+(`visionInpaint.test.ts > proceeds when model returns a large JPEG` — hangs
+on a network upload path in envs with outbound network; documented in the
+2026-05-29 entry, no audit/vision code touched this session).
+
+### What's next
+
+- Plan the riskier cuts: behavioral-analytics subsystem (the clean 23→13
+  fault line above), then AI pipeline and billing if the refocus holds.
+- Fix the `WelcomeState` stale `/dashboard/*` links → `/app/*`.
+
+---
+
 ## 2026-05-29 (follow-up — deferred UI surfaces)
 
 **Session:** Finish the brutalist pass on the deferred interaction-form surfaces
