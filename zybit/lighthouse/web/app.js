@@ -187,14 +187,14 @@ async function pollRun(runId, runPane) {
     }
     if ((body.progress?.length ?? 0) !== lastProgressCount || body.status !== 'running') {
       lastProgressCount = body.progress?.length ?? 0;
-      renderRunState(runPane, body);
+      renderRunState(runPane, body, runId);
     }
     if (body.status !== 'running') return;
     await new Promise((r) => setTimeout(r, 400));
   }
 }
 
-function renderRunState(runPane, state) {
+function renderRunState(runPane, state, runId) {
   clear(runPane);
 
   // Left column — INTERNALS: progress + counts + sample JSON.
@@ -267,7 +267,7 @@ function renderRunState(runPane, state) {
         ]),
       );
     }
-    if (layerB) left.appendChild(buildLayerBPanel(layerB));
+    if (layerB) left.appendChild(buildLayerBPanel(layerB, runId));
     left.appendChild(
       el('details', { class: 'group', open: 'open' }, [
         el('summary', {}, `findings (${sample.findings.length} shown)`),
@@ -334,7 +334,7 @@ function proseBlock(title, prose) {
   ]);
 }
 
-function buildLayerBPanel(layerB) {
+function buildLayerBPanel(layerB, runId) {
   if (!layerB.enabled) {
     return el('details', { class: 'group layerb-panel' }, [
       el('summary', {}, 'Layer B — LLM prose (off this run)'),
@@ -417,7 +417,165 @@ function buildLayerBPanel(layerB) {
     ),
     agg,
     ...cards,
+    buildCalibrationPanel(layerB, runId),
   ]);
+}
+
+// --- Eval calibration: blind human labeling vs the LLM judge ---------------
+//
+// "Eval the evaluator." Before we trust the judge's win-rate, a human labels
+// each prose pair BLIND (we hide which side is template vs LLM and randomize
+// A/B order per card), then we run the judge over the same run and report the
+// human-vs-judge agreement %. Below ~80% the judge isn't calibrated and its
+// win-rate shouldn't be trusted yet. Consumes POST /lighthouse/api/eval.
+
+const CALIBRATION_AGREEMENT_THRESHOLD = 0.8;
+
+function buildCalibrationPanel(layerB, runId) {
+  // Only findings with BOTH a template and an LLM version can be compared —
+  // same filter the eval runner applies (f.prose.llm truthy).
+  const pairs = (layerB.findings || []).filter((f) => f.prose && f.prose.llm);
+
+  if (pairs.length === 0) {
+    return el('details', { class: 'group calib-panel' }, [
+      el('summary', {}, 'Eval calibration — judge vs human'),
+      el(
+        'p',
+        { class: 'empty' },
+        'No comparable pairs this run (every finding fell back to template, so there is no LLM prose to judge).',
+      ),
+    ]);
+  }
+
+  // human picks: findingId -> 'llm' | 'template' | 'tie'
+  const humanPicks = {};
+  const resultBox = el('div', { class: 'calib-result' });
+  const scoreBtn = el('button', { type: 'button', class: 'primary' }, 'score against judge');
+
+  const cards = pairs.map((f) => {
+    // Blind + randomize A/B per card so the human isn't cued by position or
+    // by knowing which slot is the machine.
+    const aIsLlm = Math.random() < 0.5;
+    const proseA = aIsLlm ? f.prose.llm : f.prose.template;
+    const proseB = aIsLlm ? f.prose.template : f.prose.llm;
+    const pickOf = (slot) => (slot === 'tie' ? 'tie' : slot === 'A' ? (aIsLlm ? 'llm' : 'template') : aIsLlm ? 'template' : 'llm');
+
+    const btns = ['A', 'tie', 'B'].map((slot) =>
+      el('button', { type: 'button', class: 'calib-pick', 'data-slot': slot },
+        slot === 'tie' ? 'tie' : `${slot} is better`),
+    );
+    const btnRow = el('div', { class: 'calib-pick-row' }, btns);
+    btns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        humanPicks[f.findingId] = pickOf(btn.getAttribute('data-slot'));
+        btns.forEach((b) => b.classList.remove('is-picked'));
+        btn.classList.add('is-picked');
+      });
+    });
+
+    return el('div', { class: 'calib-card', 'data-finding': f.findingId }, [
+      el('div', { class: 'calib-card-head' }, [
+        el('code', {}, `${f.ruleId}${f.pathRef ? ' · ' + f.pathRef : ''}`),
+      ]),
+      el('div', { class: 'calib-side' }, [
+        proseBlock('A', proseA),
+        proseBlock('B', proseB),
+      ]),
+      btnRow,
+    ]);
+  });
+
+  scoreBtn.addEventListener('click', async () => {
+    const labeled = Object.keys(humanPicks);
+    if (labeled.length === 0) {
+      clear(resultBox);
+      resultBox.appendChild(el('p', { class: 'error' }, 'Label at least one pair first.'));
+      return;
+    }
+    scoreBtn.setAttribute('disabled', 'disabled');
+    clear(resultBox);
+    resultBox.appendChild(el('p', { class: 'loading' }, 'judging…'));
+    try {
+      const r = await api('/lighthouse/api/eval', {
+        method: 'POST',
+        body: JSON.stringify({ runId }),
+      });
+      if (!r.ok) throw new Error((r.body && (r.body.detail || r.body.error)) || `http ${r.status}`);
+      renderCalibrationResult(resultBox, r.body, humanPicks);
+    } catch (err) {
+      clear(resultBox);
+      resultBox.appendChild(el('p', { class: 'error' }, `eval failed: ${err.message}`));
+    } finally {
+      scoreBtn.removeAttribute('disabled');
+    }
+  });
+
+  return el('details', { class: 'group calib-panel' }, [
+    el('summary', {}, `Eval calibration — judge vs human (${pairs.length} pair${pairs.length === 1 ? '' : 's'})`),
+    el(
+      'p',
+      { class: 'calib-instructions' },
+      'Pick the better write-up for a PM in each pair below (blind — A/B order is randomized and neither is labeled template/LLM). Then score against the judge to see if it agrees with you.',
+    ),
+    ...cards,
+    el('div', { class: 'calib-actions' }, [scoreBtn]),
+    resultBox,
+  ]);
+}
+
+function renderCalibrationResult(box, report, humanPicks) {
+  clear(box);
+  const judgeByFinding = {};
+  for (const pf of report.perFinding || []) judgeByFinding[pf.findingId] = pf.winner;
+
+  // Compare only pairs the human labeled AND the judge also judged.
+  const rows = [];
+  let agree = 0;
+  let compared = 0;
+  for (const [findingId, humanPick] of Object.entries(humanPicks)) {
+    const judgePick = judgeByFinding[findingId];
+    if (judgePick === undefined) continue;
+    compared += 1;
+    const match = humanPick === judgePick;
+    if (match) agree += 1;
+    rows.push({ findingId, humanPick, judgePick, match });
+  }
+
+  const agreement = compared ? agree / compared : 0;
+  const pass = compared > 0 && agreement >= CALIBRATION_AGREEMENT_THRESHOLD;
+
+  box.appendChild(
+    el('table', { class: 'counts' }, [
+      el('tr', {}, [el('th', {}, 'judge LLM win-rate'), el('td', {}, `${Math.round((report.llmWinRate || 0) * 100)}% (${report.llmWins}/${report.judged})`)]),
+      el('tr', {}, [el('th', {}, 'you labeled'), el('td', {}, String(Object.keys(humanPicks).length))]),
+      el('tr', {}, [el('th', {}, 'judge ↔ human agreement'), el('td', {}, `${agree}/${compared} (${Math.round(agreement * 100)}%)`)]),
+    ]),
+  );
+
+  box.appendChild(
+    el('p', { class: pass ? 'calib-verdict is-pass' : 'calib-verdict is-fail' },
+      compared === 0
+        ? 'No overlap between your labels and the judged pairs — label some of the pairs above and re-score.'
+        : pass
+          ? `✓ Judge agrees with you ${Math.round(agreement * 100)}% of the time (≥ ${Math.round(CALIBRATION_AGREEMENT_THRESHOLD * 100)}%). Its win-rate is trustworthy.`
+          : `✗ Judge agrees only ${Math.round(agreement * 100)}% of the time (< ${Math.round(CALIBRATION_AGREEMENT_THRESHOLD * 100)}%). Do NOT trust the win-rate yet — refine the judge prompt or label more pairs.`),
+  );
+
+  if (rows.length) {
+    box.appendChild(
+      el('table', { class: 'counts calib-breakdown' }, [
+        el('tr', {}, [el('th', {}, 'finding'), el('th', {}, 'you'), el('th', {}, 'judge'), el('th', {}, '')]),
+        ...rows.map((row) =>
+          el('tr', {}, [
+            el('td', {}, el('code', {}, row.findingId)),
+            el('td', {}, row.humanPick),
+            el('td', {}, row.judgePick),
+            el('td', {}, row.match ? '✓' : '✗'),
+          ]),
+        ),
+      ]),
+    );
+  }
 }
 
 function buildUrlAuditControls(runPane) {

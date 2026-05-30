@@ -325,3 +325,60 @@ details.layerb-panel {
 details.layerb-raw {
   margin-top: 0.4rem;
 }
+
+/* --- Eval calibration (judge vs human) panel --- */
+details.calib-panel {
+  border-left: 3px solid #2a8;
+  margin-top: 0.8rem;
+}
+.calib-instructions {
+  font-size: 0.82em;
+  opacity: 0.75;
+  margin: 0.5rem 0.6rem;
+}
+.calib-card {
+  border: 1px solid color-mix(in srgb, canvastext 14%, transparent);
+  border-radius: 0.4rem;
+  padding: 0.6rem;
+  margin: 0.6rem;
+}
+.calib-card-head {
+  margin-bottom: 0.4rem;
+}
+.calib-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+.calib-pick-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.calib-pick.is-picked {
+  border-color: transparent;
+  background: #2a8;
+  color: canvas;
+}
+.calib-actions {
+  margin: 0.8rem 0.6rem;
+}
+.calib-result {
+  margin: 0 0.6rem 0.6rem;
+}
+.calib-verdict {
+  font-size: 0.9em;
+  font-weight: 600;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.35rem;
+  margin: 0.4rem 0;
+}
+.calib-verdict.is-pass {
+  background: color-mix(in srgb, #2a8 22%, canvas);
+}
+.calib-verdict.is-fail {
+  background: color-mix(in srgb, #c44 22%, canvas);
+}
+table.calib-breakdown {
+  font-size: 0.85em;
+}
