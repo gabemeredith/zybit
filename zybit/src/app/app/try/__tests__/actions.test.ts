@@ -16,6 +16,7 @@ const mockGetServerAuth = vi.hoisted(() => vi.fn());
 const mockValidatePublicUrl = vi.hoisted(() => vi.fn());
 const mockRunUrlAudit = vi.hoisted(() => vi.fn());
 const mockGenerateFixPreviews = vi.hoisted(() => vi.fn());
+const mockRenderScreenshot = vi.hoisted(() => vi.fn());
 const mockLimit = vi.hoisted(() => vi.fn());
 const mockRedirect = vi.hoisted(() =>
   vi.fn((p: string) => {
@@ -27,6 +28,7 @@ vi.mock("@/lib/auth/serverAuth", () => ({ getServerAuth: mockGetServerAuth }));
 vi.mock("next/navigation", () => ({ redirect: mockRedirect }));
 vi.mock("@/lib/audit/urlValidator", () => ({ validatePublicUrl: mockValidatePublicUrl }));
 vi.mock("@/lib/audit/fixPreview", () => ({ generateFixPreviews: mockGenerateFixPreviews }));
+vi.mock("@/lib/phase2/findings/screenshot", () => ({ renderFindingScreenshot: mockRenderScreenshot }));
 vi.mock("../../../../../lighthouse/lib/runner/runUrlAudit", () => ({
   runUrlAudit: mockRunUrlAudit,
 }));
@@ -78,6 +80,11 @@ beforeEach(() => {
       reason: "ok",
     },
   ]);
+  mockRenderScreenshot.mockResolvedValue({
+    screenshotUrl: "https://blob/annotated.png",
+    annotationsCount: 1,
+    capturedAt: new Date(0),
+  });
 });
 
 describe("generateFreeExperimentAction", () => {
@@ -98,6 +105,9 @@ describe("generateFreeExperimentAction", () => {
     expect(res.beforeUrl).toBe("https://blob/before.png");
     expect(res.afterUrl).toBe("https://blob/after.png");
     expect(res.fixTier).toBe(1);
+    // Before/after rendered ⇒ the annotated-screenshot fallback is skipped.
+    expect(res.screenshotUrl).toBeNull();
+    expect(mockRenderScreenshot).not.toHaveBeenCalled();
     // 5–12% of $40k → $2k–$4.8k
     expect(res.projection.revenueRange).toEqual({ min: 2000, max: 4800 });
   });
@@ -128,12 +138,15 @@ describe("generateFreeExperimentAction", () => {
     expect(res).toEqual({ status: "no_finding", domain: "acme.com" });
   });
 
-  it("still returns ok (no visual) when the fix preview fails", async () => {
+  it("falls back to the annotated screenshot when the fix preview fails", async () => {
     mockGenerateFixPreviews.mockRejectedValueOnce(new Error("browserless down"));
     const res = await generateFreeExperimentAction("acme.com", NUMBERS);
     if (res.status !== "ok") throw new Error("expected ok");
     expect(res.beforeUrl).toBeNull();
     expect(res.afterUrl).toBeNull();
+    // Guaranteed visual: the annotated page screenshot.
+    expect(mockRenderScreenshot).toHaveBeenCalledWith("f1", "lighthouse_org_acme");
+    expect(res.screenshotUrl).toBe("https://blob/annotated.png");
   });
 
   it("returns 'error' when the audit throws", async () => {

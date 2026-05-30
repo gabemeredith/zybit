@@ -64,7 +64,7 @@ export default function TryExperimentForm() {
 
   // ---- The rich preview (the payoff) -------------------------------------
   if (result?.status === "ok") {
-    const { finding, beforeUrl, afterUrl, fixRationale, projection, domain } = result;
+    const { finding, beforeUrl, afterUrl, fixRationale, screenshotUrl, projection, domain } = result;
     return (
       <div className="space-y-5">
         <div className="brut-card p-6">
@@ -86,8 +86,10 @@ export default function TryExperimentForm() {
           impactEstimate={finding.impactEstimate}
         />
 
-        {/* The hero — the before/after fix rendered on the PM's own page. */}
-        {beforeUrl && (
+        {/* The hero — the before/after fix rendered on the PM's own page. When
+            the fix preview couldn't render a visible after, fall back to the
+            annotated screenshot so there's always a picture of their site. */}
+        {beforeUrl ? (
           <div className="brut-card p-6">
             <div className="brut-label mb-3">The fix, rendered on your page</div>
             <BeforeAfterSlider
@@ -98,7 +100,17 @@ export default function TryExperimentForm() {
               alt={`${domain} hero`}
             />
           </div>
-        )}
+        ) : screenshotUrl ? (
+          <div className="brut-card p-6">
+            <div className="brut-label mb-3">Your page — the problem highlighted</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={screenshotUrl}
+              alt={`${domain} — ${finding.title}`}
+              className="block w-full h-auto border-[1.5px] border-[#111]"
+            />
+          </div>
+        ) : null}
 
         {/* Projected impact — honestly labelled, from the PM's own numbers. */}
         <div className="brut-card p-6">

@@ -25,6 +25,7 @@ import { getDb } from "@/lib/db/client";
 import { zybitFindings } from "@/lib/db/schema";
 import { validatePublicUrl } from "@/lib/audit/urlValidator";
 import { generateFixPreviews } from "@/lib/audit/fixPreview";
+import { renderFindingScreenshot } from "@/lib/phase2/findings/screenshot";
 import type {
   AuditFindingEvidence,
   AuditFindingPrescription,
@@ -65,6 +66,12 @@ export type GenerateFreeExperimentResult =
       afterUrl: string | null;
       fixTier: number | null;
       fixRationale: string | null;
+      /**
+       * Guaranteed-visual fallback: an annotated screenshot of the page with the
+       * problem highlighted. Populated only when the before/after fix preview
+       * didn't render, so the surface always shows *something* visual.
+       */
+      screenshotUrl: string | null;
       projection: ProjectedRange;
     }
   // Audit ran but the page is clean / structurally sound — nothing to show.
@@ -189,6 +196,24 @@ export async function generateFreeExperimentAction(
     });
   }
 
+  // Guaranteed-visual fallback. The before/after only renders for findings whose
+  // fix is a *visible* mutation; subtler fixes (e.g. button-emphasis restyles) or
+  // a render the quality gate rejects leave it null. Rather than show a wall of
+  // text — on a surface where the visual IS the pitch — render the annotated page
+  // screenshot (the page with the problem highlighted) so there's always a picture
+  // of their site. Skipped when the before/after already gave us a hero. Fail-soft.
+  let screenshotUrl: string | null = null;
+  if (!beforeUrl) {
+    try {
+      const shot = await renderFindingScreenshot(top.id, organizationId);
+      screenshotUrl = shot?.screenshotUrl ?? null;
+    } catch (err) {
+      console.error("[app/try] renderFindingScreenshot threw", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return {
     status: "ok",
     domain,
@@ -207,6 +232,7 @@ export async function generateFreeExperimentAction(
     afterUrl,
     fixTier,
     fixRationale,
+    screenshotUrl,
     projection: buildProjection(numbers.monthlyRevenue),
   };
 }
