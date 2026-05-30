@@ -587,7 +587,14 @@ export async function runLayerBTraced(
       };
     }
     return { output: parsed, telemetry: common };
-  } catch {
+  } catch (err) {
+    // Log the actual failure — a swallowed network/API error is undebuggable in
+    // production. The caller still degrades to template (fail-soft); this is
+    // diagnostics, not control flow.
+    console.error('[layer-b] LLM call failed', {
+      ruleId: input.ruleId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return {
       output: null,
       telemetry: { ...base, outcome: 'http-error', latencyMs: now() - startedAt },
@@ -618,8 +625,7 @@ export async function runLayerB(
       ruleId: input.ruleId,
       failures: telemetry.fabricationFailures,
     });
-  } else if (telemetry.outcome === 'http-error') {
-    console.error('[layer-b] call failed', { ruleId: input.ruleId });
   }
+  // http-error is already logged with the underlying error in runLayerBTraced.
   return output;
 }

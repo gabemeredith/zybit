@@ -27,8 +27,11 @@ const VOICE_CAP = 6;
 const MIN_LEN = 2;
 const MAX_LEN = 120;
 
-function clean(s: string | null | undefined): string | null {
-  if (!s) return null;
+function clean(s: unknown): string | null {
+  // `unknown` + strict typeof guard: the snapshot metadata is typed as strings,
+  // but if a parse ever yields a non-string (number, object) `.replace` would
+  // throw and take down the whole brand-DNA derivation. Guard, don't trust.
+  if (typeof s !== 'string') return null;
   const t = s.replace(/\s+/g, ' ').trim();
   if (t.length < MIN_LEN || t.length > MAX_LEN) return null;
   return t;

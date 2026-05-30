@@ -64,4 +64,20 @@ describe('deriveBrandProfile', () => {
     expect(deriveBrandProfile([])).toBeNull();
     expect(deriveBrandProfile([snap({ ctas: [], headings: [] })])).toBeNull();
   });
+
+  it('does not crash when a typed-string field is actually a non-string at runtime', () => {
+    // Defensive: the snapshot types say these are strings, but a bad parse could
+    // yield a number/object. The `clean` typeof guard must drop them, not throw.
+    const profile = deriveBrandProfile([
+      snap({
+        ctas: [{ text: 42 }, { text: { nope: true } }, { text: 'Open an account' }],
+        visualSignals: { heroBlock: { headline: 7, subheadline: 'Switch in minutes' } },
+        meta: { title: null, ogDescription: 'Real description' },
+        headings: [{ level: 1, text: ['array', 'not', 'string'] }],
+      }),
+    ]);
+    expect(profile?.ctaVocabulary).toEqual(['Open an account']);
+    expect(profile?.voiceSamples).toContain('Switch in minutes');
+    expect(profile?.voiceSamples).toContain('Real description');
+  });
 });
