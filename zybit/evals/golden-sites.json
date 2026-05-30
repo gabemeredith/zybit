@@ -1,0 +1,15 @@
+{
+  "description": "Golden set for the Layer B prose eval (PRD docs/sprints/llm-refactor-prd.md §1A). Real, well-built sites across categories — NOT deliberately-broken fixtures. The eval audits each twice (template vs LLM prose) and scores the pair with the judge. Keep this ~10 sites and varied so the win-rate generalizes.",
+  "sites": [
+    { "url": "https://commitmint.app", "category": "saas", "note": "seed-demo.ts baseline" },
+    { "url": "https://stripe.com", "category": "fintech", "note": "polished, JS-heavy — expect thin findings + brand-rich voice" },
+    { "url": "https://linear.app", "category": "devtools", "note": "JS-rendered shell — thin brand DNA from HTTP snapshot" },
+    { "url": "https://vercel.com", "category": "devtools" },
+    { "url": "https://www.notion.so", "category": "productivity" },
+    { "url": "https://www.hubspot.com", "category": "marketing-saas" },
+    { "url": "https://news.ycombinator.com", "category": "community", "note": "minimal server-rendered HTML — strong contrast to the polished sites" },
+    { "url": "https://www.allbirds.com", "category": "ecommerce" },
+    { "url": "https://basecamp.com", "category": "saas", "note": "opinionated marketing copy — good brand-voice test" },
+    { "url": "https://www.berkshirehathaway.com", "category": "plain", "note": "deliberately plain/old site — many structural findings, contrast case" }
+  ]
+}

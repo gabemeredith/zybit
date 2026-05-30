@@ -55,3 +55,7 @@ PRD.full.md
 !/lighthouse/sites/*/patches/
 !/lighthouse/sites/README.md
 .env.local
+
+# Layer B eval reports — run-specific, timestamped artifacts (the golden set
+# itself, evals/golden-sites.json, IS committed).
+/evals/out/
