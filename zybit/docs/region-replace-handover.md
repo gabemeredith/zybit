@@ -95,7 +95,7 @@ All paths under `zybit/src/`. Verified against the tree on
 | # | File | Change |
 |---|------|--------|
 | 1 | `lib/experiments/types.ts` | Add `region-replace` to the `VariantModification` union (line ~8-15). Add a `case 'region-replace'` to `validateModifications` (line ~44): require non-empty `selector`, non-empty `html`, and `mode ∈ {'inner','outer'}`. Mirror the `element-insert` empty-html rejection (reject html that sanitizes to empty — see §4). |
-| 2 | `lib/experiments/htmlModifier.ts` | Add a `case 'region-replace'` to the switch (line ~33). Resolve anchor → `sanitizeInsertHtml(mod.html)` → if `mode==='inner'` use `anchor.set_content(safeHtml)`, if `'outer'` use `anchor.replaceWith(safeHtml)` (verify `node-html-parser` re-parses the string arg as HTML — it does; that's the documented behavior `sanitizeInsertHtml`'s comment relies on). Keep the existing try/catch fail-open. **Do not** add the fail-loud here — proxy stays fail-open (see §2 Deliverable B). |
+| 2 | `lib/experiments/htmlModifier.ts` | Add a `case 'region-replace'` to the switch (line ~33). Resolve anchor → `sanitizeInsertHtml(mod.html)` → if `mode==='inner'` use `anchor.set_content(safeHtml)`, if `'outer'` use `const fragment = parse(safeHtml); anchor.replaceWith(...fragment.childNodes)`. **Important:** `node-html-parser`'s `replaceWith` inserts a raw string as a `TextNode` (escaping tags), not as parsed HTML — you must parse the sanitized string first and spread its child nodes. Keep the existing try/catch fail-open. **Do not** add the fail-loud here — proxy stays fail-open (see §2 Deliverable B). |
 | 3 | `lib/experiments/validateBrief.ts` | Add `"replace"` to `BriefChangeType` (line 18). Add a `changeType === "replace"` branch to `validateBriefShape` mirroring the `"insert"` branch (require selector + non-empty html + non-empty-after-sanitize). Add a `mode` param or default `'inner'`. |
 | 4 | `lib/experiments/describeModification.ts` | Add a PM-readable sentence for `region-replace` (e.g. *"Replace the contents of `<selector>` with a new block"* for inner, *"Replace `<selector>` entirely"* for outer). Check `describeModification.test.ts` for the exact shape expected. |
 | 5 | `components/app/ExperimentBuilderForm.tsx` | Add a "Replace a section" change type to the authoring UI. It needs: the selector input (reuse the existing selector field + validation badge), a **large HTML textarea** (the `element-insert` UI already has one — reuse it), and an inner/outer toggle (radio: "Replace contents" / "Replace whole element"). Default to inner. |
@@ -134,11 +134,18 @@ The existing machinery to reuse:
 
 What to add:
 1. In `actions.ts` launch path (#6 above), before flipping the experiment to
-   `running`, fetch the latest snapshot HTML for the target path and run each
-   mod's selector through `parse(html).querySelector(selector)`. If any
-   `region-replace` selector returns null, **return a PM-readable validation
-   error and refuse to launch** (do not 500). Reuse the snapshot-fetch the
-   launch-time SPA guard (`isSpaHtml`) already does — the HTML is in hand.
+   `running`, fetch the latest snapshot HTML for the target path and resolve
+   each mod's selector. Wrap in try/catch — `node-html-parser`'s `querySelector`
+   throws on a malformed CSS selector (e.g. `[unclosed`), so a syntax error
+   must return a PM-readable "invalid selector" error, not a 500:
+   ```ts
+   let el;
+   try { el = parse(html).querySelector(selector); }
+   catch { return { error: 'Selector syntax is invalid.' }; }
+   if (!el) return { error: `Selector "${selector}" doesn't match anything on the page.` };
+   ```
+   Reuse the snapshot-fetch the launch-time SPA guard (`isSpaHtml`) already
+   does — the HTML is in hand.
 2. Fail-open on the *fetch* itself (network error fetching the snapshot →
    allow launch, same as the SPA guard's fail-open). The guard is a
    best-effort safety net, not a hard gate that a flaky network can wedge.
