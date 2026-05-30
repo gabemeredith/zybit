@@ -154,6 +154,65 @@ on a network upload path in envs with outbound network; documented in the
 
 ---
 
+## 2026-05-30
+
+**Session:** PR #107 (Layer B) — provider migration, eval calibration panel, review fixes
+**Author:** —
+**Branch:** `feat/llm-refactor` (worktree `zybit-llm-refactor/`)
+
+### What shipped
+
+- **Provider migration — Layer B generator → shared OpenAI client.** `callLayerB`
+  was the last AI call still hitting Gemini REST directly; it now wraps
+  `callOpenAIChat` (reasoning model `gpt-5.4`, Bearer auth, `response_format:
+  json_object`). No-key gate reads `OPENAI_API_KEY` via `resolveOpenAIKey`; the
+  Gemini endpoint + decode-time `responseSchema` are gone (`parseLayerBResponse`
+  is the shape guard, matching every other migrated caller). Temperature no
+  longer sent (gpt-5.x rejects non-default temps). `LAYER_B_MODEL` env override
+  preserved.
+- **Self-preference note (eval judge).** The judge already prefers OpenAI with a
+  Gemini fallback; with the generator now on OpenAI too, the default judge is
+  same-family. Updated `judge.ts` comments to flag the self-preference risk and
+  point to the cross-family Gemini fallback + the both-orders protocol as the
+  guards. (No behavior change — set a `GEMINI_API_KEY` for the rigorous
+  cross-family eval.)
+- **Eval calibration panel (Lighthouse GUI).** New sub-panel in the Layer B view:
+  for each finding with both template + LLM prose, the PM labels the better
+  write-up BLIND (A/B randomized per card, neither slot labeled), then "score
+  against judge" POSTs `/lighthouse/api/eval`, runs the pairwise judge, and
+  reports judge↔human agreement %. Below 80% → "do NOT trust the win-rate yet"
+  ("eval the evaluator"). Per-finding ✓/✗ breakdown. Pure client-side
+  (`app.js` + `styles.css`); `runId` threaded through `renderRunState`; match by
+  `findingId`.
+- **Gemini Code Assist review fixes.** `runLayerBTraced` catch now logs the
+  underlying error (`[layer-b] LLM call failed { ruleId, error }`); `brandProfile`
+  `clean()` is `unknown` + strict `typeof` guard so a non-string from a bad parse
+  can't crash brand-DNA derivation (+ defensive unit test).
+
+### Verify
+
+`npm run verify` green after each step (tsc + lint 0 errors + build + 1367
+tests). **Live end-to-end via Lighthouse GUI (Playwright):** acmebank scenario,
+"compare LLM vs template" → Layer B panel `model gpt-5.4`, `2/2 LLM, 0 fallback`
+(real grounded prose); calibration panel rendered 2 blind pairs, judge ran live
+→ `judge↔human agreement 2/2 (100%)`, verdict "✓ trustworthy", 0 console errors.
+Confirms the OpenAI generator + judge round-trips work against the real API.
+
+### What's next
+
+- **Layer A/B rollout to more rules (started, not finished).** Only
+  `return-visit-thrash` carries a hand-written `factsJson`; the rest rely on the
+  generic `factsFromEvidence` derivation (compare-mode). Rolling out = give the
+  next high-value rules rule-specific `factsJson` for richer grounding. Scope
+  (which rules / how many) is an open decision — PRD NG2 says Phase 1 is a small
+  pilot, not all 23.
+- Eval harness golden set (`evals/golden-sites.json`) + `scripts/eval-prose.ts`
+  batch runner (PRD §1A) still open.
+- Two untracked files on the branch predate this session:
+  `docs/sprints/llm-refactor-prd.md`, `scripts/try-layer-b.ts`.
+
+---
+
 ## 2026-05-29 (follow-up — deferred UI surfaces)
 
 **Session:** Finish the brutalist pass on the deferred interaction-form surfaces
