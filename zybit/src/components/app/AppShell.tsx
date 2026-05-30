@@ -54,6 +54,14 @@ function FlowIcon() {
   );
 }
 
+function TryIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M9 1L2 9h5l-1 6 7-8H8l1-6z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -68,6 +76,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Findings", href: "/app/findings", icon: <FindingsIcon /> },
   { label: "Flow", href: "/app/flow", icon: <FlowIcon /> },
   { label: "Experiments", href: "/app/experiments", icon: <ExperimentsIcon /> },
+  { label: "Try free", href: "/app/try", icon: <TryIcon /> },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
