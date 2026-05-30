@@ -46,8 +46,8 @@ function okFetcher(text: string, tokens = { p: 100, r: 200 }): LayerBFetcher {
     ok: true,
     status: 200,
     json: async () => ({
-      candidates: [{ content: { parts: [{ text }] } }],
-      usageMetadata: { promptTokenCount: tokens.p, candidatesTokenCount: tokens.r },
+      choices: [{ message: { content: text } }],
+      usage: { prompt_tokens: tokens.p, completion_tokens: tokens.r },
     }),
   });
 }

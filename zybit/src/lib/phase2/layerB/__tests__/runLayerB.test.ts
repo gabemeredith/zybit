@@ -3,6 +3,7 @@ import {
   buildLayerBPrompt,
   collectFactNumbers,
   extractClaims,
+  LAYER_B_MODEL_NAME,
   parseLayerBResponse,
   runLayerB,
   verifyOutputAgainstFacts,
@@ -312,8 +313,8 @@ describe('runLayerB', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        candidates: [{ content: { parts: [{ text: VALID_RESPONSE }] } }],
-        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 200 },
+        choices: [{ message: { content: VALID_RESPONSE } }],
+        usage: { prompt_tokens: 100, completion_tokens: 200 },
       }),
     });
     const result = await runLayerB(BASE_INPUT, { apiKey: 'test-key', fetcher });
@@ -321,7 +322,7 @@ describe('runLayerB', () => {
     expect(result?.summary).toMatch(/^234 sessions/);
   });
 
-  it('sends responseSchema and temperature 0.2 in the request body', async () => {
+  it('sends the Layer B model + json_object format in the request body', async () => {
     let capturedBody: unknown = null;
     const fetcher: LayerBFetcher = async (_url, init) => {
       capturedBody = JSON.parse(init.body);
@@ -329,23 +330,20 @@ describe('runLayerB', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          candidates: [{ content: { parts: [{ text: VALID_RESPONSE }] } }],
+          choices: [{ message: { content: VALID_RESPONSE } }],
         }),
       };
     };
     await runLayerB(BASE_INPUT, { apiKey: 'test-key', fetcher });
     const body = capturedBody as {
-      generationConfig: {
-        temperature: number;
-        responseSchema: { required: string[] };
-      };
+      model: string;
+      response_format?: { type: string };
+      // Reasoning model rejects non-default temps, so we must NOT send one.
+      temperature?: number;
     };
-    expect(body.generationConfig.temperature).toBe(0.2);
-    expect(body.generationConfig.responseSchema.required).toEqual([
-      'summary',
-      'recommendation',
-      'prescription',
-    ]);
+    expect(body.model).toBe(LAYER_B_MODEL_NAME);
+    expect(body.response_format?.type).toBe('json_object');
+    expect(body.temperature).toBeUndefined();
   });
 
   it('falls back to null when the LLM invents a number', async () => {
@@ -362,7 +360,7 @@ describe('runLayerB', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        candidates: [{ content: { parts: [{ text: fabricated }] } }],
+        choices: [{ message: { content: fabricated } }],
       }),
     });
     const result = await runLayerB(BASE_INPUT, { apiKey: 'test-key', fetcher });
@@ -392,7 +390,7 @@ describe('runLayerB', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        candidates: [{ content: { parts: [{ text: 'lol not json' }] } }],
+        choices: [{ message: { content: 'lol not json' } }],
       }),
     });
     const result = await runLayerB(BASE_INPUT, { apiKey: 'test-key', fetcher });

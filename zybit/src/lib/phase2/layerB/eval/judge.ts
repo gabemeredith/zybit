@@ -7,11 +7,14 @@
  * reliable at "A or B?" than at calibrated scores.
  *
  * Design choices that matter for trust:
- *   - The judge is a DIFFERENT model family from the generator (judge =
- *     OpenAI reasoning model; generator = Gemini), so it isn't grading its own
- *     house style (self-preference bias).
- *   - The caller runs each pair in BOTH orders and only counts a win when the
- *     judge agrees both ways — that cancels position bias. See runEval.
+ *   - Self-preference bias: since the Layer B generator now also routes through
+ *     OpenAI (the Gemini → OpenAI swap, 2026-05), the default OpenAI judge is
+ *     same-family as the generator and could flatter LLM prose over the
+ *     deterministic template, inflating the win-rate. Two guards: (1) the
+ *     `geminiApiKey` fallback below is a genuinely cross-family judge when a
+ *     Gemini key is set — prefer it for a rigorous eval; (2) the caller runs
+ *     each pair in BOTH orders and only counts a win when the judge agrees both
+ *     ways, which cancels position bias regardless of family. See runEval.
  *   - Numeric grounding is already enforced upstream (verifyOutputAgainstFacts),
  *     so the judge scores QUALITY: actionability, specificity, clarity/voice —
  *     not whether the numbers are real.
@@ -93,9 +96,11 @@ export function parseJudgeVerdict(raw: string): JudgeVerdict | null {
 
 export type JudgeProvider = 'openai' | 'gemini' | 'none';
 
-/** Which judge will run given the available keys. `gemini` is same-family as
- *  the generator → directional only (self-preference risk); `openai` is the
- *  rigorous cross-family judge. */
+/** Which judge will run given the available keys. We prefer `openai` when a key
+ *  is present for availability + a strong reasoning judge — but note that since
+ *  the generator is now OpenAI too, `openai` is SAME-family (self-preference
+ *  risk, mitigated by the both-orders protocol) and `gemini` is the genuinely
+ *  cross-family judge. Set a Gemini key to get the more rigorous comparison. */
 export function judgeProvider(opts?: JudgeOpts): JudgeProvider {
   if (resolveOpenAIKey(opts?.apiKey)) return 'openai';
   if ((opts?.geminiApiKey ?? process.env.GEMINI_API_KEY) ?? null) return 'gemini';

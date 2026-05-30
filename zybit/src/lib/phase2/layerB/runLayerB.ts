@@ -20,15 +20,21 @@
  *   - Output is strict JSON; anything that fails validation returns `null`.
  *   - On `null` the caller falls back to the rule's existing templating
  *     function. The pilot never visibly degrades.
- *   - Gemini model + REST call pattern mirrors `auditFixAdvisor.ts`
- *     (`gemini-3.5-flash`, `x-goog-api-key` header, `responseMimeType:
- *     'application/json'`). Network/parse failures are caught and return
+ *   - Routes through the shared OpenAI client (`src/lib/ai/openai.ts`), like
+ *     `auditFixAdvisor.ts` — reasoning model, Bearer auth, `response_format:
+ *     json_object`. Network/parse failures are caught and return
  *     `null` — never surface to the audit pipeline.
  *
  * Cost is bounded by the caller, not this module: the orchestrator restricts
  * Layer B to the top 4 findings per audit by `priorityScore`.
  */
 
+import {
+  callOpenAIChat,
+  resolveOpenAIKey,
+  OPENAI_REASONING_MODEL,
+  type OpenAIFetcher,
+} from '@/lib/ai/openai';
 import type { PageType } from '@/lib/phase2/snapshots/types';
 import type { DesignTokens } from '@/lib/phase2/snapshots/tokenExtractor';
 import type { AuditFindingCategory } from '@/lib/phase2/rules/types';
@@ -76,11 +82,12 @@ export interface LayerBOutput {
   prescription: LayerBPrescription;
 }
 
-// `gemini-3.5-flash` 404s on the current key (it isn't a served model);
-// `gemini-2.5-flash` is the newest flash tier the key actually supports.
-// Overridable via env so we can switch models without a code change.
-export const LAYER_B_MODEL_NAME = process.env.LAYER_B_MODEL ?? 'gemini-2.5-flash';
-const LAYER_B_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${LAYER_B_MODEL_NAME}:generateContent`;
+// Layer B writes PM-facing prose, so it rides the reasoning tier (same model
+// the variant advisor + audit-fix advisor use) for quality. Routes through the
+// shared OpenAI client (`src/lib/ai/openai.ts`) like every other AI call since
+// the Gemini → OpenAI swap (2026-05). Overridable via env so we can switch
+// models without a code change.
+export const LAYER_B_MODEL_NAME = process.env.LAYER_B_MODEL ?? OPENAI_REASONING_MODEL;
 
 // Per-field length caps. The LLM is told these in the prompt; we re-clamp
 // on parse so a runaway response can't poison the persisted finding. Kept
@@ -91,31 +98,18 @@ const RECOMMENDATION_PARA_MAX = 360;
 const RECOMMENDATION_COUNT_MAX = 2;
 const PRESCRIPTION_FIELD_MAX = 320;
 
-// Low temperature — Layer B writes prose grounded in FACTS, not creative
-// design work. Anything above ~0.3 widens the hallucination surface.
+// Determinism intent: Layer B writes prose grounded in FACTS, not creative
+// design work, so we want the model as deterministic as it allows. The gpt-5.x
+// reasoning family rejects non-default temperatures (see `openai.ts`), so we do
+// NOT send one — this constant records the intent and is surfaced in telemetry,
+// but the real determinism guard is `verifyOutputAgainstFacts`, not sampling.
 const LAYER_B_TEMPERATURE = 0.2;
 
-// JSON Schema-shaped responseSchema passed in generationConfig — Gemini
-// enforces the shape at decode time, eliminating a class of "wrong-shape
-// JSON" failures we'd otherwise catch in parseLayerBResponse.
-const LAYER_B_RESPONSE_SCHEMA = {
-  type: 'object',
-  properties: {
-    summary: { type: 'string' },
-    recommendation: { type: 'array', items: { type: 'string' } },
-    prescription: {
-      type: 'object',
-      properties: {
-        whyItMatters: { type: 'string' },
-        whatToChange: { type: 'string' },
-        whyItWorks: { type: 'string' },
-        experimentVariantDescription: { type: 'string' },
-      },
-      required: ['whatToChange', 'whyItWorks', 'experimentVariantDescription'],
-    },
-  },
-  required: ['summary', 'recommendation', 'prescription'],
-} as const;
+// Shape enforcement is `parseLayerBResponse` (strict parse + per-field clamps),
+// not a decode-time schema: the OpenAI Chat API's `response_format:
+// json_object` guarantees valid JSON but not a particular shape, so — like
+// every other migrated caller (captureCopyCritique, auditFixAdvisor) — we lean
+// on the strict parser. A wrong-shape response simply falls back to template.
 
 // ---------------------------------------------------------------------------
 // Prompt
@@ -443,7 +437,9 @@ export function verifyOutputAgainstFacts(
 }
 
 // ---------------------------------------------------------------------------
-// Gemini REST client — text only (no vision channel)
+// LLM client — text only (no vision channel). Routes through the shared
+// OpenAI client; `LayerBFetcher` is an alias for `OpenAIFetcher` so existing
+// callers/tests that inject a fetcher keep working.
 // ---------------------------------------------------------------------------
 
 export interface LayerBCallResult {
@@ -452,47 +448,24 @@ export interface LayerBCallResult {
   responseTokens: number | null;
 }
 
-export type LayerBFetcher = (
-  url: string,
-  init: { method: 'POST'; headers: Record<string, string>; body: string },
-) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
-
-const defaultFetcher: LayerBFetcher = (url, init) =>
-  fetch(url, init) as unknown as ReturnType<LayerBFetcher>;
+export type LayerBFetcher = OpenAIFetcher;
 
 export async function callLayerB(args: {
   prompt: string;
   apiKey: string;
   fetcher?: LayerBFetcher;
 }): Promise<LayerBCallResult> {
-  const fetcher = args.fetcher ?? defaultFetcher;
-  const response = await fetcher(LAYER_B_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-goog-api-key': args.apiKey,
-    },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: args.prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: LAYER_B_RESPONSE_SCHEMA,
-        temperature: LAYER_B_TEMPERATURE,
-      },
-    }),
+  // Thin Layer-B-flavored wrapper over the shared client: pins the Layer B
+  // model and JSON mode. Temperature is intentionally omitted (reasoning model
+  // rejects non-default temps). Throws on network / non-2xx — the caller
+  // (`runLayerBTraced`) owns the fail-soft → template policy.
+  return callOpenAIChat({
+    prompt: args.prompt,
+    apiKey: args.apiKey,
+    model: LAYER_B_MODEL_NAME,
+    json: true,
+    ...(args.fetcher ? { fetcher: args.fetcher } : {}),
   });
-  if (!response.ok) {
-    throw new Error(`Layer B Gemini request failed: HTTP ${response.status}`);
-  }
-  const body = (await response.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
-  };
-  return {
-    text: body.candidates?.[0]?.content?.parts?.[0]?.text ?? '',
-    promptTokens: body.usageMetadata?.promptTokenCount ?? null,
-    responseTokens: body.usageMetadata?.candidatesTokenCount ?? null,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -509,9 +482,9 @@ export type LayerBOutcome =
   | 'parse-fail'
   | 'fabrication-reject';
 
-// Placeholder pricing for `gemini-3.5-flash`, USD per 1M tokens. Confirm
-// against the live rate card before trusting absolute cost numbers — the
-// ratio (output ≫ input) is what matters for relative comparisons either way.
+// Placeholder pricing for the reasoning model (`gpt-5.4`), USD per 1M tokens.
+// Confirm against the live rate card before trusting absolute cost numbers —
+// the ratio (output ≫ input) is what matters for relative comparisons either way.
 export const LAYER_B_PRICE_PER_1M_USD = { input: 0.3, output: 2.5 } as const;
 
 export function estimateLayerBCostUsd(
@@ -528,7 +501,7 @@ export interface LayerBCallTelemetry {
   outcome: LayerBOutcome;
   model: string;
   temperature: number;
-  /** Wall-clock ms around the Gemini call. 0 when no call was made. */
+  /** Wall-clock ms around the LLM call. 0 when no call was made. */
   latencyMs: number;
   /** Full prompt sent — kept for reproducibility/debugging in the dev tool. */
   prompt: string;
@@ -575,7 +548,7 @@ export async function runLayerBTraced(
     fabricationFailures: [],
   };
 
-  const apiKey = opts?.apiKey ?? process.env.GEMINI_API_KEY;
+  const apiKey = resolveOpenAIKey(opts?.apiKey);
   if (!apiKey) {
     return { output: null, telemetry: { ...base, outcome: 'no-key', latencyMs: 0 } };
   }
@@ -624,8 +597,8 @@ export async function runLayerBTraced(
 
 /**
  * High-level entry point. Returns `null` when:
- *   - `GEMINI_API_KEY` is unset
- *   - the Gemini call throws
+ *   - `OPENAI_API_KEY` is unset
+ *   - the LLM call throws
  *   - the response fails strict-JSON validation
  *   - the response contains a numeric claim not present in / derivable
  *     from `factsJson` (preserves the wedge: every number a PM might
