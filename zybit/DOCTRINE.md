@@ -209,16 +209,13 @@ deliberately **one milestone**, not a platform build.
    PRD scope items shipped. Everything beyond the committed milestone
    (client runtime, journey experiments, one-click in-app deploy, full
    AI advisor, element picker) is **deferred until a customer pulls
-   it** — see [`docs/PRD.md`](./docs/PRD.md) §4 and
-   [`docs/sprints/sprint-3-deferred.md`](./docs/sprints/sprint-3-deferred.md).
+   it** — see [`docs/PRD.md`](./docs/PRD.md) §4.
 2. ~~**URL-audit lead magnet (Phases A + B)**~~ ✅ **Shipped 2026-05-23 in
    PR #69.** Public `/audit` form → double opt-in confirmation →
-   `runUrlAudit` pipeline → 4-finding HTML report by email. Spec +
-   shipped scope: [`docs/sprints/url-audit-lead-magnet.md`](./docs/sprints/url-audit-lead-magnet.md).
+   `runUrlAudit` pipeline → 4-finding HTML report by email.
    Phase C (founder approval queue) + Phase D (landing-page surface)
    deferred.
-3. Forward-looking priorities live in
-   [`docs/sprints/next-bets.md`](./docs/sprints/next-bets.md) (preview
+3. Forward-looking priorities (preview
    pipeline → manual outcome entry → richer modifications → one-click
    deploy).
 

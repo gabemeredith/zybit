@@ -4,6 +4,156 @@ One entry per work session. Most recent at top. Captures decisions made, what sh
 
 ---
 
+## 2026-05-30 (follow-up — region-replace handover doc)
+
+**Session:** Core-refocus — author the next-feature spec for handover
+**Branch:** `claude/zybit-core-refocus-32VPy`
+
+### What shipped
+
+Added **`docs/region-replace-handover.md`** — a self-contained build spec for
+the `region-replace` modification type + a fail-loud anchor guard, written so
+a fresh session can pick it up cold. Covers: the product bet, the two
+deliverables (new mod type + launch-time fail-loud guard), every file to
+touch with exact integration points, the 32 KB size cap, what explicitly does
+*not* change (bucketing/stats stay 2-arm), open decisions, the test plan
+mirroring element-insert coverage, doc obligations, and a quick-start.
+
+### Strategic context (resolved this session)
+
+Reviewed the co-founder's 3 open draft PRs (#107 Layer-B LLM prose, #108
+free-experiment loop, #91 audit timing/perf). Conclusion: all three are
+architecturally sound and orthogonal to this work — #107 keeps the
+deterministic decision + numbers and only rewrites prose (flag-off, numeric
+grounding guard), which does **not** violate the "no LLM inside rule logic"
+doctrine. Behavioral subsystem: **keep the code, don't block on it** — the 13
+snapshot rules are shippable today; behavioral lights up when a customer
+connects PostHog. No hard cut needed now.
+
+### Next
+
+This branch is the **code-cleanup PR** (dead UI surfaces + docs archaeology +
+this handover doc). The `region-replace` build happens in a fresh session off
+`main` per the handover doc's §10.
+
+---
+
+## 2026-05-30 (follow-up — docs archaeology cut)
+
+**Session:** Core-refocus — cut documentation bloat
+**Branch:** `claude/zybit-core-refocus-32VPy`
+
+### What shipped
+
+Removed **19 markdown files** of session/sprint archaeology — the lowest-risk
+slice of the docs trim (no code coupling):
+
+- **`docs/sprints/` (entire dir)** — sprint-0…5, `-R`/`_archive` variants,
+  REMEDIATION, ROADMAP, pilot-readiness, operator-dashboard,
+  onboarding-redesign, preview-system, posthog-from-zero, next-bets,
+  url-audit-lead-magnet, sprint-3-deferred, niche-categorization-engine.
+- **`docs/handover.md`** + **`docs/handover-fix-preview.md`** — stale
+  point-in-time handoffs.
+
+Session history is already captured here in DEVLOG; build state is in
+`AGENTS.md`. Anything older is recoverable from git history.
+
+### Dangling-reference cleanup
+
+- Scrubbed the three clickable markdown links to deleted sprint docs from
+  `DOCTRINE.md` (immediate-priorities list).
+- Rewrote `docs/INDEX.md` to map only the surviving doc set (added a note
+  explaining the sprint-log removal + where history now lives).
+- Confirmed **zero** clickable links to deleted docs remain repo-wide, and
+  no source code reads any of the removed files (grep-verified). Stale
+  *code-span mentions* of old `docs/sprints/...` paths still sit inside a
+  few `AGENTS.md` build-state cells + `ARCHITECTURE.md`/`curriculum.md`;
+  these are plain text (not 404 links) and will be rewritten when their
+  subsystems are cut in the behavioral pass.
+
+### Not done (deferred to the behavioral-cut pass, by decision)
+
+The overlapping strategy/subsystem docs (`pivot.md`,
+`competitive-landscape.md`, `curriculum.md`, `PHASE2_EVIDENCE_MODEL.md`,
+`phase2-rules-architecture.md`, `PHASE2_LIVE_TUNING_PLAYBOOK.md`,
+`CAPTURE_RUNBOOK.md`, `fix-tn.md`, root `product_gap.md`) are the
+fold/consolidate tier — several document the behavioral subsystem queued
+for removal, so they get deleted **in the same commit as their code** to
+avoid desync. Order agreed with operator: **cut first, then build** the
+region-replace macro-structural feature.
+
+### Verify
+
+Docs-only change (+ INDEX rewrite, DOCTRINE link scrub). No source touched;
+build/test state unchanged from the prior commit.
+
+---
+
+## 2026-05-30
+
+**Session:** Core-refocus — first pass: cut clearly-dead legacy UI surfaces
+**Branch:** `claude/zybit-core-refocus-32VPy`
+
+### Why
+
+Direction set with the operator: Zybit is too broad. Steer it back toward a
+thin core — *find a small HTML/CSS/SEO issue → propose a small change → A/B
+test it → measure* — for a customer's own site. This pass removes only the
+**clearly-dead / non-customer-facing UI surfaces**; the riskier structural
+cuts (behavioral-analytics subsystem, AI pipeline, billing) are deferred to
+a planned pass.
+
+### What shipped (deletions)
+
+Removed five route trees that no customer-facing navigation points into,
+plus one self-contained dead feature. Each was verified unreferenced before
+removal (no external imports, no test references, all inbound links were
+either among the deleted set or stale):
+
+- **`/dashboard`** — was a redirect-only stub (`redirect('/audit')`).
+- **`/phase1` + `/phase2` pages** — internal dev control panels (inline-style
+  simulators), only cross-linked to each other and from `/docs`. **The
+  `/api/phase1`, `/api/phase2` routes and `src/lib/phase1`, `src/lib/phase2`
+  engines are untouched** — those are the live rules/insights engine.
+- **`/docs`** — internal Phase-1 API reference page; nothing linked in.
+- **`/discovery` feature** — secondary lead form. Removed the page,
+  `/api/discovery/route.ts`, and `src/lib/discovery/schema.ts` together
+  (closed loop — referenced only by each other + the middleware allowlist).
+- Cleaned the now-dangling `/dashboard`, `/docs`, `/discovery`,
+  `/api/discovery` entries from `PUBLIC_PREFIXES` in `src/proxy.ts`.
+
+### Evidence gathered this session (for the next, riskier pass)
+
+- **Behavioral analytics is severable from the HTML/CSS/SEO core.** Traced
+  all 23 audit rules: **13 fire with zero live-user data** (7 structural
+  Layer-E SEO/a11y + 3 Layer-F copy critique = pure snapshot; 3 design rules
+  are hybrid and degrade gracefully to snapshot-only). The other **10
+  (9 pain + 1 flow) require live events** and are the "differentiated moat,"
+  not the lean core. Cutting PostHog/Segment/GA4 + phase1 events + rollups +
+  flow-graph would drop 23→13 rules without touching the SEO/HTML/CSS engine.
+  Candidate for the next pass — **not cut here** (operator asked to evaluate,
+  not remove).
+- Latent bug noted (out of scope): `src/components/dashboard/WelcomeState.tsx`
+  (live, used by `CockpitView`) still links to `/dashboard/connect` +
+  `/dashboard/settings`, which don't exist — should point at `/app/settings`.
+
+### Verify
+
+`npx tsc --noEmit` clean · `npm run lint` 0 errors (11 pre-existing warnings)
+· `npm run build` clean (route manifest confirms the five trees are gone) ·
+test suite **1342 passed / 2 skipped, 1 pre-existing env-dependent failure**
+(`visionInpaint.test.ts > proceeds when model returns a large JPEG` — hangs
+on a network upload path in envs with outbound network; documented in the
+2026-05-29 entry, no audit/vision code touched this session).
+
+### What's next
+
+- Plan the riskier cuts: behavioral-analytics subsystem (the clean 23→13
+  fault line above), then AI pipeline and billing if the refocus holds.
+- Fix the `WelcomeState` stale `/dashboard/*` links → `/app/*`.
+
+---
+
 ## 2026-05-29 (follow-up — deferred UI surfaces)
 
 **Session:** Finish the brutalist pass on the deferred interaction-form surfaces

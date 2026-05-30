@@ -102,19 +102,19 @@ export default function WelcomeState({
           <ActionCard
             title="Set revenue context"
             description="Adding your MRR unlocks dollar-impact framing on every finding, so you can prioritize by business value."
-            href={`/dashboard/connect?siteId=${siteId}`}
+            href={`/app/settings?siteId=${siteId}`}
             label="Add revenue data"
           />
           <ActionCard
             title="Invite your team"
             description="Bring in stakeholders so they can review findings, approve experiments, and track impact together."
-            href="/dashboard/settings"
+            href="/app/settings"
             label="Manage team"
           />
           <ActionCard
             title="Add another site"
             description="Connect additional domains to analyze multiple properties from a single workspace."
-            href="/dashboard/connect"
+            href="/app/settings"
             label="Connect a site"
           />
         </div>

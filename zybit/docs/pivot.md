@@ -242,7 +242,7 @@ year-long platform build):
 
 **Next action:** ratify D1–D7. A concrete Sprint 3 *replacement* — what it must
 do, what to cut, what to reuse from the current codebase — is drafted in
-[`sprints/sprint-3R.md`](sprints/sprint-3R.md) (also proposed, not ratified).
+a sprint doc since removed (recover from git history; also proposed, not ratified).
 
 ---
 
