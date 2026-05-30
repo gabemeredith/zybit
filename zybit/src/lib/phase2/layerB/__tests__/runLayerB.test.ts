@@ -203,6 +203,23 @@ describe('collectFactNumbers', () => {
     expect(percents.has(12)).toBe(true); // rounded
     expect(percents.has(12.3)).toBe(true); // one-decimal
   });
+
+  it('harvests a thousands-separated number from a STRING fact value', () => {
+    // Regression: a comma-formatted string fact ("6,030 sessions") must read as
+    // 6030 — the same way extractClaims reads the model's "6,030" — or a
+    // grounded large number would be split ("6" + "030") and wrongly rejected.
+    const { counts } = collectFactNumbers({ lost: '6,030 sessions' });
+    expect(counts.has(6030)).toBe(true);
+    expect(counts.has(30)).toBe(false); // not the trailing group on its own
+
+    // End-to-end: prose echoing the comma-formatted string fact verifies.
+    const out: LayerBOutput = {
+      summary: 'That loses about 6,030 sessions a month.',
+      recommendation: ['ok'],
+      prescription: { whatToChange: 'x', whyItWorks: 'y', experimentVariantDescription: 'z' },
+    };
+    expect(verifyOutputAgainstFacts(out, { lost: '6,030 sessions' }).ok).toBe(true);
+  });
 });
 
 describe('extractClaims', () => {

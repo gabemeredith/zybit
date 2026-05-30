@@ -610,7 +610,7 @@ export const zybitFindings = pgTable(
     fixPreviewGeneratedAt: timestamp('fix_preview_generated_at', { withTimezone: true }),
     // Discriminator for the prose path that wrote summary/recommendation/
     // prescription. 'template' = rule's deterministic templating function;
-    // 'llm-v1' = Layer B Gemini call. See drizzle/0024.
+    // 'llm-v1' = Layer B LLM call (OpenAI). See drizzle/0024.
     proseSource: text('prose_source').notNull().default('template').$type<'template' | 'llm-v1'>(),
     // Run context (most recent sync that emitted this finding)
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),

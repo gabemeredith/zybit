@@ -284,6 +284,22 @@ export function parseLayerBResponse(raw: string): LayerBOutput | null {
 const SMALL_NUMBER_THRESHOLD = 4;
 const COUNT_TOLERANCE = 1;
 
+// Allow thousands separators ("6,030", "1,234,567") so a grounded large
+// number the model writes with commas isn't split into bogus, ungrounded
+// fragments ("6" + "030") and wrongly rejected. The comma in the lookbehind
+// stops a trailing group ("030") from matching on its own. Shared by BOTH the
+// fact harvester (collectFactNumbers) and the prose extractor (extractClaims)
+// so the two sides read "6,030" identically — a mismatch here silently rejects
+// grounded prose.
+const NUM = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?`;
+const PERCENT_RE = new RegExp(`(${NUM})\\s*%`, 'g');
+const NUMBER_RE = new RegExp(`(?<![\\w/.,-])(${NUM})(?![\\w/.-])`, 'g');
+
+/** Parse a matched numeric token, stripping thousands-separator commas. */
+function parseNum(raw: string): number {
+  return Number(raw.replace(/,/g, ''));
+}
+
 /** Walk a factsJson tree and collect every number (plus common derivations). */
 export function collectFactNumbers(facts: Record<string, unknown>): {
   counts: Set<number>;
@@ -306,19 +322,23 @@ export function collectFactNumbers(facts: Record<string, unknown>): {
       // A whole-number percent is also a fact-shaped number.
       if (v >= 0 && v <= 100) percents.add(v);
     } else if (typeof v === 'string') {
-      // Numbers embedded in string fact values ("22.3%", "67%") are valid
-      // grounding sources too — this is what makes evidence-derived facts
-      // (factsFromEvidence) groundable. The number regex mirrors the prose
-      // extractor's identifier guard so we don't harvest "1" out of "/v1/api".
-      for (const m of v.matchAll(/(\d+(?:\.\d+)?)\s*%/g)) {
-        const p = Number(m[1]);
+      // Numbers embedded in string fact values ("22.3%", "67%", "6,030") are
+      // valid grounding sources too — this is what makes evidence-derived facts
+      // (factsFromEvidence) groundable. Reuse the SAME thousands-aware patterns
+      // the prose extractor uses (PERCENT_RE/NUMBER_RE + parseNum) so a comma-
+      // formatted fact value like "6,030 sessions" harvests as 6030, matching
+      // how extractClaims reads the model's "6,030" — otherwise a grounded
+      // large number gets split ("6" + "030") and wrongly rejected. The shared
+      // identifier guard also keeps us from harvesting "1" out of "/v1/api".
+      for (const m of v.matchAll(PERCENT_RE)) {
+        const p = parseNum(m[1]);
         if (!Number.isFinite(p)) continue;
         percents.add(p);
         percents.add(Math.round(p));
         percents.add(Math.round(p * 10) / 10);
       }
-      for (const m of v.matchAll(/(?<![\w/.-])(\d+(?:\.\d+)?)(?![\w/.-])/g)) {
-        const n = Number(m[1]);
+      for (const m of v.matchAll(NUMBER_RE)) {
+        const n = parseNum(m[1]);
         if (!Number.isFinite(n)) continue;
         counts.add(n);
         counts.add(Math.round(n));
@@ -338,19 +358,6 @@ interface NumericClaim {
   value: number;
   kind: 'percent' | 'count';
   raw: string;
-}
-
-// Allow thousands separators ("6,030", "1,234,567") so a grounded large
-// number the model writes with commas isn't split into bogus, ungrounded
-// fragments ("6" + "030") and wrongly rejected. The comma in the lookbehind
-// stops a trailing group ("030") from matching on its own.
-const NUM = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?`;
-const PERCENT_RE = new RegExp(`(${NUM})\\s*%`, 'g');
-const NUMBER_RE = new RegExp(`(?<![\\w/.,-])(${NUM})(?![\\w/.-])`, 'g');
-
-/** Parse a matched numeric token, stripping thousands-separator commas. */
-function parseNum(raw: string): number {
-  return Number(raw.replace(/,/g, ''));
 }
 
 /** Pull material numeric claims out of one prose string. */

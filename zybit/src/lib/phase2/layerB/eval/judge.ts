@@ -140,8 +140,10 @@ export interface JudgeOpts {
 
 /**
  * Returns the verdict, or `null` when no judge is available / unparseable.
- * Prefers OpenAI (cross-family, rigorous); falls back to Gemini (same-family,
- * directional) when no OpenAI key is set.
+ * Prefers OpenAI when a key is set (availability + a strong reasoning judge) —
+ * but note OpenAI is now SAME-family as the generator (self-preference risk,
+ * mitigated by the both-orders protocol in runEval). Gemini is the genuinely
+ * cross-family judge: set GEMINI_API_KEY for the more rigorous comparison.
  */
 export async function runJudge(input: JudgeInput, opts?: JudgeOpts): Promise<JudgeVerdict | null> {
   const prompt = buildJudgePrompt(input);
