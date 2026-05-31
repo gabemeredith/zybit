@@ -9,6 +9,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { installLogCapture } from './logCapture';
 import { getMe, postAuth, postLogout } from './routes/auth';
 import { postAuditUrl } from './routes/auditUrl';
+import { getDataMeta, getDataRows } from './routes/data';
 import { getRunById, postGenerate } from './routes/generate';
 import { postEval } from './routes/evalRun';
 import { postImpersonateStart } from './routes/impersonate';
@@ -23,11 +24,30 @@ import '../lib/scenarios/verdant';
 import '../lib/scenarios/plotandpatio';
 import '../lib/scenarios/quilltax';
 
+// Refuse to start in a production-like environment. Lighthouse is a local dev
+// tool — its routes mint real sessions and expose the database (incl. customer
+// PII) behind only an admin password. It is never part of the Vercel deploy,
+// so this is belt-and-suspenders against someone running it on a hosted box.
+// Override with LIGHTHOUSE_ALLOW_PROD=1 if you really mean it.
+if (
+  process.env.LIGHTHOUSE_ALLOW_PROD !== '1' &&
+  (process.env.VERCEL || process.env.NODE_ENV === 'production')
+) {
+  console.error(
+    '[lighthouse] refusing to start in a production environment ' +
+      '(VERCEL / NODE_ENV=production). Set LIGHTHOUSE_ALLOW_PROD=1 to override.',
+  );
+  process.exit(1);
+}
+
 // Tap `console` before anything runs so the developer log panel captures the
 // pipeline's structured output (and every LLM call) per run.
 installLogCapture();
 
 const PORT = Number.parseInt(process.env.LIGHTHOUSE_PORT ?? '3001', 10);
+// Bind loopback-only so the dev server is never reachable off the local
+// machine, regardless of where it's launched.
+const HOST = process.env.LIGHTHOUSE_HOST ?? '127.0.0.1';
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
 
@@ -44,6 +64,8 @@ const routes: Record<string, Handler> = {
   'POST /lighthouse/api/eval': postEval,
   'POST /lighthouse/api/audit-url': postAuditUrl,
   'POST /lighthouse/api/impersonate/start': postImpersonateStart,
+  'GET /lighthouse/api/data/meta': getDataMeta,
+  'GET /lighthouse/api/data/rows': getDataRows,
 };
 
 function notFound(res: ServerResponse): void {
@@ -91,6 +113,6 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`lighthouse listening on http://localhost:${PORT}/lighthouse`);
+server.listen(PORT, HOST, () => {
+  console.log(`lighthouse listening on http://${HOST}:${PORT}/lighthouse`);
 });

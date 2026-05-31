@@ -486,3 +486,77 @@ table.calib-breakdown {
 .log-stream.hide-other .log-line.cat-other {
   display: none;
 }
+
+/* --- Read-only database browser ---------------------------------------- */
+.datapane {
+  margin-top: 1.5rem;
+}
+.data-controls {
+  margin: 0.5rem 0;
+}
+.data-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85em;
+  margin: 0.4rem 0;
+}
+.data-pager span {
+  opacity: 0.7;
+}
+.data-table-wrap {
+  overflow-x: auto;
+  border-radius: 0.4rem;
+  border: 1px solid color-mix(in srgb, canvastext 12%, canvas);
+}
+table.data-table {
+  border-collapse: collapse;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+table.data-table th,
+table.data-table td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, canvastext 8%, canvas);
+  text-align: left;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+table.data-table thead th {
+  position: sticky;
+  top: 0;
+  background: color-mix(in srgb, canvastext 12%, canvas);
+}
+.data-detail td {
+  white-space: normal;
+  max-width: none;
+  background: color-mix(in srgb, canvastext 5%, canvas);
+}
+.data-detail pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+button.data-expand {
+  padding: 0 0.4rem;
+  line-height: 1.2;
+}
+.data-note {
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+.data-tables {
+  margin-top: 0.5rem;
+}
+.data-table-section {
+  margin: 0.35rem 0;
+}
+.data-table-section > summary {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85em;
+}
+.data-section-body {
+  margin-top: 0.35rem;
+}

@@ -93,7 +93,8 @@ async function renderDashboard() {
   // Persistent across run-pane re-renders so streaming logs keep their scroll.
   const logPane = el('section', { class: 'logpane' });
   const urlControls = buildUrlAuditControls(runPane, logPane);
-  root.appendChild(el('div', {}, [header, controls, urlControls, runPane, logPane]));
+  const dataPane = buildDataBrowser();
+  root.appendChild(el('div', {}, [header, controls, urlControls, runPane, logPane, dataPane]));
 
   const { body } = await api('/lighthouse/api/scenarios');
   clear(controls);
@@ -815,6 +816,200 @@ function buildPmView(siteId) {
   ]));
   wrap.appendChild(status);
   return wrap;
+}
+
+// --- Read-only database browser -------------------------------------------
+//
+// A window onto the rows a Lighthouse run produced. Server-side it's scoped to
+// lighthouse_* synthetic orgs/sites and read-only by construction. Lazy-loads
+// its metadata the first time the panel is opened.
+
+const DATA_PAGE_SIZE = 50;
+
+function buildDataBrowser() {
+  const section = el('section', { class: 'datapane' });
+  const details = el('details', { class: 'group data-browser' });
+  const body = el('div', { class: 'data-body' }, el('p', { class: 'loading' }, 'open to load tables…'));
+  details.appendChild(el('summary', {}, 'database browser (read-only, all orgs)'));
+  details.appendChild(body);
+  section.appendChild(details);
+
+  let loaded = false;
+  details.addEventListener('toggle', () => {
+    if (!details.open || loaded) return;
+    loaded = true;
+    void initDataBrowser(body);
+  });
+  return section;
+}
+
+function dataRowsUrl(tableName, orgId, siteId, page) {
+  return (
+    '/lighthouse/api/data/rows?' +
+    new URLSearchParams({
+      table: tableName,
+      orgId: orgId || '',
+      siteId: siteId || '',
+      page: String(page),
+      pageSize: String(DATA_PAGE_SIZE),
+    }).toString()
+  );
+}
+
+async function initDataBrowser(body) {
+  clear(body);
+  body.appendChild(el('p', { class: 'loading' }, 'loading metadata…'));
+  const { ok, body: meta } = await api('/lighthouse/api/data/meta');
+  clear(body);
+  if (!ok || !meta) {
+    body.appendChild(el('p', { class: 'error' }, 'failed to load metadata'));
+    return;
+  }
+
+  // Filter every table at once. No per-table "load" button — opening the
+  // panel loads the whole (lighthouse-scoped) DB; the org/site selectors
+  // re-scope all tables together.
+  const orgSelect = el('select', {}, [
+    el('option', { value: '' }, '(all orgs)'),
+    ...meta.orgs.map((o) => el('option', { value: o.id }, `${o.name} — ${o.id}`)),
+  ]);
+  const siteSelect = el('select', {}, [el('option', { value: '' }, '(all sites)')]);
+  const tablesWrap = el('div', { class: 'data-tables' });
+
+  function refreshSites() {
+    const org = meta.orgs.find((o) => o.id === orgSelect.value);
+    clear(siteSelect);
+    siteSelect.appendChild(el('option', { value: '' }, '(all sites)'));
+    for (const s of org?.sites ?? []) {
+      siteSelect.appendChild(el('option', { value: s.id }, `${s.name} — ${s.id}`));
+    }
+  }
+
+  async function loadAll() {
+    clear(tablesWrap);
+    tablesWrap.appendChild(el('p', { class: 'loading' }, 'loading all tables…'));
+    const orgId = orgSelect.value;
+    const siteId = siteSelect.value;
+    const payloads = await Promise.all(
+      meta.tables.map((t) =>
+        api(dataRowsUrl(t.name, orgId, siteId, 0)).then((r) => ({ t, ok: r.ok, body: r.body })),
+      ),
+    );
+    clear(tablesWrap);
+    for (const p of payloads) {
+      tablesWrap.appendChild(buildTableSection(p.t, p.ok, p.body, { orgId, siteId }));
+    }
+  }
+
+  orgSelect.addEventListener('change', () => {
+    refreshSites();
+    void loadAll();
+  });
+  siteSelect.addEventListener('change', () => void loadAll());
+
+  body.appendChild(
+    el('div', { class: 'control-row data-controls' }, [
+      el('label', {}, ['org ', orgSelect]),
+      el('label', {}, ['site ', siteSelect]),
+      el('span', { class: 'data-note' }, `first ${DATA_PAGE_SIZE} rows per table`),
+    ]),
+  );
+  body.appendChild(tablesWrap);
+  refreshSites();
+  void loadAll();
+}
+
+// One table's rows as a collapsible section. Tables with rows open by default;
+// empty ones collapse. Each section paginates independently.
+function buildTableSection(tableMeta, ok, payload, filters) {
+  const total = ok && payload ? payload.total : 0;
+  const details = el('details', {
+    class: 'group data-table-section',
+    ...(total > 0 ? { open: 'open' } : {}),
+  });
+  details.appendChild(
+    el('summary', {}, `${tableMeta.label} — ${ok ? `${total} row${total === 1 ? '' : 's'}` : 'error'}`),
+  );
+  const inner = el('div', { class: 'data-section-body' });
+  details.appendChild(inner);
+
+  let page = 0;
+  function render(curOk, p) {
+    clear(inner);
+    if (!curOk || !p) {
+      inner.appendChild(el('p', { class: 'error' }, 'query failed'));
+      return;
+    }
+    renderDataTable(inner, p, {
+      page,
+      onPage: async (np) => {
+        page = np;
+        const r = await api(dataRowsUrl(tableMeta.name, filters.orgId, filters.siteId, np));
+        render(r.ok, r.body);
+      },
+    });
+  }
+  render(ok, payload);
+  return details;
+}
+
+function fmtCell(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+
+function renderDataTable(box, payload, nav) {
+  clear(box);
+  const { columns, rows, total, pageSize } = payload;
+  const shownFrom = rows.length ? nav.page * pageSize + 1 : 0;
+  const shownTo = nav.page * pageSize + rows.length;
+
+  // Pagination header.
+  const prev = el('button', { type: 'button' }, 'prev');
+  const next = el('button', { type: 'button' }, 'next');
+  if (nav.page === 0) prev.setAttribute('disabled', 'disabled');
+  if (shownTo >= total) next.setAttribute('disabled', 'disabled');
+  prev.addEventListener('click', () => void nav.onPage(nav.page - 1));
+  next.addEventListener('click', () => void nav.onPage(nav.page + 1));
+  box.appendChild(
+    el('div', { class: 'data-pager' }, [
+      el('span', {}, `${shownFrom}–${shownTo} of ${total}`),
+      prev,
+      next,
+    ]),
+  );
+
+  if (rows.length === 0) {
+    box.appendChild(el('p', { class: 'empty' }, 'no rows'));
+    return;
+  }
+
+  const head = el('tr', {}, [el('th', {}, ''), ...columns.map((c) => el('th', {}, c))]);
+  const bodyRows = rows.map((row) => {
+    const detail = el('tr', { class: 'data-detail' }, [
+      el('td', { colspan: String(columns.length + 1) }, el('pre', {}, JSON.stringify(row, null, 2))),
+    ]);
+    detail.style.display = 'none';
+    const toggle = el('button', { type: 'button', class: 'data-expand' }, '+');
+    toggle.addEventListener('click', () => {
+      const open = detail.style.display === 'none';
+      detail.style.display = open ? 'table-row' : 'none';
+      toggle.textContent = open ? '−' : '+';
+    });
+    const cells = columns.map((c) => {
+      const s = fmtCell(row[c]);
+      const short = s.length > 160 ? s.slice(0, 160) + '…' : s;
+      return el('td', { title: s.length > 160 ? s : undefined }, short);
+    });
+    return [el('tr', {}, [el('td', {}, toggle), ...cells]), detail];
+  });
+
+  box.appendChild(
+    el('div', { class: 'data-table-wrap' }, [
+      el('table', { class: 'data-table' }, [el('thead', {}, head), el('tbody', {}, bodyRows.flat())]),
+    ]),
+  );
 }
 
 async function boot() {
