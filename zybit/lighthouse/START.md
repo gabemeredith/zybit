@@ -76,6 +76,24 @@ lighthouse listening on http://localhost:3001/lighthouse
 5. Click **Generate**.
 6. Watch the left pane show progress (`provisioning → sessions →
    snapshots → insights → experiments → done`); the right pane fills in.
+7. The **logs** pane (below the run pane) streams the run's `console`
+   output live — every pipeline step, DB write, and LLM call — with
+   category filters (AI/LLM, snapshot, db, …). Diagnostic fields
+   (`error`, `reason`, tokens, latency) show inline.
+8. The **database browser** panel at the bottom opens a read-only view
+   of every table across all orgs (auto-loads on open; narrow by
+   org/site).
+
+### Full-LLM-depth URL audit (QA the LLM path)
+
+Under the URL-audit controls, the **owned sites — full LLM depth** row
+has one-click presets (`commitmint.app`, `cohor7.com`) that run vision +
+copy-critique + Layer B + fix-preview + variant advisor against a real
+site. Results render in the inspector as before/after fix-preview cards +
+per-finding variant-advisor option JSON. Needs `OPENAI_API_KEY`,
+`FIRECRAWL_KEY`, `BROWSERLESS_KEY`, and `AUDIT_FIX_PREVIEW_ENABLED=1`
+(missing keys fail soft — the log panel shows why). See
+`LIGHTHOUSE.md` §7.1a for known limitations surfaced by this QA.
 
 ## 5. Expected output
 

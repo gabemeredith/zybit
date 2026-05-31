@@ -88,6 +88,14 @@ The shipped GUI is a single-page dashboard at `/lighthouse` (`lighthouse/web/app
 
 **PM-view iframe** — clicking **open as PM** calls `POST /lighthouse/api/impersonate/start`, which mints a real `zb_session` cookie for the synthetic `app_users` row (`lighthouse_user_<slug>`). The button swaps in-place for an iframe of `http://localhost:3000/app/loop` (override via `ZYBIT_APP_BASE_URL`). Inside that iframe an amber banner identifies the session as synthetic.
 
+**Developer log panel** (`logCapture.ts`, 2026-05-31) — a streaming, per-run log pane below the run pane. `installLogCapture()` taps `console` once at startup and `AsyncLocalStorage` (`runLogStore`) binds the active run id through the whole async chain, so every line the pipeline emits — including LLM calls routed through `src/lib/observability/logger.ts` — is attributed to the run. Lines are classified (`ai` / `snapshot` / `db` / `pipeline` / `http` / `other`) with category filter checkboxes; `ai` lines surface model + token + latency inline. The poller fetches incrementally via `?sinceLog=<n>`. Capture is additive — terminal output is unchanged.
+
+**Database browser** (`server/routes/data.ts`, 2026-05-31) — a read-only window onto every row, opened from the panel at the bottom of the dashboard. `GET /lighthouse/api/data/meta` + `GET /lighthouse/api/data/rows` are Drizzle `select`s over a hardcoded table allowlist (no raw SQL, no writes). Opening the panel auto-loads **all** tables (first 50 rows + total + per-table pagination + row-JSON expand) across **all orgs** (real + synthetic); the org/site selectors narrow every table together. Same exposure level as `/admin/ops`.
+
+**Owned-site full-LLM-depth presets** (2026-05-31) — a control row with `commitmint.app` + `cohor7.com` buttons that fire a URL audit with the whole LLM surface on (Layer B + deriveFacts + `visionPagesLimit:3` + `fixPreview` + `variantAdvisor`), capped to 6 pages. Results render in the inspector as before/after fix-preview image cards + per-finding variant-advisor option JSON. This is the one-click path to QA the LLM PR against a site we own.
+
+**Prod-access hardening** (2026-05-31) — the server binds **loopback-only** (`127.0.0.1`) and **refuses to start** under `VERCEL` / `NODE_ENV=production` (override `LIGHTHOUSE_ALLOW_PROD=1`). It was never part of the Vercel deploy (only the Next.js app builds); this is defense-in-depth now that the DB browser surfaces customer PII behind the admin-password gate.
+
 **Not yet shipped** (queued in §7 priority #3 / #5):
 
 - Per-scenario route (`/lighthouse/scenarios/[id]`) with a vertical step-by-step timeline showing each phase's input/output/assertion-pass-fail. The current GUI shows the latest run's summary, not the loop as a stepwise timeline.
@@ -163,6 +171,16 @@ Scope of "Week 1" in the original plan, plus an unplanned Phase 2 rail that clos
 - ✅ `/app` impersonation handoff — `POST /lighthouse/api/impersonate/start` mints a real `zb_session` and the GUI embeds `/app/loop` in an iframe with a synthetic-PM banner.
 - ✅ **Phase 2 synthetic experiments + outcomes** — `generateSyntheticExperiment` creates a `running` experiment for the top finding, emits assignment + conversion events with the variant arm lifted, runs `computeOutcomes`, so `/app/loop` shows DEPLOYED → RESULT → LEARNED on a single Generate.
 - ✅ Preview iframe + parse-time CSS selectors (PR #56) — control + variant render real divergent HTML on Lighthouse synthetic sites.
+- ✅ **Developer log panel + DB browser + full-LLM-depth URL audit (2026-05-31)** — per-run `console` capture streamed to a category-filtered log pane (`logCapture.ts`); a read-only DB browser over all orgs (`server/routes/data.ts`); owned-site presets that run vision + copy-critique + Layer B + fix-preview + variant advisor in one click. Server hardened to loopback-only + refuse-in-prod. See §4.2.
+
+### 7.1a QA findings — LLM PR vs real owned sites (2026-05-31)
+
+First end-to-end QA of the LLM PR against **commitmint.app** + **cohor7.com** via the full-depth presets. Capture-time LLM (vision, copy-critique), Layer B prose, and the fix-preview screenshot quality gate all worked. Four findings worth carrying forward (none are Lighthouse-harness bugs — the harness surfaced them):
+
+1. **AI Variant Advisor is dead on the URL-audit path.** The URL-audit snapshot parser emits `cssSelector: null` for every CTA/form/heading (elements get a `ref`/`data-zybit-ref` but no CSS selector), so the advisor's selector allowlist is empty → 0 options on both sites. The in-app dashboard route works because its snapshots populate selectors. Fix: populate `cssSelector` on the URL-audit parse path, or give the advisor a `ref`-based fallback.
+2. **fix-preview render came back blank on cohor7** (commitmint rendered fine). The new screenshot quality gate (`gpt-5.4-mini`) correctly caught it (`issue: "blank"`) and suppressed before spending advisor/inpaint budget — the gate works. But the fix-preview render path (`renderBeforeOnly`) produced a blank frame where the vision pass's own screenshot succeeded; the two render paths disagree on this SPA.
+3. **Behavioral rules fire on synthetic events in URL-audit mode.** `hero-hierarchy-inversion` reported "83 button clicks, 42.2% → Connect PostHog" — those are Lighthouse's engineered grounded events, not real traffic (it even picked a different CTA than vision's real primary). Inherent to URL-audit's `in-app` mode; `public-audit` mode would suppress/rewrite. Don't read behavioral stats from a real-site URL audit as ground truth.
+4. **Design-capture screenshot upload always fails** with `Vercel Blob: Cannot use private access on a public store` — `captureScreenshot()` requests `access: 'private'` but the env's Blob store is public. Fires every run regardless of site; non-fatal (brand-DNA falls back to page meta), but design-snapshot screenshots are never persisted.
 
 ### 7.2 Reordered roadmap
 
