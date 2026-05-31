@@ -4,6 +4,7 @@ import { runScenario } from '../../lib/runner/runScenario';
 import type { EventSinkMode } from '../../lib/types';
 import { requireAuth } from '../auth';
 import { readJsonBody } from '../http';
+import { runLogStore } from '../logCapture';
 import {
   appendProgress,
   completeRun,
@@ -55,7 +56,10 @@ export async function postGenerate(req: IncomingMessage, res: ServerResponse): P
   const state = createRun(scenarioId);
 
   // Background — do NOT await. The caller polls /lighthouse/api/runs/:runId for progress.
-  void (async () => {
+  // `runLogStore.run` binds this run's id through the whole async chain so any
+  // `console` line emitted by the pipeline (incl. deep LLM calls) is captured
+  // for the developer log panel.
+  void runLogStore.run({ runId: state.runId }, async () => {
     try {
       const result = await runScenario({
         scenario,
@@ -69,7 +73,7 @@ export async function postGenerate(req: IncomingMessage, res: ServerResponse): P
     } catch (err) {
       failRun(state.runId, err);
     }
-  })();
+  });
 
   res.writeHead(202, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ runId: state.runId }));
@@ -83,6 +87,12 @@ export function getRunById(runId: string, req: IncomingMessage, res: ServerRespo
     res.end(JSON.stringify({ error: 'unknown_run' }));
     return;
   }
+  // Logs can run to thousands of entries; the poller passes `?sinceLog=<n>`
+  // to fetch only entries it hasn't rendered yet. `logTotal` is the absolute
+  // count so the client can advance its cursor.
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  const sinceLog = Math.max(0, Number.parseInt(url.searchParams.get('sinceLog') ?? '0', 10) || 0);
+  const { logs, ...rest } = state;
   res.writeHead(200, { 'content-type': 'application/json' });
-  res.end(JSON.stringify(state));
+  res.end(JSON.stringify({ ...rest, logTotal: logs.length, logs: logs.slice(sinceLog) }));
 }

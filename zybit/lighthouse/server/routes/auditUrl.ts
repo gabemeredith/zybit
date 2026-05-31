@@ -10,6 +10,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { runUrlAudit } from '../../lib/runner/runUrlAudit';
 import { requireAuth } from '../auth';
 import { readJsonBody } from '../http';
+import { runLogStore } from '../logCapture';
 import { appendProgress, completeRun, createRun, failRun } from '../runs';
 
 function badRequest(res: ServerResponse, error: string, detail?: string): void {
@@ -56,7 +57,9 @@ export async function postAuditUrl(req: IncomingMessage, res: ServerResponse): P
   const state = createRun(url);
 
   // Background — do NOT await. The caller polls /lighthouse/api/runs/:runId.
-  void (async () => {
+  // Bind the run id through the async chain so the pipeline's `console` output
+  // (incl. every LLM call) is captured for the developer log panel.
+  void runLogStore.run({ runId: state.runId }, async () => {
     try {
       const result = await runUrlAudit({
         url,
@@ -69,7 +72,7 @@ export async function postAuditUrl(req: IncomingMessage, res: ServerResponse): P
     } catch (err) {
       failRun(state.runId, err);
     }
-  })();
+  });
 
   res.writeHead(202, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ runId: state.runId }));

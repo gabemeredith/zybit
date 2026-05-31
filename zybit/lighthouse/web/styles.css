@@ -382,3 +382,107 @@ details.calib-panel {
 table.calib-breakdown {
   font-size: 0.85em;
 }
+
+/* --- Developer log panel ------------------------------------------------ */
+.logpane {
+  margin-top: 1.5rem;
+}
+.log-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.log-head h2 {
+  margin: 0;
+}
+.log-filters {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.85em;
+}
+.log-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.log-count {
+  margin-left: auto;
+  font-size: 0.8em;
+  opacity: 0.65;
+}
+.log-stream {
+  margin-top: 0.5rem;
+  max-height: 24rem;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  background: color-mix(in srgb, canvastext 6%, canvas);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.6rem;
+}
+.log-line {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.05rem 0;
+  border-bottom: 1px solid color-mix(in srgb, canvastext 5%, canvas);
+  word-break: break-word;
+}
+.log-ts {
+  opacity: 0.5;
+  flex: 0 0 auto;
+}
+.log-cat {
+  flex: 0 0 4.5rem;
+  text-align: center;
+  font-size: 0.7rem;
+  border-radius: 0.25rem;
+  padding: 0 0.25rem;
+  background: color-mix(in srgb, canvastext 12%, canvas);
+}
+.cat-badge-ai {
+  background: color-mix(in srgb, #7c5cff 35%, canvas);
+}
+.cat-badge-snapshot {
+  background: color-mix(in srgb, #2a8 28%, canvas);
+}
+.cat-badge-db {
+  background: color-mix(in srgb, #d90 28%, canvas);
+}
+.cat-badge-pipeline {
+  background: color-mix(in srgb, #2b9 24%, canvas);
+}
+.log-msg {
+  flex: 1 1 auto;
+}
+.log-fields {
+  opacity: 0.7;
+  font-size: 0.72rem;
+}
+.log-line.cat-ai .log-msg {
+  font-weight: 600;
+}
+.log-warn {
+  background: color-mix(in srgb, #d90 12%, canvas);
+}
+.log-error {
+  background: color-mix(in srgb, #c44 16%, canvas);
+}
+.log-end {
+  opacity: 0.6;
+  font-style: italic;
+}
+/* Category filter toggles. */
+.log-stream.hide-ai .log-line.cat-ai,
+.log-stream.hide-snapshot .log-line.cat-snapshot,
+.log-stream.hide-db .log-line.cat-db,
+.log-stream.hide-pipeline .log-line.cat-pipeline,
+.log-stream.hide-http .log-line.cat-http,
+.log-stream.hide-other .log-line.cat-other {
+  display: none;
+}

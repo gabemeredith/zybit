@@ -6,6 +6,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { installLogCapture } from './logCapture';
 import { getMe, postAuth, postLogout } from './routes/auth';
 import { postAuditUrl } from './routes/auditUrl';
 import { getRunById, postGenerate } from './routes/generate';
@@ -21,6 +22,10 @@ import '../lib/scenarios/northwind';
 import '../lib/scenarios/verdant';
 import '../lib/scenarios/plotandpatio';
 import '../lib/scenarios/quilltax';
+
+// Tap `console` before anything runs so the developer log panel captures the
+// pipeline's structured output (and every LLM call) per run.
+installLogCapture();
 
 const PORT = Number.parseInt(process.env.LIGHTHOUSE_PORT ?? '3001', 10);
 

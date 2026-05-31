@@ -90,8 +90,10 @@ async function renderDashboard() {
     el('p', { class: 'loading' }, 'loading scenarios…'),
   ]);
   const runPane = el('section', { class: 'runpane' });
-  const urlControls = buildUrlAuditControls(runPane);
-  root.appendChild(el('div', {}, [header, controls, urlControls, runPane]));
+  // Persistent across run-pane re-renders so streaming logs keep their scroll.
+  const logPane = el('section', { class: 'logpane' });
+  const urlControls = buildUrlAuditControls(runPane, logPane);
+  root.appendChild(el('div', {}, [header, controls, urlControls, runPane, logPane]));
 
   const { body } = await api('/lighthouse/api/scenarios');
   clear(controls);
@@ -148,7 +150,7 @@ async function renderDashboard() {
         body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error((r.body && r.body.error) || `http ${r.status}`);
-      await pollRun(r.body.runId, runPane);
+      await pollRun(r.body.runId, runPane, logPane);
     } catch (err) {
       clear(runPane);
       runPane.appendChild(el('p', { class: 'error' }, `error: ${err.message}`));
@@ -176,22 +178,108 @@ async function renderDashboard() {
   );
 }
 
-async function pollRun(runId, runPane) {
+async function pollRun(runId, runPane, logPane) {
   let lastProgressCount = -1;
+  let renderedLogs = 0;
+  const logSink = logPane ? initLogPane(logPane) : null;
   for (;;) {
-    const { body } = await api(`/lighthouse/api/runs/${encodeURIComponent(runId)}`);
+    // `sinceLog` fetches only log entries we haven't rendered yet.
+    const { body } = await api(
+      `/lighthouse/api/runs/${encodeURIComponent(runId)}?sinceLog=${renderedLogs}`,
+    );
     if (!body) {
       clear(runPane);
       runPane.appendChild(el('p', { class: 'error' }, 'run vanished'));
       return;
     }
+    if (logSink && Array.isArray(body.logs) && body.logs.length) {
+      logSink.append(body.logs);
+      renderedLogs = body.logTotal ?? renderedLogs + body.logs.length;
+    } else if (typeof body.logTotal === 'number') {
+      renderedLogs = body.logTotal;
+    }
     if ((body.progress?.length ?? 0) !== lastProgressCount || body.status !== 'running') {
       lastProgressCount = body.progress?.length ?? 0;
       renderRunState(runPane, body, runId);
     }
-    if (body.status !== 'running') return;
+    if (body.status !== 'running') {
+      if (logSink) logSink.markDone();
+      return;
+    }
     await new Promise((r) => setTimeout(r, 400));
   }
+}
+
+// --- Developer log panel --------------------------------------------------
+//
+// Streams the per-run `console` capture (pipeline steps, DB writes, and every
+// LLM call) into a scrollable pane. Lives outside the run pane so re-renders
+// don't reset scroll. Category filters default to all-on; "AI/LLM" is the one
+// you usually want when QA-ing the LLM path.
+
+const LOG_CATEGORIES = [
+  ['ai', 'AI/LLM'],
+  ['snapshot', 'snapshot'],
+  ['db', 'db'],
+  ['pipeline', 'pipeline'],
+  ['http', 'http'],
+  ['other', 'other'],
+];
+
+const AI_FIELD_KEYS = ['service', 'model', 'promptTokens', 'responseTokens', 'totalTokens', 'latencyMs', 'outcome'];
+
+function initLogPane(logPane) {
+  clear(logPane);
+  const stream = el('div', { class: 'log-stream' });
+  const counter = el('span', { class: 'log-count' }, '0 lines');
+
+  const filters = LOG_CATEGORIES.map(([cat, label]) => {
+    const cb = el('input', { type: 'checkbox', checked: 'checked', 'data-cat': cat });
+    cb.addEventListener('change', () => {
+      stream.classList.toggle(`hide-${cat}`, !cb.checked);
+    });
+    return el('label', { class: `log-filter cat-${cat}` }, [cb, ' ', label]);
+  });
+
+  logPane.appendChild(
+    el('div', { class: 'log-head' }, [
+      el('h2', {}, 'logs'),
+      el('div', { class: 'log-filters' }, filters),
+      counter,
+    ]),
+  );
+  logPane.appendChild(stream);
+
+  let count = 0;
+  return {
+    append(entries) {
+      // Autoscroll only if the user is already near the bottom.
+      const nearBottom = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 40;
+      for (const e of entries) stream.appendChild(renderLogLine(e));
+      count += entries.length;
+      counter.textContent = `${count} line${count === 1 ? '' : 's'}`;
+      if (nearBottom) stream.scrollTop = stream.scrollHeight;
+    },
+    markDone() {
+      stream.appendChild(el('div', { class: 'log-line log-info cat-other log-end' }, '— run finished —'));
+      stream.scrollTop = stream.scrollHeight;
+    },
+  };
+}
+
+function renderLogLine(e) {
+  const time = (e.ts || '').slice(11, 23);
+  const children = [
+    el('span', { class: 'log-ts' }, time),
+    el('span', { class: `log-cat cat-badge-${e.category}` }, e.category),
+    el('span', { class: 'log-msg' }, e.message || ''),
+  ];
+  // Surface the useful LLM fields inline (tokens, model, latency).
+  if (e.fields && e.category === 'ai') {
+    const bits = AI_FIELD_KEYS.filter((k) => e.fields[k] != null).map((k) => `${k}=${e.fields[k]}`);
+    if (bits.length) children.push(el('span', { class: 'log-fields' }, bits.join(' ')));
+  }
+  return el('div', { class: `log-line log-${e.level} cat-${e.category}` }, children);
 }
 
 function renderRunState(runPane, state, runId) {
@@ -578,7 +666,7 @@ function renderCalibrationResult(box, report, humanPicks) {
   }
 }
 
-function buildUrlAuditControls(runPane) {
+function buildUrlAuditControls(runPane, logPane) {
   const urlInput = el('input', {
     type: 'url',
     name: 'auditUrl',
@@ -615,7 +703,7 @@ function buildUrlAuditControls(runPane) {
       if (!r.ok) {
         throw new Error((r.body && (r.body.detail || r.body.error)) || `http ${r.status}`);
       }
-      await pollRun(r.body.runId, runPane);
+      await pollRun(r.body.runId, runPane, logPane);
     } catch (err) {
       clear(runPane);
       runPane.appendChild(el('p', { class: 'error' }, `error: ${err.message}`));

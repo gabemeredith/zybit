@@ -5,6 +5,7 @@
  */
 
 import type { GenerateProgressEvent, GenerateResult } from '../lib/types';
+import type { LogEntry } from './logCapture';
 
 export type RunStatus = 'running' | 'done' | 'error';
 
@@ -14,6 +15,8 @@ export interface RunState {
   startedAt: string;
   status: RunStatus;
   progress: GenerateProgressEvent[];
+  /** Developer log stream captured from `console` while this run was active. */
+  logs: LogEntry[];
   result?: GenerateResult;
   error?: { message: string };
 }
@@ -28,6 +31,7 @@ export function createRun(scenarioId: string): RunState {
     startedAt: new Date().toISOString(),
     status: 'running',
     progress: [],
+    logs: [],
   };
   runs.set(runId, state);
   return state;
@@ -37,6 +41,12 @@ export function appendProgress(runId: string, event: GenerateProgressEvent): voi
   const state = runs.get(runId);
   if (!state) return;
   state.progress.push(event);
+}
+
+export function appendLog(runId: string, entry: LogEntry): void {
+  const state = runs.get(runId);
+  if (!state) return;
+  state.logs.push(entry);
 }
 
 export function completeRun(runId: string, result: GenerateResult): void {
