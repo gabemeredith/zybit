@@ -227,7 +227,25 @@ const LOG_CATEGORIES = [
   ['other', 'other'],
 ];
 
-const AI_FIELD_KEYS = ['service', 'model', 'promptTokens', 'responseTokens', 'totalTokens', 'latencyMs', 'outcome'];
+// Diagnostic fields surfaced inline for ANY log line that carries them — so a
+// failure's reason ("error", "reason", "code", "issue") is visible without
+// digging into the terminal. AI lines additionally show model + token usage.
+const SURFACED_FIELD_KEYS = [
+  'error',
+  'reason',
+  'code',
+  'issue',
+  'outcome',
+  'service',
+  'model',
+  'promptTokens',
+  'responseTokens',
+  'totalTokens',
+  'latencyMs',
+  'durationMs',
+  'findingId',
+  'pathRef',
+];
 
 function initLogPane(logPane) {
   clear(logPane);
@@ -275,10 +293,13 @@ function renderLogLine(e) {
     el('span', { class: `log-cat cat-badge-${e.category}` }, e.category),
     el('span', { class: 'log-msg' }, e.message || ''),
   ];
-  // Surface the useful LLM fields inline (tokens, model, latency).
-  if (e.fields && e.category === 'ai') {
-    const bits = AI_FIELD_KEYS.filter((k) => e.fields[k] != null).map((k) => `${k}=${e.fields[k]}`);
-    if (bits.length) children.push(el('span', { class: 'log-fields' }, bits.join(' ')));
+  // Surface diagnostic fields inline (error/reason/code first), truncated.
+  if (e.fields) {
+    const bits = SURFACED_FIELD_KEYS.filter((k) => e.fields[k] != null).map((k) => {
+      const v = String(e.fields[k]);
+      return `${k}=${v.length > 120 ? v.slice(0, 120) + '…' : v}`;
+    });
+    if (bits.length) children.push(el('span', { class: 'log-fields' }, bits.join('  ')));
   }
   return el('div', { class: `log-line log-${e.level} cat-${e.category}` }, children);
 }
