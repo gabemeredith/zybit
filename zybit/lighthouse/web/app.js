@@ -94,7 +94,9 @@ async function renderDashboard() {
   const logPane = el('section', { class: 'logpane' });
   const urlControls = buildUrlAuditControls(runPane, logPane);
   const dataPane = buildDataBrowser();
-  root.appendChild(el('div', {}, [header, controls, urlControls, runPane, logPane, dataPane]));
+  root.appendChild(
+    el('div', {}, [header, buildHelpPanel(), controls, urlControls, runPane, logPane, dataPane]),
+  );
 
   const { body } = await api('/lighthouse/api/scenarios');
   clear(controls);
@@ -266,6 +268,9 @@ function initLogPane(logPane) {
       el('div', { class: 'log-filters' }, filters),
       counter,
     ]),
+  );
+  logPane.appendChild(
+    help("Live console for this run — pipeline steps, DB writes, and every LLM call. Filter by category; error/reason/tokens show inline."),
   );
   logPane.appendChild(stream);
 
@@ -827,6 +832,80 @@ function buildInspectorView(result) {
   return wrap;
 }
 
+// --- In-GUI documentation -------------------------------------------------
+//
+// Verbose, on-screen explanations so anyone looking at Lighthouse can tell
+// what every panel, badge, and reason code means without reading the source.
+
+function help(text) {
+  return el('p', { class: 'help' }, text);
+}
+
+const FIX_PREVIEW_REASON_HELP = {
+  ok: 'Preview generated — before + after both rendered.',
+  'screenshot-unusable':
+    'The rendered "before" screenshot was blank / login-gated / mid-load. The screenshot quality gate (gpt-5.4-mini) suppressed it before spending advisor or inpaint budget. (Lighthouse runs the real prod render here, so a blank means prod would render blank too.)',
+  'rule-skipped':
+    'Structural fix with no visible screenshot change (e.g. add a meta description, fix heading order). Skipped on purpose.',
+  'no-html': 'No page HTML, prescription, or resolved domain to build a preview from.',
+  'no-mods': 'The Tier-1 advisor returned no usable modifications for this finding.',
+  'render-failed': 'Browserless failed to render the before/after pair.',
+  'inpaint-failed': 'The Tier-2 vision inpaint failed.',
+  'tier3-fallback': 'AUDIT_FIX_PREVIEW_ENABLED is off — only the annotated-before fallback is available.',
+};
+
+const FIX_PREVIEW_TIER_HELP = {
+  1: 'Tier 1 — deterministic: the advisor proposes modifications, they\'re applied to the HTML, and Browserless renders it. The "after" is a real render of a real fix.',
+  2: 'Tier 2 — vision inpaint: the real before screenshot is edited by the image model, so brand consistency is preserved by construction.',
+  3: 'Tier 3 — annotated-before fallback (no after image).',
+};
+
+const VARIANT_ERROR_HELP = {
+  'no usable selectors':
+    'The snapshot has no CTA/form/heading cssSelectors for the advisor to target. Common on JS-rendered URL audits, where the parser emits cssSelector: null for every element — so the advisor is effectively unavailable on the URL-audit path.',
+  'OPENAI_API_KEY not set': 'No OpenAI key in the environment — the advisor cannot run.',
+  'no snapshot': 'No structural snapshot was found for this page.',
+};
+
+function buildHelpPanel() {
+  const section = (title, lines) =>
+    el('div', { class: 'help-section' }, [
+      el('h4', {}, title),
+      el('ul', {}, lines.map((l) => el('li', {}, l))),
+    ]);
+  return el('details', { class: 'group help-panel' }, [
+    el('summary', {}, 'ℹ what am I looking at? — Lighthouse guide'),
+    help(
+      'Lighthouse drives the REAL Zybit pipeline against synthetic scenarios or real URLs so you can watch the Understand → Identify → Propose → Test → Measure → Learn loop end to end. It runs the production code rather than re-implementing it — so what you see here is what prod would do.',
+    ),
+    section('Run controls (synthetic scenarios)', [
+      'Generate: drive a hand-authored fake site with synthetic persona sessions through the whole loop.',
+      'Layer B (LLM prose): write finding prose with the LLM instead of templates. "compare" forces it on for every finding so you can judge LLM vs template side by side.',
+    ]),
+    section('URL audit + owned-site presets', [
+      'audit url: crawl a real site (Firecrawl), snapshot it, run the 23 audit rules. Findings are real; the behavioral event layer is synthetic and NOT ground truth.',
+      'owned sites — full LLM depth: one click runs vision + copy-critique + Layer B + fix-preview + variant advisor against a site we own. This is how we QA the LLM work.',
+    ]),
+    section('Logs panel', [
+      "Streams this run's console output: every pipeline step, DB write, and LLM call. Toggle categories (AI/LLM, snapshot, db, pipeline, http, other) with the checkboxes.",
+      'Diagnostic fields (error, reason, code, tokens, latency) show inline so failures explain themselves.',
+    ]),
+    section('Database browser', [
+      'Read-only view of every table across all orgs (auto-loads on open). Narrow by org/site. First 50 rows per table; click + on a row for full JSON. Read-only — no write paths.',
+    ]),
+    section('Inspector → fix previews', [
+      'Before/after imagery per top finding. Tier 1 = real render of an advisor fix; Tier 2 = vision inpaint of the real screenshot; Tier 3 = annotated-before fallback.',
+      'Reason codes are explained inline on each card (screenshot-unusable, rule-skipped, no-mods, render-failed, inpaint-failed, tier3-fallback).',
+    ]),
+    section('Inspector → AI variant advisor', [
+      'Up to 3 validated VariantModification options per top finding. "no usable selectors" means the snapshot has no targetable CTA/form/heading selectors — common on JS-rendered URL audits.',
+    ]),
+    section('Layer B panel', [
+      'Per-finding template-vs-LLM prose, token/cost/latency, fallback + fabrication-rejection rates, and the blind judge-vs-human calibration exercise.',
+    ]),
+  ]);
+}
+
 function buildFixPreviewView(previews) {
   const withAfter = previews.filter((p) => p.afterUrl).length;
   const cards = previews.map((p) => {
@@ -840,11 +919,14 @@ function buildFixPreviewView(previews) {
     return el('div', { class: 'fp-card' }, [
       head,
       imgs.length ? el('div', { class: 'fp-imgs' }, imgs) : el('p', { class: 'empty' }, `no preview (${p.reason})`),
+      p.tier && FIX_PREVIEW_TIER_HELP[p.tier] ? help(FIX_PREVIEW_TIER_HELP[p.tier]) : null,
+      !imgs.length && FIX_PREVIEW_REASON_HELP[p.reason] ? help(FIX_PREVIEW_REASON_HELP[p.reason]) : null,
       p.rationale ? el('p', { class: 'fp-rationale' }, p.rationale) : null,
     ]);
   });
   return el('details', { class: 'group', open: 'open' }, [
     el('summary', {}, `fix previews — ${withAfter}/${previews.length} with after-image`),
+    help('Before/after imagery per top finding. Each card shows its tier (real render / vision inpaint / fallback) or, when there\'s no after-image, why.'),
     ...cards,
   ]);
 }
@@ -864,12 +946,14 @@ function buildVariantProposalView(proposals) {
     );
     return el('div', { class: 'vp-card' }, [
       head,
+      v.error && VARIANT_ERROR_HELP[v.error] ? help(VARIANT_ERROR_HELP[v.error]) : null,
       v.note ? el('p', { class: 'vp-note' }, v.note) : null,
       ...opts,
     ]);
   });
   return el('details', { class: 'group', open: 'open' }, [
     el('summary', {}, `AI variant advisor — ${totalOptions} option(s) across ${proposals.length} finding(s)`),
+    help('Up to 3 validated VariantModification options per top finding. Needs CTA/form/heading cssSelectors in the snapshot to target — expand an option for its modification JSON.'),
     ...cards,
   ]);
 }
@@ -1011,6 +1095,9 @@ async function initDataBrowser(body) {
   });
   siteSelect.addEventListener('change', () => void loadAll());
 
+  body.appendChild(
+    help('Read-only view of every table across all orgs (real + synthetic). Narrow with org/site. Tables with rows are expanded; click + on a row for full JSON. No write paths.'),
+  );
   body.appendChild(
     el('div', { class: 'control-row data-controls' }, [
       el('label', {}, ['org ', orgSelect]),
