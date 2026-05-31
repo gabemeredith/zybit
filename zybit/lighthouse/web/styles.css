@@ -618,3 +618,13 @@ button.data-expand {
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 0.8em;
 }
+.preset-row {
+  align-items: center;
+}
+.preset-label {
+  font-size: 0.82em;
+  opacity: 0.7;
+}
+button.preset-btn {
+  background: color-mix(in srgb, #7c5cff 22%, canvas);
+}

@@ -717,12 +717,42 @@ function buildUrlAuditControls(runPane, logPane) {
   auditBtn.addEventListener('click', () => runAudit({}));
   compareBtn.addEventListener('click', () => runAudit({ layerB: true, layerBDeriveFacts: true }));
 
+  // Owned-site presets — one click runs the full LLM surface (vision +
+  // copy-critique + Layer B + fix-preview + variant advisor) against a site we
+  // own, so QA-ing the LLM PR is a single button. Vision/page counts are kept
+  // small to bound Browserless + OpenAI spend.
+  const FULL_DEPTH = {
+    layerB: true,
+    layerBDeriveFacts: true,
+    visionPagesLimit: 3,
+    fixPreview: true,
+    variantAdvisor: true,
+  };
+  function makePreset(label, url) {
+    const btn = el(
+      'button',
+      { type: 'button', class: 'preset-btn', title: `Audit ${url} at full LLM depth` },
+      label,
+    );
+    btn.addEventListener('click', () => {
+      urlInput.value = url;
+      pagesInput.value = '6';
+      void runAudit(FULL_DEPTH);
+    });
+    return btn;
+  }
+
   return el('section', { class: 'controls' }, [
     el('div', { class: 'control-row' }, [
       el('label', {}, ['audit url ', urlInput]),
       el('label', {}, ['max pages ', pagesInput]),
       auditBtn,
       compareBtn,
+    ]),
+    el('div', { class: 'control-row preset-row' }, [
+      el('span', { class: 'preset-label' }, 'owned sites — full LLM depth:'),
+      makePreset('commitmint.app', 'https://commitmint.app'),
+      makePreset('cohor7.com', 'https://cohor7.com'),
     ]),
   ]);
 }
