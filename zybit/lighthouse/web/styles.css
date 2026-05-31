@@ -560,3 +560,61 @@ button.data-expand {
 .data-section-body {
   margin-top: 0.35rem;
 }
+
+/* --- Fix-preview + variant-advisor cards (URL-audit full LLM depth) ----- */
+.fp-card,
+.vp-card {
+  border: 1px solid color-mix(in srgb, canvastext 12%, canvas);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  margin: 0.4rem 0;
+}
+.fp-head,
+.vp-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.85em;
+}
+.fp-tier {
+  font-size: 0.75em;
+  opacity: 0.7;
+}
+.fp-imgs {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+}
+.fp-fig {
+  margin: 0;
+  flex: 1 1 12rem;
+  min-width: 10rem;
+}
+.fp-fig img {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, canvastext 12%, canvas);
+  border-radius: 0.25rem;
+}
+.fp-fig figcaption {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  text-align: center;
+}
+.fp-rationale {
+  font-size: 0.82em;
+  margin: 0.4rem 0 0;
+}
+.vp-error {
+  font-size: 0.75em;
+  color: #c44;
+}
+.vp-note {
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+.vp-option > summary {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.8em;
+}

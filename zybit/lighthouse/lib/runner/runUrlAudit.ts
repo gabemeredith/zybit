@@ -30,6 +30,7 @@ import { capturePageAllBreakpoints } from '@/lib/phase2/capture/record';
 import { buildFullDesignSnapshot } from '@/lib/phase2/snapshots/designCapture';
 import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
 import { mapSite } from '../crawl/firecrawl';
+import { runFixPreviews, runVariantAdvisor } from './fullLlmDepth';
 import { generateGroundedEvents, type GroundedPage } from '../generators/groundedEvents';
 import { provisionLighthouseSite } from '../seeder/orgSite';
 import { DirectEventSink } from '../sinks/direct';
@@ -65,6 +66,14 @@ export interface RunUrlAuditOpts {
   layerB?: boolean;
   /** Compare mode — derive facts from evidence so every finding is eligible. */
   layerBDeriveFacts?: boolean;
+  /**
+   * Run the before/after fix-preview pipeline over the top findings (Tier 1
+   * advisor + Browserless render, Tier 2 inpaint). Self-gates on
+   * AUDIT_FIX_PREVIEW_ENABLED inside the orchestrator.
+   */
+  fixPreview?: boolean;
+  /** Run the AI Variant Advisor over the top findings. Needs OPENAI_API_KEY. */
+  variantAdvisor?: boolean;
 }
 
 function now(): string {
@@ -342,6 +351,32 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
     }
   }
 
+  // 6.5) Full-LLM-depth extras (Lighthouse QA). Fail-soft: an error here
+  // never sinks the audit — it's logged (and visible in the log panel) and
+  // the run still returns its findings.
+  let fixPreviews: GenerateResult['fixPreviews'];
+  let variantProposals: GenerateResult['variantProposals'];
+  if (opts.fixPreview && auditFindings.length > 0) {
+    progress(onProgress, 'insights', 'generating before/after fix previews (top findings)');
+    try {
+      fixPreviews = await runFixPreviews({ organizationId, siteId, auditUrl: url, findings: auditFindings });
+      const withAfter = fixPreviews.filter((p) => p.afterUrl).length;
+      progress(onProgress, 'insights', `fix previews: ${withAfter}/${fixPreviews.length} produced an after-image`);
+    } catch (err) {
+      progress(onProgress, 'insights', `fix preview failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  if (opts.variantAdvisor && auditFindings.length > 0) {
+    progress(onProgress, 'insights', 'running AI variant advisor (top findings)');
+    try {
+      variantProposals = await runVariantAdvisor({ organizationId, siteId, findings: auditFindings, repository });
+      const opts_ = variantProposals.reduce((n, v) => n + v.options.length, 0);
+      progress(onProgress, 'insights', `variant advisor: ${opts_} option(s) across ${variantProposals.length} finding(s)`);
+    } catch (err) {
+      progress(onProgress, 'insights', `variant advisor failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   // 7) Sample rows for the inspector.
   const db = getDb();
   const [eventSample, snapshotSample] = await Promise.all([
@@ -409,5 +444,7 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
     },
     inspector,
     ...(snapshotErrors.length ? { snapshotErrors } : {}),
+    ...(fixPreviews ? { fixPreviews } : {}),
+    ...(variantProposals ? { variantProposals } : {}),
   };
 }

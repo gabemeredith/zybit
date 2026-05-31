@@ -32,12 +32,22 @@ export async function postAuditUrl(req: IncomingMessage, res: ServerResponse): P
     maxPages?: unknown;
     layerB?: unknown;
     layerBDeriveFacts?: unknown;
+    visionPagesLimit?: unknown;
+    fixPreview?: unknown;
+    variantAdvisor?: unknown;
   };
   const url = typeof params.url === 'string' ? params.url.trim() : '';
   if (!url) return badRequest(res, 'missing_url');
   const layerB = typeof params.layerB === 'boolean' ? params.layerB : undefined;
   const layerBDeriveFacts =
     typeof params.layerBDeriveFacts === 'boolean' ? params.layerBDeriveFacts : undefined;
+  // Capped 0..10: vision + copy-critique run for the first N pages.
+  const visionPagesLimit =
+    typeof params.visionPagesLimit === 'number' && Number.isFinite(params.visionPagesLimit)
+      ? Math.max(0, Math.min(10, Math.floor(params.visionPagesLimit)))
+      : undefined;
+  const fixPreview = typeof params.fixPreview === 'boolean' ? params.fixPreview : undefined;
+  const variantAdvisor = typeof params.variantAdvisor === 'boolean' ? params.variantAdvisor : undefined;
 
   let parsed: URL;
   try {
@@ -67,6 +77,9 @@ export async function postAuditUrl(req: IncomingMessage, res: ServerResponse): P
         onProgress: (event) => appendProgress(state.runId, event),
         ...(typeof layerB === 'boolean' ? { layerB } : {}),
         ...(layerBDeriveFacts ? { layerBDeriveFacts } : {}),
+        ...(visionPagesLimit !== undefined ? { visionPagesLimit } : {}),
+        ...(fixPreview !== undefined ? { fixPreview } : {}),
+        ...(variantAdvisor !== undefined ? { variantAdvisor } : {}),
       });
       completeRun(state.runId, result);
     } catch (err) {

@@ -767,7 +767,60 @@ function buildInspectorView(result) {
       ]),
     );
   }
+  if (Array.isArray(result.fixPreviews) && result.fixPreviews.length) {
+    wrap.appendChild(buildFixPreviewView(result.fixPreviews));
+  }
+  if (Array.isArray(result.variantProposals) && result.variantProposals.length) {
+    wrap.appendChild(buildVariantProposalView(result.variantProposals));
+  }
   return wrap;
+}
+
+function buildFixPreviewView(previews) {
+  const withAfter = previews.filter((p) => p.afterUrl).length;
+  const cards = previews.map((p) => {
+    const head = el('div', { class: 'fp-head' }, [
+      el('code', {}, `${p.ruleId}${p.pathRef ? ' · ' + p.pathRef : ''}`),
+      el('span', { class: 'fp-tier' }, p.tier ? `tier ${p.tier}` : p.reason),
+    ]);
+    const imgs = [];
+    if (p.beforeUrl) imgs.push(el('figure', { class: 'fp-fig' }, [el('img', { src: p.beforeUrl, alt: 'before' }), el('figcaption', {}, 'before')]));
+    if (p.afterUrl) imgs.push(el('figure', { class: 'fp-fig' }, [el('img', { src: p.afterUrl, alt: 'after' }), el('figcaption', {}, 'after')]));
+    return el('div', { class: 'fp-card' }, [
+      head,
+      imgs.length ? el('div', { class: 'fp-imgs' }, imgs) : el('p', { class: 'empty' }, `no preview (${p.reason})`),
+      p.rationale ? el('p', { class: 'fp-rationale' }, p.rationale) : null,
+    ]);
+  });
+  return el('details', { class: 'group', open: 'open' }, [
+    el('summary', {}, `fix previews — ${withAfter}/${previews.length} with after-image`),
+    ...cards,
+  ]);
+}
+
+function buildVariantProposalView(proposals) {
+  const totalOptions = proposals.reduce((n, v) => n + (v.options ? v.options.length : 0), 0);
+  const cards = proposals.map((v) => {
+    const head = el('div', { class: 'vp-head' }, [
+      el('code', {}, `${v.ruleId}${v.pathRef ? ' · ' + v.pathRef : ''}`),
+      v.error ? el('span', { class: 'vp-error' }, v.error) : el('span', {}, `${v.options.length} option(s)`),
+    ]);
+    const opts = (v.options || []).map((o, i) =>
+      el('details', { class: 'group vp-option' }, [
+        el('summary', {}, `${i + 1}. ${o.label || '(unnamed option)'} [${o.confidence || '?'}]`),
+        el('pre', {}, JSON.stringify(o.modifications, null, 2)),
+      ]),
+    );
+    return el('div', { class: 'vp-card' }, [
+      head,
+      v.note ? el('p', { class: 'vp-note' }, v.note) : null,
+      ...opts,
+    ]);
+  });
+  return el('details', { class: 'group', open: 'open' }, [
+    el('summary', {}, `AI variant advisor — ${totalOptions} option(s) across ${proposals.length} finding(s)`),
+    ...cards,
+  ]);
 }
 
 function buildPmView(siteId) {

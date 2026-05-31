@@ -232,4 +232,15 @@ export interface GenerateResult {
       foldGuess: string;
     }>;
   }>;
+  /**
+   * Before/after fix-preview summaries (URL-audit `fixPreview` mode). One per
+   * top finding — tier + before/after URLs + the advisor's one-line rationale.
+   * Gated on AUDIT_FIX_PREVIEW_ENABLED inside the orchestrator.
+   */
+  fixPreviews?: import('./runner/fullLlmDepth').FixPreviewSummary[];
+  /**
+   * AI Variant Advisor proposals (URL-audit `variantAdvisor` mode). One entry
+   * per top finding, each carrying the validated VariantModification options.
+   */
+  variantProposals?: import('./runner/fullLlmDepth').VariantProposalSummary[];
 }
