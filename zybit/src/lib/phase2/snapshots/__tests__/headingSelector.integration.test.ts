@@ -23,7 +23,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { parseSnapshot } from '../parser';
-import { countSelectorMatches } from '../selectorUtils';
+import { countSelectorMatches, selectorStability } from '../selectorUtils';
 
 const FINAL_URL = 'https://example.com/';
 const RAW_BYTE_SIZE = 4096;
@@ -97,11 +97,15 @@ describe('parser → buildMinimalHtml → validator round-trip (PR #84 follow-up
     expect(match.count).toBe(1);
   });
 
-  it('heading without any stable anchor returns cssSelector: null (bail, not fragile)', async () => {
+  it('heading without any stable anchor gets a fragile positional selector (rung 5)', async () => {
     const data = await parseSnapshot({ html: HTML, finalUrl: FINAL_URL, rawByteSize: RAW_BYTE_SIZE });
 
     const how = data.headings.find((h) => h.text === 'How it works');
-    expect(how?.cssSelector, 'no id, no testid → null is correct').toBeNull();
+    // No id/testid → falls to the positional path rather than null, so the AI
+    // advisor still has something to target on anchor-less real-world sites.
+    expect(how?.cssSelector).toBeTruthy();
+    expect(how?.cssSelector).toContain(':nth-of-type(');
+    expect(selectorStability(how!.cssSelector!)).toBe('fragile');
   });
 
   it('PR #84 bug-3: nav and footer CTAs are emitted with the right landmark for the vocab filter', async () => {

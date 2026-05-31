@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from 'node-html-parser';
-import { computeCssSelector } from '../cssSelector';
+import { computeCssSelector, stableSelector } from '../cssSelector';
+import { selectorStability } from '../selectorUtils';
 
 function el(html: string, tag: string = 'button') {
   const root = parse(html);
@@ -24,11 +25,11 @@ describe('computeCssSelector — testid family (most stable)', () => {
       .toBe('[data-cy="x"]');
   });
 
-  it('rejects unsafe testid values', () => {
+  it('rejects unsafe testid values (stable ladder bails to null)', () => {
     // Spaces, quotes, etc. — bail rather than try to escape.
-    expect(computeCssSelector(el('<button data-testid="has space">Go</button>'), 'button'))
+    expect(stableSelector(el('<button data-testid="has space">Go</button>'), 'button'))
       .toBeNull();
-    expect(computeCssSelector(el('<button data-testid=\'has"quote\'>Go</button>'), 'button'))
+    expect(stableSelector(el('<button data-testid=\'has"quote\'>Go</button>'), 'button'))
       .toBeNull();
   });
 
@@ -45,13 +46,13 @@ describe('computeCssSelector — id (second rung)', () => {
   });
 
   it('rejects React useId-style auto-generated ids', () => {
-    expect(computeCssSelector(el('<button id=":r0:">Go</button>'), 'button')).toBeNull();
-    expect(computeCssSelector(el('<button id=":r3a:">Go</button>'), 'button')).toBeNull();
+    expect(stableSelector(el('<button id=":r0:">Go</button>'), 'button')).toBeNull();
+    expect(stableSelector(el('<button id=":r3a:">Go</button>'), 'button')).toBeNull();
   });
 
   it('rejects ids that look like hashed framework output', () => {
     // Long uninterrupted hex run with little human-readable content.
-    expect(computeCssSelector(el('<button id="a1b2c3d4e5f6">Go</button>'), 'button'))
+    expect(stableSelector(el('<button id="a1b2c3d4e5f6">Go</button>'), 'button'))
       .toBeNull();
   });
 
@@ -79,7 +80,7 @@ describe('computeCssSelector — name (third rung)', () => {
   });
 
   it('rejects unsafe name values', () => {
-    expect(computeCssSelector(el('<button name="weird name">Go</button>'), 'button'))
+    expect(stableSelector(el('<button name="weird name">Go</button>'), 'button'))
       .toBeNull();
   });
 });
@@ -91,23 +92,42 @@ describe('computeCssSelector — role + aria-label (fourth rung)', () => {
   });
 
   it('requires both role and aria-label', () => {
-    expect(computeCssSelector(el('<button role="button">Go</button>'), 'button')).toBeNull();
-    expect(computeCssSelector(el('<button aria-label="Go now">Go</button>'), 'button')).toBeNull();
+    expect(stableSelector(el('<button role="button">Go</button>'), 'button')).toBeNull();
+    expect(stableSelector(el('<button aria-label="Go now">Go</button>'), 'button')).toBeNull();
   });
 
   it('bails when aria-label has unsafe characters', () => {
     const e = el('<button role="button" aria-label=\'has "quote\'>Go</button>');
-    expect(computeCssSelector(e, 'button')).toBeNull();
+    expect(stableSelector(e, 'button')).toBeNull();
   });
 });
 
-describe('computeCssSelector — bail', () => {
-  it('returns null when only classes are present', () => {
-    expect(computeCssSelector(el('<button class="btn btn-primary">Go</button>'), 'button'))
-      .toBeNull();
+describe('computeCssSelector — positional fallback (rung 5)', () => {
+  it('returns a positional nth-of-type selector for a class-only element', () => {
+    const sel = computeCssSelector(el('<button class="btn btn-primary">Go</button>'), 'button');
+    expect(sel).toBe('button:nth-of-type(1)');
+    expect(selectorStability(sel)).toBe('fragile');
   });
 
-  it('returns null for a bare element with no attributes', () => {
-    expect(computeCssSelector(el('<button>Go</button>'), 'button')).toBeNull();
+  it('returns a positional selector for a bare element (never null)', () => {
+    expect(computeCssSelector(el('<button>Go</button>'), 'button')).toBe('button:nth-of-type(1)');
+  });
+
+  it('anchors the path on the nearest stable-selector ancestor', () => {
+    const root = parse('<div id="main"><section><a class="x">A</a><a class="y">B</a></section></div>');
+    const a = root.querySelectorAll('a')[1];
+    const sel = computeCssSelector(a, 'a');
+    expect(sel).toBe('#main > section:nth-of-type(1) > a:nth-of-type(2)');
+    // The #id anchor lifts the whole path to 'stable' under selectorStability's
+    // first-match rule — an id-anchored path is more robust than a bare one.
+    expect(selectorStability(sel)).toBe('stable');
+  });
+
+  it('roots the path at body when no stable ancestor exists', () => {
+    const root = parse('<body><div><button class="c">Go</button></div></body>');
+    const b = root.querySelector('button');
+    expect(computeCssSelector(b!, 'button')).toBe(
+      'body > div:nth-of-type(1) > button:nth-of-type(1)',
+    );
   });
 });
