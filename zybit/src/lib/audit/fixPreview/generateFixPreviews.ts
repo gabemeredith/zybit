@@ -95,6 +95,16 @@ export interface FixPreviewDeps {
     siteId: string,
     pathRef: string,
   ) => Promise<string[]>;
+  /**
+   * Override the resolved-render-URL lookup for tests. Returns the snapshot's
+   * stored final URL (post-redirect) for the pathRef, so the render hits the
+   * same origin the audit actually analyzed instead of the apex domain.
+   */
+  lookupRenderUrl?: (
+    organizationId: string,
+    siteId: string,
+    pathRef: string,
+  ) => Promise<string | null>;
   /** Override persistence for tests. Pass `noop` to skip the DB write. */
   persist?: (
     organizationId: string,
@@ -152,6 +162,7 @@ export async function generateFixPreviews(
   const lookupDomain = deps.lookupDomain ?? defaultLookupDomain;
   const lookupDesign = deps.lookupDesign ?? defaultLookupDesign;
   const lookupCtaVocabulary = deps.lookupCtaVocabulary ?? defaultLookupCtaVocabulary;
+  const lookupRenderUrl = deps.lookupRenderUrl ?? defaultLookupRenderUrl;
 
   const domain = await lookupDomain(args.organizationId, args.siteId);
 
@@ -180,11 +191,17 @@ export async function generateFixPreviews(
       continue;
     }
 
-    const originUrl = `${scheme}://${domain}${finding.pathRef}`;
-    const [design, ctaVocabulary] = await Promise.all([
+    // Prefer the snapshot's resolved final URL (post-redirect) so the render
+    // hits the same origin the audit analyzed. The apex `domain` is the
+    // fallback. Rendering the apex of a site that redirects (e.g. apex → www)
+    // serves the injected HTML under the wrong origin and its relative assets
+    // 404, producing a blank frame (QA: cohor7.com).
+    const [resolvedUrl, design, ctaVocabulary] = await Promise.all([
+      lookupRenderUrl(args.organizationId, args.siteId, finding.pathRef),
       lookupDesign(args.organizationId, args.siteId, finding.pathRef),
       lookupCtaVocabulary(args.siteId, finding.pathRef),
     ]);
+    const originUrl = resolvedUrl ?? `${scheme}://${domain}${finding.pathRef}`;
 
     const outcome = await runOneFinding(
       {
@@ -236,6 +253,29 @@ async function defaultLookupDesign(
   );
   if (!row) return null;
   return { designTokens: row.designTokens ?? null, cssSystem: row.cssSystem ?? null };
+}
+
+/**
+ * The snapshot's stored final URL (post-redirect) for this pathRef — what the
+ * audit actually fetched. Returns null on miss so the caller falls back to the
+ * apex-domain URL.
+ */
+async function defaultLookupRenderUrl(
+  organizationId: string,
+  siteId: string,
+  pathRef: string,
+): Promise<string | null> {
+  try {
+    const db = getDb();
+    const result = await db.execute<{ url: string }>(sql`
+      SELECT url FROM phase2_page_snapshots
+      WHERE organization_id = ${organizationId} AND site_id = ${siteId} AND path_ref = ${pathRef}
+      LIMIT 1
+    `);
+    return result.rows[0]?.url ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
