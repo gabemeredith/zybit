@@ -18,7 +18,20 @@ Zybit is a conversion intelligence platform for product managers. It runs a six-
 
 ## Build conventions (non-negotiable)
 
-- **Deterministic over generative.** Audit rules are pure functions — same input, same output. No LLM-generated numbers or invented evidence.
+- **Deterministic where it must be; LLM-driven where it's guarded.** The *decision
+  core* stays deterministic: whether a finding fires, every number/metric/lift,
+  statistical measurement, and traffic allocation are pure functions — reproducible,
+  attributable, defensible. But an LLM **may make a judgment call** — phrasing,
+  classification (industry, page type), context inference, variant/fix proposals,
+  prioritization — when it is backed by the full AI-engineering guardrail set
+  (see DOCTRINE "How we build"): (1) structured output, (2) a strict validator that
+  rejects/coerces malformed output, (3) fail-soft to a deterministic baseline so the
+  feature can never be worse than off, (4) grounding (numbers trace to FACTS;
+  classifications anchor on deterministic priors), (5) an eval harness measuring the
+  win vs baseline, (6) a human gate before any customer-facing flip. The test:
+  *"if this call returned garbage or nothing, is the system still correct?"* If yes,
+  and the win is measured, the LLM may decide. Rules never call an LLM in their body.
+  **Never** let an LLM invent a number or decide that a finding fires.
 - **PM-first at every layer.** Every output (finding title, evidence summary, UI label) is for a product manager, not an engineer.
 - **Every file has a purpose.** No scaffolding, no placeholders, no "we might need this later."
 - **Third-party where it's better.** Auth = owned approved-access sessions in `src/lib/auth/` (email+password via scrypt + hand-rolled Google OAuth, both terminating in the owned `createSession`; Clerk was removed in `a786d37`). Email = Resend. Billing = Stripe. Headless browser = Browserless.io. Cron monitoring = Cronitor. Observability = Axiom. Do not rebuild what third parties do well.
@@ -36,6 +49,7 @@ zybit/
   src/lib/phase2/rules/       — 23 audit rules (5 design + 7 pain + 1 flow + 7 structural + 3 AI copy critique); 83 test files in repo
   src/lib/phase2/connectors/  — PostHog (pull-sync) + Segment (webhook)
   src/lib/phase2/snapshots/   — Static HTML parse + visual-weight analysis
+  src/lib/phase2/siteContext/ — LLM context enrichment: industry/model/goal/audience/voice inferred once per audit (deterministic prior + guarded LLM), fed into copy-critique + Layer B + advisor prompts. Flag LLM_SITE_CONTEXT_ENABLED. (lighthouse/lib/eval is its A/B eval harness)
   src/lib/phase2/rollups/     — Event → InsightInput aggregation pipeline
   src/lib/phase1/             — Readiness scoring + legacy insights engine
   src/lib/audit/fixPreview/   — Before/after fix-preview pipeline (audit-mode AI advisor w/ screenshot vision channel, Browserless route()-intercept render, Nano Banana 2 inpaint, three-tier ladder)

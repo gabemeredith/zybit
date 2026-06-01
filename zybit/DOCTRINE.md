@@ -234,7 +234,37 @@ on each.
 
 ## How we build
 
-**Deterministic over generative.** Audit rules are pure functions. Same input, same output. Every finding is reproducible and attributable. We do not use LLMs to generate numbers or invent evidence.
+**Deterministic where it must be; LLM-driven where it's guarded.** This used to read
+"deterministic over generative" — full stop. That was right for the *decision core* and
+we keep it there: whether a finding fires, every number, every statistical measurement,
+and traffic allocation are pure functions — reproducible, attributable, defensible. We
+never let an LLM invent a number or decide that a finding fires.
+
+But "no LLMs make decisions" was too blunt. An LLM is the right tool for judgment that
+isn't reducible to a rule — *how* to phrase a finding for this business, what industry a
+site is in, which variant to propose, how to make a fix on-brand. So the rule is: **an LLM
+may make a decision when it is backed by the full AI-engineering guardrail set, and only
+then.** The guardrails are not optional garnish — they are what turns "a model said so"
+into something we can ship:
+
+1. **Structured output** — schema-constrained, never free-form prose we parse by hope.
+2. **Strict validator** — rejects or coerces malformed output before anything downstream sees it.
+3. **Fail-soft to a deterministic baseline** — if the call errors, times out, or returns
+   garbage, we fall back to the pre-LLM behavior. The feature can never make the product
+   *worse* than it was with the LLM off; worst case it is a no-op.
+4. **Grounding** — numbers must trace to FACTS the deterministic layer computed;
+   classifications anchor on a deterministic prior (e.g. SiteContext's industry starts from
+   the `deriveIndustry` heuristic, the LLM only refines it).
+5. **An eval harness** — we measure the LLM decision against the baseline (e.g. the
+   Lighthouse Context A/B eval: run the same audit with the enrichment off vs on, mark each
+   finding valid/invalid, watch the win-rate). A decision we can't measure, we don't trust.
+6. **A human gate** — nothing customer-facing flips on because a metric crossed a line; a
+   person reviews the eval and flips the flag.
+
+The test for any new LLM call: *"if this returned garbage or nothing, is the system still
+correct?"* If the answer is yes (fail-soft to baseline) and the win is measured, the LLM
+may decide. Capture-time critique, finding prose (Layer B), the variant/fix advisors, and
+SiteContext all live under these guardrails. Rules never call an LLM in their body.
 
 **Every file has a purpose.** No scaffolding, no placeholders, no "we might need this later." If code doesn't serve a current need, it doesn't exist.
 

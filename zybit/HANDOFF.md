@@ -96,7 +96,12 @@ Legend: ✅ done & verified · 🟡 in progress · ⬜ not started
 - ⬜ **Competitor pass axis.**
 - ⬜ **Behavioral/PostHog axis** + event-taxonomy recommender.
 - ⬜ **E2E + wire public audit behind flag.**
-- ⬜ **Docs** — evolve doctrine to embrace LLM decision-making backed by AI-eng principles.
+- ✅ **Docs** — doctrine evolved from "deterministic over generative" to
+  **"deterministic where it must be; LLM-driven where it's guarded"** in both
+  `AGENTS.md` (build conventions) and `DOCTRINE.md` (How we build), codifying the
+  6-guardrail test for when an LLM may make a decision. SiteContext added to the
+  AGENTS codebase map; Context A/B eval documented in `LIGHTHOUSE.md`.
+  (Remaining axes — Brand DNA, Competitor, Behavioral — are scoped in §7 below.)
 
 ---
 
