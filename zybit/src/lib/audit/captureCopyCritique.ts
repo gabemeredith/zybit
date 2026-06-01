@@ -34,6 +34,11 @@
 
 import type { PageType, VisualHeroBlock } from '@/lib/phase2/snapshots/types';
 import { OPENAI_CHAT_ENDPOINT, OPENAI_FAST_MODEL, extractChatText } from '@/lib/ai/openai';
+import {
+  reviewerPersona,
+  siteContextPromptBlock,
+  type SiteContext,
+} from '@/lib/phase2/siteContext';
 
 export const COPY_CRITIQUE_MODEL = OPENAI_FAST_MODEL;
 
@@ -87,6 +92,13 @@ export interface CaptureCopyCritiqueArgs {
   primaryCtaText: string | null;
   /** Page type from the vision pass. Used to score `ctaAlignment`. */
   pageType: PageType;
+  /**
+   * Business context for the site. When present, the reviewer persona is
+   * specialised to the site's industry (no more hardcoded "B2B SaaS reviewer"
+   * judging a DTC store) and a context block is appended. `undefined`/`null` ⇒
+   * the prompt is byte-identical to the pre-SiteContext baseline.
+   */
+  siteContext?: SiteContext | null;
 }
 
 export interface CaptureCopyCritiqueDeps {
@@ -95,7 +107,10 @@ export interface CaptureCopyCritiqueDeps {
   now?: () => Date;
 }
 
-const COPY_CRITIQUE_PROMPT = `You are a B2B SaaS landing-page reviewer. You will receive a page's hero block, primary CTA, and a page-type label. Return ONLY JSON matching this schema, no prose, no markdown:
+// Everything after the persona sentence. The persona is composed in
+// `buildCritiqueSystemPrompt` so it can specialise to the site's industry while
+// the schema + rules stay fixed. The leading space joins onto "You are a ${persona}."
+const COPY_CRITIQUE_BODY = ` You will receive a page's hero block, primary CTA, and a page-type label. Return ONLY JSON matching this schema, no prose, no markdown:
 {
   "specificity": number,
   "vagueTerms": string[],
@@ -112,6 +127,18 @@ Rules:
 - "ctaAlignment": if a "Primary CTA" line is provided, score whether its verb fits the page type. Returns null when no CTA was provided. "matches: true" when the verb is appropriate for the page type (e.g. "Get started" / "Start free trial" on a pricing or signup page; "Read more" / "View docs" on a docs page; "Contact us" on a support page). "suggestedVerbs": up to 3 better verb alternatives, with the CTA's noun preserved when possible.
 - All strings must be plain text — no markdown, no quotes, no HTML.
 - Never invent text not present in the input. If the hero block is empty (all fields null), return specificity 0, empty arrays, ctaAlignment null.`;
+
+/**
+ * Compose the system prompt. With no SiteContext the persona is the original
+ * hardcoded "B2B SaaS landing-page reviewer" and the prompt is byte-identical
+ * to the pre-SiteContext baseline. With SiteContext the persona matches the
+ * site's industry and a context block is appended after the rules.
+ */
+export function buildCritiqueSystemPrompt(siteContext?: SiteContext | null): string {
+  const persona = siteContext ? reviewerPersona(siteContext) : 'B2B SaaS landing-page reviewer';
+  const ctxBlock = siteContext ? '\n\n' + siteContextPromptBlock(siteContext) : '';
+  return `You are a ${persona}.${COPY_CRITIQUE_BODY}${ctxBlock}`;
+}
 
 /**
  * Capture structured copy critique for one page. Returns `null` when:
@@ -162,7 +189,12 @@ export async function captureCopyCritique(
       },
       body: JSON.stringify({
         model: COPY_CRITIQUE_MODEL,
-        messages: [{ role: 'user', content: COPY_CRITIQUE_PROMPT + '\n\n' + promptInput }],
+        messages: [
+          {
+            role: 'user',
+            content: buildCritiqueSystemPrompt(args.siteContext) + '\n\n' + promptInput,
+          },
+        ],
         response_format: { type: 'json_object' },
         max_completion_tokens: 1024,
       }),

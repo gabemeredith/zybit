@@ -58,7 +58,12 @@ Legend: ✅ done & verified · 🟡 in progress · ⬜ not started
   output + strict validator + fail-soft), declared-onboarding-values-win merge,
   graceful degradation to heuristic-only then `null`. Shared prompt renderers
   (`reviewerPersona`, `siteContextPromptBlock`). 14 unit tests, tsc clean.
-- 🟡 **Thread into copy-critique + Layer B** — dynamic industry persona; SiteContext in `buildLayerBPrompt`.
+- 🟡 **Thread into copy-critique + Layer B** — ✅ prompts now *accept* SiteContext:
+  `buildCritiqueSystemPrompt` swaps the hardcoded "B2B SaaS reviewer" for an
+  industry-specialised persona; `buildLayerBPrompt` appends a context block.
+  Flag-off path is byte-identical to baseline (asserted by tests). **Remaining:**
+  wire the pipeline to compute SiteContext once per audit and pass it down (see
+  "Wiring" task below — kept separate so this commit can't change prod behavior).
 - ⬜ **Eval harness** — Lighthouse surface: flag-on vs flag-off on real public sites, mark findings valid/invalid, scoreboard.
 - ⬜ **Thread into variant advisor + audit fix advisor + vision pass.**
 - ⬜ **Brand DNA axis** + fix Vercel Blob `private access` screenshot bug.

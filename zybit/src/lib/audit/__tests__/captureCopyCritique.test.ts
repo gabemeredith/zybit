@@ -10,11 +10,13 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  buildCritiqueSystemPrompt,
   buildPromptInput,
   captureCopyCritique,
   COPY_CRITIQUE_MODEL,
   validateCopyCritique,
 } from '../captureCopyCritique';
+import type { SiteContext } from '@/lib/phase2/siteContext';
 import type { VisualHeroBlock } from '@/lib/phase2/snapshots/types';
 
 const VALID_RAW = {
@@ -36,6 +38,37 @@ const EMPTY_HERO: VisualHeroBlock = {
   subheadline: null,
   firstParagraph: null,
 };
+
+describe('buildCritiqueSystemPrompt', () => {
+  it('keeps the exact "B2B SaaS landing-page reviewer" persona when no siteContext (baseline)', () => {
+    const prompt = buildCritiqueSystemPrompt();
+    expect(prompt.startsWith('You are a B2B SaaS landing-page reviewer. You will receive a page')).toBe(true);
+    expect(prompt).not.toContain('SITE CONTEXT');
+    // baseline === null path produces the same string
+    expect(buildCritiqueSystemPrompt(null)).toBe(prompt);
+  });
+
+  it('specialises the persona by industry and appends a context block', () => {
+    const ctx: SiteContext = {
+      industry: 'ecommerce',
+      businessModel: 'transactional',
+      conversionGoal: 'purchase',
+      audience: 'home cooks',
+      brandVoice: 'warm, playful',
+      source: 'inferred',
+      confidence: 0.8,
+      capturedAt: '2026-06-01T00:00:00.000Z',
+      modelVersion: 'gpt-5.4-mini',
+    };
+    const prompt = buildCritiqueSystemPrompt(ctx);
+    expect(prompt.startsWith('You are a DTC e-commerce landing-page reviewer.')).toBe(true);
+    expect(prompt).toContain('SITE CONTEXT');
+    expect(prompt).toContain('industry: ecommerce');
+    // the schema + rules body is preserved
+    expect(prompt).toContain('"specificity": number');
+    expect(prompt).toContain('Never invent text not present in the input.');
+  });
+});
 
 describe('validateCopyCritique', () => {
   it('accepts a fully-valid payload', () => {

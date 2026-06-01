@@ -38,6 +38,7 @@ import {
 import type { PageType } from '@/lib/phase2/snapshots/types';
 import type { DesignTokens } from '@/lib/phase2/snapshots/tokenExtractor';
 import type { AuditFindingCategory } from '@/lib/phase2/rules/types';
+import { siteContextPromptBlock, type SiteContext } from '@/lib/phase2/siteContext';
 import type { BrandProfile } from './brandProfile';
 
 // ---------------------------------------------------------------------------
@@ -67,6 +68,13 @@ export interface LayerBInput {
    * prose matches the brand's register and reuses its verbs. May be `null`.
    */
   brandProfile?: BrandProfile | null;
+  /**
+   * Business context for the site (industry / model / conversion goal / audience
+   * / brand voice). When present, the prose is tailored to the business instead
+   * of written for a generic page. `undefined`/`null` ⇒ prompt is byte-identical
+   * to the pre-SiteContext baseline (gated by LLM_SITE_CONTEXT_ENABLED upstream).
+   */
+  siteContext?: SiteContext | null;
 }
 
 export interface LayerBPrescription {
@@ -151,6 +159,7 @@ export function buildLayerBPrompt(input: LayerBInput): string {
     'DESIGN TOKENS (site brand — match this register where natural):',
     tokensJson,
     '',
+    ...(input.siteContext ? [siteContextPromptBlock(input.siteContext), ''] : []),
     ...(brand
       ? [
           "BRAND VOICE — the site's own words. Match this register and reuse this",

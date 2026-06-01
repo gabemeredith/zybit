@@ -76,6 +76,32 @@ describe('buildLayerBPrompt', () => {
     expect(prompt).toContain('DESIGN TOKENS');
     expect(prompt).toContain('{}');
   });
+
+  it('omits the SITE CONTEXT block when no siteContext is provided (baseline)', () => {
+    const prompt = buildLayerBPrompt(BASE_INPUT);
+    expect(prompt).not.toContain('SITE CONTEXT');
+  });
+
+  it('includes the SITE CONTEXT block when siteContext is provided', () => {
+    const prompt = buildLayerBPrompt({
+      ...BASE_INPUT,
+      siteContext: {
+        industry: 'ecommerce',
+        businessModel: 'transactional',
+        conversionGoal: 'purchase',
+        audience: 'home cooks',
+        brandVoice: 'warm, playful',
+        source: 'inferred',
+        confidence: 0.8,
+        capturedAt: '2026-06-01T00:00:00.000Z',
+        modelVersion: 'gpt-5.4-mini',
+      },
+    });
+    expect(prompt).toContain('SITE CONTEXT');
+    expect(prompt).toContain('industry: ecommerce');
+    expect(prompt).toContain('primary conversion goal: purchase');
+    expect(prompt).toContain('audience: home cooks');
+  });
 });
 
 describe('parseLayerBResponse', () => {
