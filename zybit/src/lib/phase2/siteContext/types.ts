@@ -70,7 +70,12 @@ export interface SiteContext {
  * Master flag for the whole LLM context-enrichment surface. OFF by default: when
  * off, callers must NOT compute or pass SiteContext, so every prompt keeps its
  * exact current behavior (asserted by prompt-equality tests). See HANDOFF.md.
+ *
+ * Pass an explicit `override` to force on/off regardless of env — the eval
+ * harness uses this to run the SAME audit both ways without mutating global env
+ * (mirrors `isLayerBEnabled`). `undefined` ⇒ read the env flag.
  */
-export function isSiteContextEnabled(): boolean {
+export function isSiteContextEnabled(override?: boolean): boolean {
+  if (typeof override === 'boolean') return override;
   return process.env.LLM_SITE_CONTEXT_ENABLED === '1';
 }

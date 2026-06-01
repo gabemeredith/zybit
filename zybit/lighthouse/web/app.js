@@ -93,9 +93,21 @@ async function renderDashboard() {
   // Persistent across run-pane re-renders so streaming logs keep their scroll.
   const logPane = el('section', { class: 'logpane' });
   const urlControls = buildUrlAuditControls(runPane, logPane);
+  const evalPane = el('section', { class: 'runpane' });
+  const evalControls = buildContextEvalPanel(evalPane, logPane);
   const dataPane = buildDataBrowser();
   root.appendChild(
-    el('div', {}, [header, buildHelpPanel(), controls, urlControls, runPane, logPane, dataPane]),
+    el('div', {}, [
+      header,
+      buildHelpPanel(),
+      controls,
+      urlControls,
+      evalControls,
+      evalPane,
+      runPane,
+      logPane,
+      dataPane,
+    ]),
   );
 
   const { body } = await api('/lighthouse/api/scenarios');
@@ -1207,6 +1219,183 @@ async function boot() {
   const authed = await checkAuth();
   if (authed) renderDashboard();
   else renderLogin();
+}
+
+// --- Context A/B eval -----------------------------------------------------
+//
+// The "is SiteContext noticeably better?" surface. Runs the SAME public-URL
+// audit twice — baseline (SiteContext OFF) and enriched (ON) — and renders the
+// per-finding prose side by side with valid/invalid buttons. The scoreboard at
+// the top is the signal the CTO uses to decide whether to flip the prod flag.
+
+function buildContextEvalPanel(evalPane, logPane) {
+  const urlInput = el('input', { type: 'url', name: 'evalUrl', placeholder: 'https://example.com' });
+  const pagesInput = el('input', { type: 'number', name: 'evalPages', min: '1', max: '20', value: '6' });
+  const runBtn = el('button', { class: 'primary', type: 'button' }, 'run A/B (context off vs on)');
+
+  async function run() {
+    const url = urlInput.value.trim();
+    if (!url) return;
+    runBtn.setAttribute('disabled', 'disabled');
+    clear(evalPane);
+    evalPane.appendChild(el('p', { class: 'loading' }, 'running baseline + enriched audits… (two full audits, ~1–2 min)'));
+    try {
+      const r = await api('/lighthouse/api/eval/context', {
+        method: 'POST',
+        body: JSON.stringify({ url, maxPages: Number(pagesInput.value) || 6, visionPagesLimit: 3 }),
+      });
+      if (!r.ok) throw new Error((r.body && (r.body.detail || r.body.error)) || `http ${r.status}`);
+      await pollEvalRun(r.body.runId, evalPane, logPane);
+    } catch (err) {
+      clear(evalPane);
+      evalPane.appendChild(el('p', { class: 'error' }, `error: ${err.message}`));
+    } finally {
+      runBtn.removeAttribute('disabled');
+    }
+  }
+  runBtn.addEventListener('click', run);
+
+  return el('section', { class: 'controls' }, [
+    el('div', { class: 'control-row' }, [
+      el('span', { class: 'preset-label' }, 'CONTEXT A/B EVAL —'),
+      el('label', {}, ['url ', urlInput]),
+      el('label', {}, ['max pages ', pagesInput]),
+      runBtn,
+    ]),
+    help('Audits the URL twice (SiteContext off vs on), shows prose side by side, and lets you mark each finding valid/invalid. The scoreboard is the "noticeably better" signal — flip LLM_SITE_CONTEXT_ENABLED in prod only when enriched clearly wins.'),
+  ]);
+}
+
+async function pollEvalRun(runId, evalPane, logPane) {
+  let renderedLogs = 0;
+  const logSink = logPane ? initLogPane(logPane) : null;
+  for (;;) {
+    const { body } = await api(`/lighthouse/api/runs/${encodeURIComponent(runId)}?sinceLog=${renderedLogs}`);
+    if (!body) {
+      clear(evalPane);
+      evalPane.appendChild(el('p', { class: 'error' }, 'run vanished'));
+      return;
+    }
+    if (logSink && Array.isArray(body.logs) && body.logs.length) {
+      logSink.append(body.logs);
+      renderedLogs = body.logTotal ?? renderedLogs + body.logs.length;
+    } else if (typeof body.logTotal === 'number') {
+      renderedLogs = body.logTotal;
+    }
+    if (body.status === 'error') {
+      clear(evalPane);
+      evalPane.appendChild(el('p', { class: 'error' }, `error: ${body.error?.message || 'run failed'}`));
+      if (logSink) logSink.markDone();
+      return;
+    }
+    if (body.status !== 'running') {
+      if (logSink) logSink.markDone();
+      if (body.evalComparison) renderContextComparison(evalPane, body.evalComparison);
+      else evalPane.appendChild(el('p', { class: 'error' }, 'run finished without a comparison'));
+      return;
+    }
+    const last = body.progress?.[body.progress.length - 1];
+    if (last) {
+      clear(evalPane);
+      evalPane.appendChild(el('p', { class: 'loading' }, `${last.step}: ${last.message}`));
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+function scoreboardLine(s) {
+  if (!s) return el('span', { class: 'muted' }, 'no verdicts yet');
+  const rate = (t) => {
+    const n = t.valid + t.invalid;
+    return n ? `${Math.round((t.valid / n) * 100)}% valid (${t.valid}/${n})` : '—';
+  };
+  const delta = s.validRateDelta === null ? '—' : `${s.validRateDelta >= 0 ? '+' : ''}${Math.round(s.validRateDelta * 100)} pts`;
+  return el('span', {}, [
+    `baseline ${rate(s.baseline)}  ·  enriched ${rate(s.enriched)}  ·  `,
+    el('strong', { class: s.validRateDelta > 0 ? 'win' : s.validRateDelta < 0 ? 'lose' : '' }, `Δ ${delta}`),
+  ]);
+}
+
+function renderContextComparison(pane, cmp) {
+  clear(pane);
+  const ctx = cmp.siteContext;
+  const ctxLine = ctx
+    ? `${ctx.industry} · ${ctx.businessModel} · goal=${ctx.conversionGoal} · ${ctx.audience || 'audience ?'} · voice=${ctx.brandVoice || '?'} · ${ctx.source} (conf ${ctx.confidence})`
+    : 'no SiteContext inferred (heuristic empty + LLM produced nothing)';
+
+  const scoreEl = el('div', { class: 'eval-scoreboard' }, [el('span', { class: 'muted' }, 'loading verdicts…')]);
+  api(`/lighthouse/api/eval/verdicts?url=${encodeURIComponent(cmp.url)}`).then(({ body }) => {
+    clear(scoreEl);
+    scoreEl.appendChild(scoreboardLine(body && body.scoreboard));
+  });
+
+  pane.appendChild(
+    el('div', { class: 'eval-head' }, [
+      el('h3', {}, `Context A/B — ${cmp.url}`),
+      el('p', { class: 'eval-ctx' }, [el('strong', {}, 'Inferred SiteContext: '), ctxLine]),
+      el('p', { class: 'eval-counts' }, `baseline findings: ${cmp.baselineCount} · enriched: ${cmp.enrichedCount} · rows: ${cmp.rows.length}`),
+      scoreEl,
+    ]),
+  );
+
+  if (cmp.rows.length === 0) {
+    pane.appendChild(el('p', { class: 'empty' }, 'No comparable findings (Layer B produced no prose — check OPENAI_API_KEY).'));
+    return;
+  }
+
+  for (const row of cmp.rows) {
+    pane.appendChild(renderComparisonRow(cmp.url, row, scoreEl));
+  }
+}
+
+function verdictButtons(url, key, variant, present) {
+  if (!present) return el('span', { class: 'muted' }, '(did not fire)');
+  const mk = (verdict, label) => {
+    const btn = el('button', { type: 'button', class: 'verdict-btn' }, label);
+    btn.addEventListener('click', async () => {
+      btn.parentElement.querySelectorAll('.verdict-btn').forEach((b) => b.classList.remove('chosen'));
+      btn.classList.add('chosen');
+      const { body } = await api('/lighthouse/api/eval/verdict', {
+        method: 'POST',
+        body: JSON.stringify({ url, key, variant, verdict }),
+      });
+      const scoreEl = document.querySelector('.eval-scoreboard');
+      if (scoreEl && body && body.scoreboard) {
+        clear(scoreEl);
+        scoreEl.appendChild(scoreboardLine(body.scoreboard));
+      }
+    });
+    return btn;
+  };
+  return el('span', { class: 'verdict-row' }, [mk('valid', '✓ valid'), mk('invalid', '✗ invalid')]);
+}
+
+function comparisonColumn(url, key, variant, prose) {
+  return el('div', { class: 'eval-col' }, [
+    el('div', { class: 'eval-col-head' }, variant),
+    prose
+      ? el('div', {}, [
+          el('p', { class: 'eval-summary' }, prose.summary || '(no summary)'),
+          prose.whatToChange ? el('p', { class: 'eval-change' }, [el('strong', {}, 'Change: '), prose.whatToChange]) : null,
+        ])
+      : el('p', { class: 'muted' }, '(did not fire)'),
+    verdictButtons(url, key, variant, !!prose),
+  ]);
+}
+
+function renderComparisonRow(url, row, _scoreEl) {
+  const badge = row.presenceDiff
+    ? el('span', { class: 'badge badge-presence' }, 'presence diff')
+    : row.changed
+      ? el('span', { class: 'badge badge-changed' }, 'prose changed')
+      : el('span', { class: 'badge badge-same' }, 'identical');
+  return el('div', { class: 'eval-row' }, [
+    el('div', { class: 'eval-row-head' }, [el('strong', {}, row.ruleId), el('span', { class: 'muted' }, row.pathRef || 'site-wide'), badge]),
+    el('div', { class: 'eval-cols' }, [
+      comparisonColumn(url, row.key, 'baseline', row.baseline),
+      comparisonColumn(url, row.key, 'enriched', row.enriched),
+    ]),
+  ]);
 }
 
 boot();

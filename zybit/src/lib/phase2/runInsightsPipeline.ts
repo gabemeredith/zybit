@@ -46,6 +46,12 @@ export interface RunPhase2InsightsArgs {
    * button sets this with `layerB: true`.
    */
   layerBDeriveFacts?: boolean;
+  /**
+   * SiteContext (LLM context enrichment) on/off override. When omitted the
+   * `LLM_SITE_CONTEXT_ENABLED` env flag decides. The eval harness passes an
+   * explicit boolean so it can run the same audit with and without context.
+   */
+  siteContext?: boolean;
 }
 
 function emptyConfig(siteId: string, organizationId: string): Phase2SiteConfig {
@@ -77,6 +83,7 @@ export async function runPhase2InsightsPipeline(
   args: RunPhase2InsightsArgs
 ): Promise<RunInsightsResponse> {
   const { organizationId, siteId, window, maxFindings, mode, layerB, layerBDeriveFacts } = args;
+  const siteContextOverride = args.siteContext;
   const repository = createPhase1Repository();
 
   const captureEnabled = await isCaptureV2Enabled();
@@ -158,7 +165,7 @@ export async function runPhase2InsightsPipeline(
   // Layer-B-off paths add zero cost. Fail-soft: deriveSiteContext returns null
   // on any error and Layer B prose is then written exactly as before.
   let siteContext: SiteContext | null = null;
-  if (isSiteContextEnabled() && isLayerBEnabled(typeof layerB === 'boolean' ? layerB : undefined)) {
+  if (isSiteContextEnabled(siteContextOverride) && isLayerBEnabled(typeof layerB === 'boolean' ? layerB : undefined)) {
     const { url, signals } = siteSignalsFromSnapshots(pageSnapshots);
     siteContext = await deriveSiteContext({ url: url ?? '', signals }).catch(() => null);
   }

@@ -70,7 +70,21 @@ Legend: ✅ done & verified · 🟡 in progress · ⬜ not started
     keeps the per-page loop fast + deterministic, just fixes the wrong persona.
   - Two contexts by design: rich LLM enrichment off the hot path (prose), cheap
     deterministic context in the capture loop (persona). Documented in code.
-- ⬜ **Eval harness** — Lighthouse surface: flag-on vs flag-off on real public sites, mark findings valid/invalid, scoreboard.
+- ✅ **Eval harness** — the "is it noticeably better?" test environment:
+  - `siteContext?: boolean` override (beats the env flag, like `layerB`) threaded
+    through `runUrlAudit` + `runPhase2InsightsPipeline` → race-free A/B.
+  - `lighthouse/lib/eval/contextComparison.ts`: runs the SAME url audit twice
+    (context off vs on, Layer B + derive-facts forced on), pairs findings by
+    `ruleId|pathRef`, diffs the prose. `verdictStore.ts`: file-backed valid/invalid
+    persistence + scoreboard (validRateDelta = enriched − baseline).
+  - Routes: `POST /lighthouse/api/eval/context`, `POST /eval/verdict`,
+    `GET /eval/verdicts`. UI: a **Context A/B Eval** panel in the Lighthouse
+    dashboard — enter a URL, run, see baseline|enriched prose side by side, mark
+    each valid/invalid, watch the scoreboard. **This is how the prod-flip decision
+    gets made.** 7 eval unit tests; tsc clean.
+  - **To run it:** copy a `.env` (with `OPENAI_API_KEY`) into this worktree, then
+    `npx tsx --env-file=lighthouse/.env lighthouse/server/index.ts`, open
+    `http://127.0.0.1:3001/lighthouse`.
 - ⬜ **Thread into variant advisor + audit fix advisor + vision pass.**
 - ⬜ **Brand DNA axis** + fix Vercel Blob `private access` screenshot bug.
 - ⬜ **Competitor pass axis.**

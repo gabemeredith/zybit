@@ -654,3 +654,27 @@ button.preset-btn {
   opacity: 0.8;
   line-height: 1.5;
 }
+
+/* --- Context A/B eval ---------------------------------------------------- */
+.eval-head { margin-bottom: 12px; }
+.eval-head h3 { margin: 0 0 4px; }
+.eval-ctx { font-size: 13px; margin: 2px 0; }
+.eval-counts { font-size: 12px; color: #6b7280; margin: 2px 0; }
+.eval-scoreboard { font-size: 13px; margin-top: 6px; padding: 6px 10px; background: #f3f4f6; border-radius: 6px; }
+.eval-scoreboard .win { color: #15803d; }
+.eval-scoreboard .lose { color: #b91c1c; }
+.eval-row { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+.eval-row-head { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+.eval-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.eval-col { border: 1px solid #eee; border-radius: 6px; padding: 8px; background: #fafafa; }
+.eval-col-head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; margin-bottom: 4px; }
+.eval-summary { margin: 0 0 6px; font-size: 13px; }
+.eval-change { margin: 0 0 6px; font-size: 12px; color: #374151; }
+.verdict-row { display: inline-flex; gap: 6px; }
+.verdict-btn { font-size: 12px; padding: 2px 8px; cursor: pointer; }
+.verdict-btn.chosen { background: #1a73e8; color: #fff; }
+.badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; }
+.badge-presence { background: #fef3c7; color: #92400e; }
+.badge-changed { background: #dbeafe; color: #1e40af; }
+.badge-same { background: #f3f4f6; color: #6b7280; }
+.muted { color: #9ca3af; font-size: 12px; }

@@ -80,6 +80,12 @@ export interface RunUrlAuditOpts {
   fixPreview?: boolean;
   /** Run the AI Variant Advisor over the top findings. Needs OPENAI_API_KEY. */
   variantAdvisor?: boolean;
+  /**
+   * SiteContext (LLM context enrichment) on/off for this run. Omit to defer to
+   * the `LLM_SITE_CONTEXT_ENABLED` env flag. The eval harness sets this
+   * explicitly (false for baseline, true for enriched) to A/B the same audit.
+   */
+  siteContext?: boolean;
 }
 
 function now(): string {
@@ -199,7 +205,7 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
   // no-LLM path so the per-page capture loop stays fast + deterministic — the
   // persona only needs the industry, and the rich LLM SiteContext is computed
   // separately (once, off this loop) inside runPhase2InsightsPipeline for prose.
-  const siteContextEnabled = isSiteContextEnabled();
+  const siteContextEnabled = isSiteContextEnabled(opts.siteContext);
   let captureSiteContext: SiteContext | null = null;
   let captureSiteContextResolved = false;
 
@@ -334,6 +340,7 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
     ...(mode ? { mode } : {}),
     ...(typeof opts.layerB === 'boolean' ? { layerB: opts.layerB } : {}),
     ...(opts.layerBDeriveFacts ? { layerBDeriveFacts: true } : {}),
+    ...(typeof opts.siteContext === 'boolean' ? { siteContext: opts.siteContext } : {}),
   });
   let auditFindings = (insights.auditReport?.findings ?? []) as AuditFinding[];
 

@@ -12,6 +12,7 @@ import { postAuditUrl } from './routes/auditUrl';
 import { getDataMeta, getDataRows } from './routes/data';
 import { getRunById, postGenerate } from './routes/generate';
 import { postEval } from './routes/evalRun';
+import { getEvalVerdicts, postEvalContext, postEvalVerdict } from './routes/evalContext';
 import { postImpersonateStart } from './routes/impersonate';
 import { getScenarios } from './routes/scenarios';
 import { resolveStaticPath, serveStatic } from './static';
@@ -62,6 +63,9 @@ const routes: Record<string, Handler> = {
   'GET /lighthouse/api/scenarios': getScenarios,
   'POST /lighthouse/api/generate': postGenerate,
   'POST /lighthouse/api/eval': postEval,
+  'POST /lighthouse/api/eval/context': postEvalContext,
+  'POST /lighthouse/api/eval/verdict': postEvalVerdict,
+  'GET /lighthouse/api/eval/verdicts': getEvalVerdicts,
   'POST /lighthouse/api/audit-url': postAuditUrl,
   'POST /lighthouse/api/impersonate/start': postImpersonateStart,
   'GET /lighthouse/api/data/meta': getDataMeta,

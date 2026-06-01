@@ -59,3 +59,6 @@ PRD.full.md
 # Layer B eval reports — run-specific, timestamped artifacts (the golden set
 # itself, evals/golden-sites.json, IS committed).
 /evals/out/
+
+# Lighthouse context-eval verdict store (local only)
+lighthouse/.eval-verdicts.json

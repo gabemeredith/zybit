@@ -5,6 +5,7 @@
  */
 
 import type { GenerateProgressEvent, GenerateResult } from '../lib/types';
+import type { ContextComparison } from '../lib/eval/contextComparison';
 import type { LogEntry } from './logCapture';
 
 export type RunStatus = 'running' | 'done' | 'error';
@@ -18,6 +19,8 @@ export interface RunState {
   /** Developer log stream captured from `console` while this run was active. */
   logs: LogEntry[];
   result?: GenerateResult;
+  /** Set for context A/B eval runs (POST /lighthouse/api/eval/context). */
+  evalComparison?: ContextComparison;
   error?: { message: string };
 }
 
@@ -54,6 +57,13 @@ export function completeRun(runId: string, result: GenerateResult): void {
   if (!state) return;
   state.status = 'done';
   state.result = result;
+}
+
+export function completeEvalRun(runId: string, comparison: ContextComparison): void {
+  const state = runs.get(runId);
+  if (!state) return;
+  state.status = 'done';
+  state.evalComparison = comparison;
 }
 
 export function failRun(runId: string, err: unknown): void {
