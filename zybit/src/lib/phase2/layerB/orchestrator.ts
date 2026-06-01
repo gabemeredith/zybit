@@ -22,6 +22,7 @@
 
 import type { AuditFinding } from '@/lib/phase2/rules/types';
 import type { PageSnapshot, PageType } from '@/lib/phase2/snapshots/types';
+import type { SiteContext } from '@/lib/phase2/siteContext';
 import {
   runLayerBTraced,
   type LayerBCallTelemetry,
@@ -84,12 +85,20 @@ export interface LayerBRunTelemetry {
   proseSourceCounts: { template: number; 'llm-v1': number };
   /** The site-wide brand DNA fed to the LLM this run (null = no snapshot signal). */
   brandProfile: BrandProfile | null;
+  /** The business context fed to the LLM this run (null = flag off / not inferable). */
+  siteContext: SiteContext | null;
   findings: LayerBFindingTelemetry[];
 }
 
 export interface ApplyLayerBContext {
   /** Snapshot per pathRef — source of pageType (and, later, brand tokens). */
   pageSnapshotsByPath: Map<string, PageSnapshot>;
+  /**
+   * Site-wide business context (industry / model / goal / audience / voice),
+   * computed once per audit upstream. `null`/absent ⇒ Layer B prose is written
+   * exactly as before SiteContext (gated by LLM_SITE_CONTEXT_ENABLED upstream).
+   */
+  siteContext?: SiteContext | null;
 }
 
 export interface ApplyLayerBOpts extends LayerBRunOpts {
@@ -170,6 +179,7 @@ export async function applyLayerB(
     estTotalCostUsd: 0,
     proseSourceCounts: { template: 0, 'llm-v1': 0 },
     brandProfile: null,
+    siteContext: null,
     findings: [],
   };
 
@@ -210,6 +220,7 @@ export async function applyLayerB(
         pathRef: finding.pathRef,
         factsJson: facts,
         brandProfile,
+        siteContext: ctx.siteContext ?? null,
         // Colours/fonts live on a separate design-snapshot row; for PROSE the
         // textual brandProfile above carries the brand voice. Visual tokens are
         // a later, variant-rendering concern.
@@ -270,6 +281,7 @@ export async function applyLayerB(
     estTotalCostUsd: perFinding.reduce((s, f) => s + (f.call.estCostUsd ?? 0), 0),
     proseSourceCounts: { template: fellBack, 'llm-v1': llmWon },
     brandProfile,
+    siteContext: ctx.siteContext ?? null,
     findings: perFinding,
   };
 

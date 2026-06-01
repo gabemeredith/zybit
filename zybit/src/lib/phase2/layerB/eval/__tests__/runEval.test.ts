@@ -37,6 +37,7 @@ function telemetry(): LayerBRunTelemetry {
     estTotalCostUsd: 0,
     proseSourceCounts: { template: 0, 'llm-v1': 2 },
     brandProfile: null,
+    siteContext: null,
     findings: [finding('a'), finding('b')],
   };
 }

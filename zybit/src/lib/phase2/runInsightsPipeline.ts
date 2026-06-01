@@ -13,7 +13,13 @@ import type { PageCapture } from '@/lib/phase2/capture/types';
 import { createOutcomesRepository } from '@/lib/phase2/outcomes/repository';
 import { deriveFlowGraph } from '@/lib/phase2/flow';
 import { classifySiteFromSnapshots } from '@/lib/phase2/classification/siteClassifier';
-import { applyLayerB } from '@/lib/phase2/layerB/orchestrator';
+import { applyLayerB, isLayerBEnabled } from '@/lib/phase2/layerB/orchestrator';
+import {
+  deriveSiteContext,
+  isSiteContextEnabled,
+  siteSignalsFromSnapshots,
+  type SiteContext,
+} from '@/lib/phase2/siteContext';
 
 export interface RunPhase2InsightsArgs {
   organizationId: string;
@@ -146,12 +152,23 @@ export async function runPhase2InsightsPipeline(
   // change. Findings still surface — order and learnAdjustment metadata shift.
   auditReport.findings = applyLearnRerank(auditReport.findings, pastOutcomes);
 
+  // SiteContext (LLM context enrichment) — computed once per audit from the
+  // homepage signals, gated by LLM_SITE_CONTEXT_ENABLED. Only computed when
+  // Layer B will actually run (it's the sole consumer here), so the flag-off /
+  // Layer-B-off paths add zero cost. Fail-soft: deriveSiteContext returns null
+  // on any error and Layer B prose is then written exactly as before.
+  let siteContext: SiteContext | null = null;
+  if (isSiteContextEnabled() && isLayerBEnabled(typeof layerB === 'boolean' ? layerB : undefined)) {
+    const { url, signals } = siteSignalsFromSnapshots(pageSnapshots);
+    siteContext = await deriveSiteContext({ url: url ?? '', signals }).catch(() => null);
+  }
+
   // Layer B (LLM finding prose) — post-pass over the ranked findings. Off by
   // default; swaps narrative prose for grounded LLM prose on the top findings
   // when enabled, falling back to the rule's template on any failure. Never
   // touches the deterministic decision or any number. Telemetry is surfaced
   // for Lighthouse + the eval harness.
-  const layerBResult = await applyLayerB(auditReport.findings, { pageSnapshotsByPath }, {
+  const layerBResult = await applyLayerB(auditReport.findings, { pageSnapshotsByPath, siteContext }, {
     ...(typeof layerB === 'boolean' ? { enabled: layerB } : {}),
     ...(layerBDeriveFacts ? { deriveFactsFromEvidence: true } : {}),
   });
