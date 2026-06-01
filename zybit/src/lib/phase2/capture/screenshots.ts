@@ -40,7 +40,13 @@ export async function captureScreenshot(
     const buffer = await page.screenshot({ type: 'png', fullPage: true, timeout: 10_000 });
     const safePathRef = pathRef.replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
     const filename = `captures/${siteId}/${safePathRef}/${breakpoint}/${runId}.png`;
-    const { url } = await put(filename, buffer, { access: 'private', token });
+    // `access: 'public'` — the project's Blob store is a public store, so
+    // `'private'` throws "Cannot use private access on a public store" and the
+    // upload ALWAYS failed (QA finding: design screenshots never persisted).
+    // Public matches the only other Blob writer (`visionPass.ts`); these are
+    // dashboard-preview artifacts (see file header), not analysis inputs, and
+    // the blob path carries an unguessable runId.
+    const { url } = await put(filename, buffer, { access: 'public', token });
     return url;
   } catch (err) {
     logger.warn('capture.screenshot.failed', {
