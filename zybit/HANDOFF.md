@@ -97,7 +97,15 @@ Legend: ✅ done & verified · 🟡 in progress · ⬜ not started
   `brandVoice` descriptor and Layer B already gets `brandProfile` (CTA vocab +
   voice samples). **Remaining (richer extraction):** value props + product/feature
   names + tone, persisted + fed to advisors/inpaint. Design in §7.
-- ⬜ **Competitor pass axis.** Not started — design + where-to-start in §7.
+- 🟡 **Competitor pass axis** — ✅ deterministic core shipped:
+  `src/lib/phase2/competitors/competitorDeltas.ts` — extracts competitive signals
+  (proof / above-fold CTA / pricing presence) from snapshots, computes the gaps the
+  site has NOT closed (`computeCompetitorDeltas`), and renders a positioned context
+  block (`competitorDeltaPromptBlock`). Layer B has a `competitorContext` slot
+  (flag-off identical). Flag `LLM_COMPETITOR_CONTEXT_ENABLED`. 14 tests. Competitor
+  facts are computed context, never an LLM-invented finding. **Remaining:** the
+  bounded competitor-URL snapshotting + supplying competitor URLs (config) + pipeline
+  wiring. Design in §7b.
 - 🟡 **Behavioral/PostHog axis** — ✅ **event-taxonomy recommender** built:
   `src/lib/phase2/eventTaxonomy/recommendEvents.ts` (guarded LLM module; given the
   funnel + goal + currently-tracked events, recommends PostHog events to instrument;

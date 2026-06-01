@@ -75,6 +75,12 @@ export interface LayerBInput {
    * to the pre-SiteContext baseline (gated by LLM_SITE_CONTEXT_ENABLED upstream).
    */
   siteContext?: SiteContext | null;
+  /**
+   * Pre-rendered competitor-gap context block (from
+   * `competitorDeltaPromptBlock`). When present, positions the finding against
+   * competitors. `undefined`/empty ⇒ prompt unchanged.
+   */
+  competitorContext?: string | null;
 }
 
 export interface LayerBPrescription {
@@ -160,6 +166,7 @@ export function buildLayerBPrompt(input: LayerBInput): string {
     tokensJson,
     '',
     ...(input.siteContext ? [siteContextPromptBlock(input.siteContext), ''] : []),
+    ...(input.competitorContext ? [input.competitorContext, ''] : []),
     ...(brand
       ? [
           "BRAND VOICE — the site's own words. Match this register and reuse this",
