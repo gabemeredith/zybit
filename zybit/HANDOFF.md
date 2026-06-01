@@ -58,12 +58,18 @@ Legend: ✅ done & verified · 🟡 in progress · ⬜ not started
   output + strict validator + fail-soft), declared-onboarding-values-win merge,
   graceful degradation to heuristic-only then `null`. Shared prompt renderers
   (`reviewerPersona`, `siteContextPromptBlock`). 14 unit tests, tsc clean.
-- 🟡 **Thread into copy-critique + Layer B** — ✅ prompts now *accept* SiteContext:
-  `buildCritiqueSystemPrompt` swaps the hardcoded "B2B SaaS reviewer" for an
-  industry-specialised persona; `buildLayerBPrompt` appends a context block.
-  Flag-off path is byte-identical to baseline (asserted by tests). **Remaining:**
-  wire the pipeline to compute SiteContext once per audit and pass it down (see
-  "Wiring" task below — kept separate so this commit can't change prod behavior).
+- ✅ **Thread into copy-critique + Layer B** — fully wired end-to-end:
+  - **Prompts accept it:** `buildCritiqueSystemPrompt` swaps the hardcoded "B2B
+    SaaS reviewer" for an industry-specialised persona; `buildLayerBPrompt`
+    appends a context block. Flag-off = byte-identical to baseline (tested).
+  - **Layer B (rich, LLM):** `runPhase2InsightsPipeline` computes SiteContext once
+    from the homepage snapshot, only when the flag AND Layer B are on, and passes
+    it through `applyLayerB` → every `LayerBInput`. Surfaced on `layerB` telemetry.
+  - **Copy-critique persona (capture loop):** `runUrlAudit` resolves a
+    **heuristic-only** (no-LLM) SiteContext once on the home page and reuses it —
+    keeps the per-page loop fast + deterministic, just fixes the wrong persona.
+  - Two contexts by design: rich LLM enrichment off the hot path (prose), cheap
+    deterministic context in the capture loop (persona). Documented in code.
 - ⬜ **Eval harness** — Lighthouse surface: flag-on vs flag-off on real public sites, mark findings valid/invalid, scoreboard.
 - ⬜ **Thread into variant advisor + audit fix advisor + vision pass.**
 - ⬜ **Brand DNA axis** + fix Vercel Blob `private access` screenshot bug.

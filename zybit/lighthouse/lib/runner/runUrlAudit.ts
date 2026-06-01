@@ -25,6 +25,12 @@ import { applyDefenseInDepthScrub } from '@/lib/audit/publicAuditScrub';
 import { captureAboveFoldBuffer } from '@/lib/audit/captureAboveFoldBuffer';
 import { captureVisualSignals } from '@/lib/audit/captureVisualSignals';
 import { captureCopyCritique } from '@/lib/audit/captureCopyCritique';
+import {
+  deriveSiteContext,
+  isSiteContextEnabled,
+  siteSignalsFromData,
+  type SiteContext,
+} from '@/lib/phase2/siteContext';
 import { runSnapshot, SnapshotError } from '@/lib/phase2/snapshots';
 import { capturePageAllBreakpoints } from '@/lib/phase2/capture/record';
 import { buildFullDesignSnapshot } from '@/lib/phase2/snapshots/designCapture';
@@ -187,6 +193,16 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
   const inspector: NonNullable<GenerateResult['inspector']> = [];
   const snapshotErrors: { path: string; code: string; message: string }[] = [];
   let visionRunsRemaining = Math.max(0, visionPagesLimit);
+
+  // Heuristic-only SiteContext for the copy-critique reviewer persona. Computed
+  // ONCE from the first (home) page's signals and reused. apiKey:null forces the
+  // no-LLM path so the per-page capture loop stays fast + deterministic — the
+  // persona only needs the industry, and the rich LLM SiteContext is computed
+  // separately (once, off this loop) inside runPhase2InsightsPipeline for prose.
+  const siteContextEnabled = isSiteContextEnabled();
+  let captureSiteContext: SiteContext | null = null;
+  let captureSiteContextResolved = false;
+
   for (const page of map.pages) {
     try {
       const r = await runSnapshot(page.url, { respectRobots: false });
@@ -220,11 +236,21 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
             // any error leaves `data.copyCritique` undefined and the three
             // Layer F rules emit nothing.
             if (signals.heroBlock) {
+              // Resolve the persona context lazily on the first hero we see
+              // (the home page) and reuse it for the rest of the crawl.
+              if (siteContextEnabled && !captureSiteContextResolved) {
+                captureSiteContextResolved = true;
+                captureSiteContext = await deriveSiteContext(
+                  { url, signals: siteSignalsFromData(r.data) },
+                  { apiKey: null },
+                ).catch(() => null);
+              }
               const critique = await captureCopyCritique({
                 url: page.url,
                 heroBlock: signals.heroBlock,
                 primaryCtaText: signals.visualPrimaryCta?.text ?? null,
                 pageType: signals.pageType,
+                siteContext: captureSiteContext,
               });
               if (critique) {
                 r.data.copyCritique = critique;
