@@ -392,7 +392,13 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
   if (opts.fixPreview && auditFindings.length > 0) {
     progress(onProgress, 'insights', 'generating before/after fix previews (top findings)');
     try {
-      fixPreviews = await runFixPreviews({ organizationId, siteId, auditUrl: url, findings: auditFindings });
+      fixPreviews = await runFixPreviews({
+        organizationId,
+        siteId,
+        auditUrl: url,
+        findings: auditFindings,
+        siteContext: insights.layerB?.siteContext ?? null,
+      });
       const withAfter = fixPreviews.filter((p) => p.afterUrl).length;
       progress(onProgress, 'insights', `fix previews: ${withAfter}/${fixPreviews.length} produced an after-image`);
     } catch (err) {
@@ -402,7 +408,13 @@ export async function runUrlAudit(opts: RunUrlAuditOpts): Promise<GenerateResult
   if (opts.variantAdvisor && auditFindings.length > 0) {
     progress(onProgress, 'insights', 'running AI variant advisor (top findings)');
     try {
-      variantProposals = await runVariantAdvisor({ organizationId, siteId, findings: auditFindings, repository });
+      variantProposals = await runVariantAdvisor({
+        organizationId,
+        siteId,
+        findings: auditFindings,
+        repository,
+        siteContext: insights.layerB?.siteContext ?? null,
+      });
       const opts_ = variantProposals.reduce((n, v) => n + v.options.length, 0);
       progress(onProgress, 'insights', `variant advisor: ${opts_} option(s) across ${variantProposals.length} finding(s)`);
     } catch (err) {

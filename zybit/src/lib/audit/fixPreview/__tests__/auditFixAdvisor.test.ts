@@ -30,6 +30,26 @@ describe('buildAuditFixPrompt', () => {
     expect(prompt).toContain('CSS FRAMEWORK: tailwind');
   });
 
+  it('omits SITE CONTEXT without siteContext, includes it when provided', () => {
+    expect(buildAuditFixPrompt(BASE_INPUT)).not.toContain('SITE CONTEXT');
+    const enriched = buildAuditFixPrompt({
+      ...BASE_INPUT,
+      siteContext: {
+        industry: 'ecommerce',
+        businessModel: 'transactional',
+        conversionGoal: 'purchase',
+        audience: 'home cooks',
+        brandVoice: 'warm, playful',
+        source: 'inferred',
+        confidence: 0.8,
+        capturedAt: '',
+        modelVersion: '',
+      },
+    });
+    expect(enriched).toContain('SITE CONTEXT');
+    expect(enriched).toContain('industry: ecommerce');
+  });
+
   it('strips angle brackets so the prescription cannot close XML-style tags', () => {
     const prompt = buildAuditFixPrompt({
       ...BASE_INPUT,

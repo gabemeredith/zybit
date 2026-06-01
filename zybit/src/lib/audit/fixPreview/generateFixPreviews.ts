@@ -32,6 +32,7 @@ import { phase1Sites, zybitFindings } from '@/lib/db/schema';
 import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
 import type { PageSnapshotData } from '@/lib/phase2/snapshots/types';
 import type { VariantModification } from '@/lib/experiments/types';
+import type { SiteContext } from '@/lib/phase2/siteContext';
 import { suggestAuditFix as defaultSuggestAuditFix } from './auditFixAdvisor';
 import {
   renderBeforeAfter as defaultRenderBeforeAfter,
@@ -63,6 +64,8 @@ export interface GenerateFixPreviewsArgs {
   findings: FindingForFixPreview[];
   /** Hard cap. Top findings only — the lead magnet's wow surface is small. */
   maxFindings?: number;
+  /** Business context — makes the generated fix on-brand. Optional / null = baseline. */
+  siteContext?: SiteContext | null;
 }
 
 /**
@@ -210,6 +213,7 @@ export async function generateFixPreviews(
         designTokens: design?.designTokens ?? null,
         cssSystem: design?.cssSystem ?? null,
         ctaVocabulary,
+        siteContext: args.siteContext ?? null,
       },
       { suggest, renderBA, renderBO, inpaint, assessQuality },
     );
@@ -324,6 +328,7 @@ interface RunOneArgs {
   designTokens: Record<string, unknown> | null;
   cssSystem: string | null;
   ctaVocabulary: string[];
+  siteContext?: SiteContext | null;
 }
 
 interface RunOneDeps {
@@ -392,6 +397,7 @@ async function runOneFinding(
     availableSelectors: [],
     ctaVocabulary: args.ctaVocabulary,
     beforeScreenshotBase64: beforeOnly.beforeBuffer.toString('base64'),
+    siteContext: args.siteContext ?? null,
   });
 
   if (suggestion && suggestion.modifications.length > 0) {

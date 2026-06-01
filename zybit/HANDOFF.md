@@ -85,7 +85,13 @@ Legend: ✅ done & verified · 🟡 in progress · ⬜ not started
   - **To run it:** copy a `.env` (with `OPENAI_API_KEY`) into this worktree, then
     `npx tsx --env-file=lighthouse/.env lighthouse/server/index.ts`, open
     `http://127.0.0.1:3001/lighthouse`.
-- ⬜ **Thread into variant advisor + audit fix advisor + vision pass.**
+- ✅ **Thread into variant advisor + audit fix advisor** — `buildPrompt`
+  (variant) + `buildAuditFixPrompt` (fix-preview) accept `siteContext` and append
+  the context block (flag-off = byte-identical baseline, tested). Wired end-to-end
+  in the QA path: `runUrlAudit` passes the rich `insights.layerB.siteContext` into
+  `runVariantAdvisor` + `runFixPreviews` → `generateFixPreviews` → the advisor.
+  **Vision pass deliberately excluded** — it's an objective "name what's literally
+  visible" caption; business context would bias the observation. (documented choice)
 - ⬜ **Brand DNA axis** + fix Vercel Blob `private access` screenshot bug.
 - ⬜ **Competitor pass axis.**
 - ⬜ **Behavioral/PostHog axis** + event-taxonomy recommender.

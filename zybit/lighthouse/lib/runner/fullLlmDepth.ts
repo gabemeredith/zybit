@@ -36,6 +36,7 @@ import {
   type AdvisorOption,
 } from '@/lib/experiments/aiAdvisor';
 import { logAiAdvisorUsage } from '@/lib/experiments/aiAdvisorRateLimit';
+import type { SiteContext } from '@/lib/phase2/siteContext';
 
 type Phase1Repository = ReturnType<typeof createPhase1Repository>;
 
@@ -72,6 +73,7 @@ export async function runFixPreviews(args: {
   auditUrl: string;
   findings: AuditFinding[];
   maxFindings?: number;
+  siteContext?: SiteContext | null;
 }): Promise<FixPreviewSummary[]> {
   const cap = args.maxFindings ?? 3;
   const targets = args.findings.slice(0, cap);
@@ -85,6 +87,7 @@ export async function runFixPreviews(args: {
     siteId: args.siteId,
     auditUrl: args.auditUrl,
     maxFindings: cap,
+    siteContext: args.siteContext ?? null,
     findings: targets.map((f) => ({
       id: idFor(f),
       ruleId: f.ruleId,
@@ -136,6 +139,7 @@ export async function runVariantAdvisor(args: {
   findings: AuditFinding[];
   repository: Phase1Repository;
   maxFindings?: number;
+  siteContext?: SiteContext | null;
 }): Promise<VariantProposalSummary[]> {
   const apiKey = process.env.OPENAI_API_KEY;
   const cap = args.maxFindings ?? 2;
@@ -192,6 +196,7 @@ export async function runVariantAdvisor(args: {
         },
         design: designContext,
         snapshot: { availableSelectors, ctaVocabulary },
+        siteContext: args.siteContext ?? null,
       });
 
       const t0 = Date.now();

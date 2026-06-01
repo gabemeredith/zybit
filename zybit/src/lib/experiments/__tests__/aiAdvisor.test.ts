@@ -49,6 +49,30 @@ describe('buildPrompt', () => {
     expect(prompt).not.toContain('computed styles unavailable');
   });
 
+  it('omits SITE CONTEXT without siteContext, includes it when provided', () => {
+    const baseline = buildPrompt({ finding: FINDING, design: DESIGN_FULL, snapshot: SNAPSHOT });
+    expect(baseline).not.toContain('SITE CONTEXT');
+    const enriched = buildPrompt({
+      finding: FINDING,
+      design: DESIGN_FULL,
+      snapshot: SNAPSHOT,
+      siteContext: {
+        industry: 'fintech',
+        businessModel: 'subscription',
+        conversionGoal: 'book-demo',
+        audience: 'CFOs at mid-market',
+        brandVoice: 'trustworthy, precise',
+        source: 'inferred',
+        confidence: 0.7,
+        capturedAt: '',
+        modelVersion: '',
+      },
+    });
+    expect(enriched).toContain('SITE CONTEXT');
+    expect(enriched).toContain('industry: fintech');
+    expect(enriched).toContain('primary conversion goal: book-demo');
+  });
+
   it('adds a degraded-mode note when capture method is structural with tokens', () => {
     const prompt = buildPrompt({
       finding: FINDING,
