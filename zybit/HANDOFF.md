@@ -52,10 +52,13 @@ findings valid/invalid — not auto-flipped.
 Legend: ✅ done & verified · 🟡 in progress · ⬜ not started
 
 - ✅ **Scaffold** — worktree, this handoff doc, flag in `.env.example`, draft PR.
-- 🟡 **SiteContext foundation** — `src/lib/phase2/siteContext/`: type + deterministic
-  priors (`deriveIndustry` + `deriveBrandProfile`) + LLM enrichment (fast model,
-  structured output, strict validator, fail-soft) + unit tests.
-- ⬜ **Thread into copy-critique + Layer B** — dynamic industry persona; SiteContext in `buildLayerBPrompt`.
+- ✅ **SiteContext foundation** — `src/lib/phase2/siteContext/` (`types.ts`,
+  `deriveSiteContext.ts`, `promptBlock.ts`): `SiteContext` type, deterministic
+  industry prior (`deriveIndustry`) enriched by one fast-model LLM call (structured
+  output + strict validator + fail-soft), declared-onboarding-values-win merge,
+  graceful degradation to heuristic-only then `null`. Shared prompt renderers
+  (`reviewerPersona`, `siteContextPromptBlock`). 14 unit tests, tsc clean.
+- 🟡 **Thread into copy-critique + Layer B** — dynamic industry persona; SiteContext in `buildLayerBPrompt`.
 - ⬜ **Eval harness** — Lighthouse surface: flag-on vs flag-off on real public sites, mark findings valid/invalid, scoreboard.
 - ⬜ **Thread into variant advisor + audit fix advisor + vision pass.**
 - ⬜ **Brand DNA axis** + fix Vercel Blob `private access` screenshot bug.
