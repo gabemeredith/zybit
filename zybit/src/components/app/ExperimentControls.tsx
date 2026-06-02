@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { updateExperimentStatusAction, recordResultsAction } from "@/app/app/experiments/[id]/actions";
+import { useAnalytics } from "@/lib/analytics";
 
 type Status = "draft" | "running" | "completed" | "stopped";
 
@@ -20,10 +22,9 @@ interface Props {
   defaultResults: DefaultResults;
 }
 
-const INPUT_CLASS =
-  "w-full border border-black/[0.1] rounded-lg px-3 py-2 text-sm text-[#111] bg-white focus:outline-none focus:ring-1 focus:ring-black/[0.2] placeholder-[#9B9B9B]";
+const INPUT_CLASS = "brut-input px-3 py-2 text-sm text-[#111] placeholder-[#9B9B9B]";
 
-const SECTION_LABEL = "block text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1.5";
+const SECTION_LABEL = "brut-label block mb-1.5";
 
 export default function ExperimentControls({
   experimentId,
@@ -32,6 +33,8 @@ export default function ExperimentControls({
   defaultResults,
 }: Props) {
   const [statusLoading, setStatusLoading] = useState<string | null>(null);
+  const [overlaps, setOverlaps] = useState<Array<{ id: string; name: string }> | null>(null);
+  const analytics = useAnalytics();
   const [showResultsForm, setShowResultsForm] = useState(!hasResults && currentStatus === "completed");
   const [controlRate, setControlRate] = useState(
     defaultResults.controlRate !== undefined ? (defaultResults.controlRate * 100).toFixed(1) : ""
@@ -48,10 +51,22 @@ export default function ExperimentControls({
   const [savingResults, setSavingResults] = useState(false);
   const router = useRouter();
 
-  async function changeStatus(status: "completed" | "stopped") {
+  async function changeStatus(
+    status: "running" | "completed" | "stopped",
+    acknowledgeOverlap = false,
+  ) {
     setStatusLoading(status);
     try {
-      await updateExperimentStatusAction(experimentId, status);
+      const result = await updateExperimentStatusAction(experimentId, status, acknowledgeOverlap);
+      if (result?.type === "overlap_warning") {
+        setOverlaps(result.overlaps);
+        return;
+      }
+      if (status === "running") {
+        analytics.experimentLaunched({ experimentId, hadOverlap: acknowledgeOverlap });
+      } else if (status === "completed" || status === "stopped") {
+        analytics.experimentStopped({ experimentId, finalStatus: status });
+      }
       if (status === "completed") setShowResultsForm(true);
       router.refresh();
     } finally {
@@ -63,13 +78,17 @@ export default function ExperimentControls({
     e.preventDefault();
     setSavingResults(true);
     try {
-      await recordResultsAction(
+      const control = parseFloat(controlRate) / 100;
+      const variant = parseFloat(variantRate) / 100;
+      const conf = parseFloat(confidence) / 100;
+      const parts = parseInt(participants) || 0;
+      await recordResultsAction(experimentId, control, variant, conf, parts);
+      analytics.experimentResultsRecorded({
         experimentId,
-        parseFloat(controlRate) / 100,
-        parseFloat(variantRate) / 100,
-        parseFloat(confidence) / 100,
-        parseInt(participants) || 0,
-      );
+        liftPct: control > 0 ? ((variant - control) / control) * 100 : 0,
+        confidence: conf,
+        participants: parts,
+      });
       setShowResultsForm(false);
       router.refresh();
     } finally {
@@ -82,7 +101,7 @@ export default function ExperimentControls({
 
   if (isTerminal && !showResultsForm) {
     return hasResults ? null : (
-      <div className="bg-white border border-black/[0.05] rounded-2xl p-6">
+      <div className="brut-card p-6">
         <button
           type="button"
           onClick={() => setShowResultsForm(true)}
@@ -94,13 +113,82 @@ export default function ExperimentControls({
     );
   }
 
+  const isDraft = currentStatus === "draft";
+
   return (
     <div className="space-y-4">
+      {/* Overlap warning — shown when launching (draft or running path) */}
+      {overlaps && (
+        <div className="bg-amber-50 border-l-4 border-amber-300 p-5">
+          <p className="text-sm font-bold text-amber-900 mb-1">
+            {overlaps.length === 1
+              ? "1 experiment is already running on this site."
+              : `${overlaps.length} experiments are already running on this site.`}
+          </p>
+          <ul className="text-sm text-amber-800 space-y-0.5 mb-3">
+            {overlaps.map((o) => (
+              <li key={o.id} className="flex items-center gap-1.5">
+                <span className="w-1 h-1 bg-amber-400 shrink-0" />
+                <Link
+                  href={`/app/experiments/${o.id}`}
+                  className="underline underline-offset-2 hover:text-amber-900 transition-colors"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {o.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-amber-700 mb-3">
+            Concurrent experiments split traffic and can confound results. Launch only if you
+            intentionally want to run them in parallel.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={statusLoading !== null}
+              onClick={() => changeStatus("running", true)}
+              className="bg-amber-800 text-white px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
+            >
+              {statusLoading === "running" ? "Launching…" : "Launch anyway"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOverlaps(null)}
+              className="text-sm text-amber-700 hover:text-amber-900 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Draft launch */}
+      {isDraft && !overlaps && (
+        <div className="brut-card px-6 py-5 flex items-center justify-between">
+          <div>
+            <div className="brut-label mb-1">
+              Ready to launch
+            </div>
+            <p className="text-sm text-[#6B6B6B]">Start serving variant traffic to real visitors.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => changeStatus("running")}
+            disabled={statusLoading !== null}
+            className="brut-action ml-4 shrink-0"
+          >
+            {statusLoading === "running" ? "Launching…" : "Launch experiment"}
+          </button>
+        </div>
+      )}
+
       {/* Status controls */}
       {isActive && (
-        <div className="bg-white border border-black/[0.05] rounded-2xl px-6 py-5 flex items-center justify-between">
+        <div className="brut-card px-6 py-5 flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1">
+            <div className="brut-label mb-1">
               Experiment running
             </div>
             <p className="text-sm text-[#6B6B6B]">Stop when you have enough data to declare a winner.</p>
@@ -110,7 +198,7 @@ export default function ExperimentControls({
               type="button"
               onClick={() => changeStatus("completed")}
               disabled={statusLoading !== null}
-              className="bg-[#111] text-[#FAFAF8] px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
+              className="brut-action"
             >
               {statusLoading === "completed" ? "…" : "Mark complete"}
             </button>
@@ -118,7 +206,7 @@ export default function ExperimentControls({
               type="button"
               onClick={() => changeStatus("stopped")}
               disabled={statusLoading !== null}
-              className="bg-white border border-black/[0.1] text-[#6B6B6B] px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] hover:text-[#111] disabled:opacity-40 rounded-lg transition-colors"
+              className="brut-action-ghost disabled:opacity-40"
             >
               {statusLoading === "stopped" ? "…" : "Stop"}
             </button>
@@ -128,8 +216,8 @@ export default function ExperimentControls({
 
       {/* Results form */}
       {showResultsForm && (
-        <div className="bg-white border border-black/[0.05] rounded-2xl p-6">
-          <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-5">
+        <div className="brut-card p-6">
+          <div className="brut-label mb-5">
             Record results
           </div>
           <form onSubmit={handleSaveResults} className="space-y-4">
@@ -203,7 +291,7 @@ export default function ExperimentControls({
               <button
                 type="submit"
                 disabled={savingResults}
-                className="bg-[#111] text-[#FAFAF8] px-5 py-2.5 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
+                className="brut-action"
               >
                 {savingResults ? "Saving…" : "Save results"}
               </button>

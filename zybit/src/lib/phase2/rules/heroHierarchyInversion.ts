@@ -17,6 +17,8 @@ import type { CanonicalEvent } from "@/lib/phase2/types";
 
 import {
   clamp,
+  displayPath,
+  evidenceFromFinding,
   formatCount,
   matchCtaToEvent,
   normalizeText,
@@ -25,13 +27,18 @@ import {
   share,
   topByCount,
 } from "./helpers";
+import { ANNOTATION_CLICKED_COLOR, ANNOTATION_HEAVY_COLOR } from "./annotationColors";
+import { siteNicheModulation } from "./siteNicheModulation";
+import { annotationCaption, outlineMod } from "./annotationHelpers";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
+import type { VariantModification } from "@/lib/experiments/types";
 
 const MIN_CTA_CLICKS = 30;
 
@@ -40,10 +47,155 @@ interface ClickedRef {
   fallbackText: string | null;
 }
 
+// ── PM-facing copy helpers ──────────────────────────────────────────────────
+// Translate internal labels (path strings, PageLandmark values,
+// visualWeightSignals) into the language a PM uses. Kept local to this file
+// while the why-framing pattern is being piloted — promote to `helpers.ts`
+// once a second rule adopts it.
+
+function humanizePath(pathRef: string): string {
+  if (pathRef === '/' || pathRef === '') return 'your homepage';
+  const slug = pathRef.replace(/^\//, '').split('/')[0] ?? '';
+  if (slug.length === 0) return 'your homepage';
+  return `your ${slug.replace(/-/g, ' ')} page`;
+}
+
+function describeLandmark(landmark: string): string {
+  switch (landmark) {
+    case 'header': return 'in your top nav';
+    case 'nav':    return 'in your nav bar';
+    case 'main':   return 'in the main content area';
+    case 'aside':  return 'in the sidebar';
+    case 'footer': return 'in the footer';
+    case 'dialog': return 'in a dialog';
+    default:       return 'on the page';
+  }
+}
+
+/**
+ * Turn the raw visualWeightSignals (`tag:a`, `landmark:header`, `text-xl`,
+ * `font-bold`, `bg-blue-600`, …) into a short, plain-English phrase a PM
+ * can act on. Intentionally lossy — a PM doesn't need the exact tokens.
+ */
+function describeVisualTreatment(signals: readonly string[]): string {
+  const has = (pred: (s: string) => boolean) => signals.some(pred);
+  const parts: string[] = [];
+  if (has(s => /^text-(lg|xl|2xl|3xl|4xl|5xl)$/.test(s) || s.startsWith('size:'))) parts.push('larger text');
+  if (has(s => /^font-(bold|extrabold|black|semibold)$/.test(s) || /^weight:(bold|[789]00)$/.test(s))) parts.push('bold weight');
+  if (has(s => s.startsWith('bg-') || s.startsWith('background:'))) parts.push('a filled background');
+  if (parts.length === 0) return 'the same bold styling';
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+}
+
+const FALLBACK_SECONDARY_COLOR = '#666';
+
 export const heroHierarchyInversion: AuditRule = {
   id: "hero-hierarchy-inversion",
   name: "Hero hierarchy inversion",
   category: "hierarchy",
+  publicAuditBehavior: 'structural-only',
+
+  // Public-audit rewrite: the rule fires on real `cta_click` events in the
+  // in-app pipeline, but on synthetic events in the public-audit pipeline.
+  // The structural half (topmost vs visually heaviest CTA) is honest in both
+  // modes — strip the behavioral framing for the prospect and lean on
+  // structure-only language. Keeps title/evidence/whyItMatters in sync
+  // between the persisted finding row and the email render.
+  structuralPublicAuditCopy(finding) {
+    const topmost = evidenceFromFinding(finding, 'What visitors click most') ?? '(unnamed button)';
+    const heavy = evidenceFromFinding(finding, 'What your design emphasizes') ?? '(unnamed button)';
+    const page = displayPath(evidenceFromFinding(finding, 'Page') ?? finding.pathRef);
+    if (topmost.includes('(unnamed') || heavy.includes('(unnamed')) {
+      // Defense-in-depth: the rule's evaluate() now bails on unnamed sides,
+      // but a future regression that emitted them would slip through unless
+      // we also refuse to render here. Returning null leaves the finding's
+      // own copy intact so the registry test still sees a present rewrite.
+      return null;
+    }
+    return {
+      title: `On ${page}, the first button isn't the one that stands out most`,
+      summary:
+        `${page} shows "${topmost}" first, but "${heavy}" is the button that catches the eye because ` +
+        `of its color and weight. When the first button and the boldest button aren't the same, visitors ` +
+        `have to look past the loud one to find the one they wanted. That slows them down.`,
+      whyItMatters:
+        `On ${page} the eye lands on "${heavy}" but the page puts "${topmost}" first — visitors have to reconcile the two every time, which costs you clicks.`,
+      evidence: [
+        { label: 'First button on the page', value: topmost },
+        { label: 'Button that stands out most', value: heavy },
+        { label: 'Page', value: page },
+        {
+          label: 'How we know',
+          value: 'We compared the order of your buttons with how bold each one looks. Connect your analytics later to confirm with real click data.',
+        },
+      ],
+    };
+  },
+
+  proposeModifications(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[][] {
+    const heavyRef = finding.refs?.ctaRef;
+    if (!heavyRef) return [];
+    const heavy = ctx.snapshot.data?.ctas?.find((cta) => cta.ref === heavyRef);
+    if (!heavy || !heavy.cssSelector) return [];
+
+    const secondary = ctx.designTokens?.secondaryColor ?? FALLBACK_SECONDARY_COLOR;
+    return [[
+      {
+        type: 'css-inject',
+        selector: heavy.cssSelector,
+        css: `background: transparent; color: ${secondary}; font-weight: 400; border: 1px solid currentColor;`,
+      },
+    ]];
+  },
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    // The two-color outline is already the right story (eye-vs-clicks
+    // mismatch). Caption each one so the PM doesn't have to map color →
+    // meaning mentally — heavy = "your design emphasizes this," clicked =
+    // "users actually want this."
+    const mods: VariantModification[] = [];
+    const heavyRef = finding.refs?.ctaRef;
+    const clickedRef = finding.refs?.clickedCtaRef;
+    const heavy = heavyRef
+      ? ctx.snapshot.data?.ctas?.find((cta) => cta.ref === heavyRef)
+      : null;
+    const clicked = clickedRef
+      ? ctx.snapshot.data?.ctas?.find((cta) => cta.ref === clickedRef)
+      : null;
+    if (heavy?.cssSelector) {
+      mods.push(outlineMod(heavy.cssSelector, ANNOTATION_HEAVY_COLOR));
+      mods.push(
+        ...annotationCaption({
+          anchorSelector: heavy.cssSelector,
+          position: 'after',
+          ruleClassName: 'zybit-anno-hierarchy-heavy',
+          label: 'Heaviest visual — but visitors don\'t click here',
+          color: ANNOTATION_HEAVY_COLOR,
+        }),
+      );
+    }
+    if (clicked?.cssSelector) {
+      mods.push(outlineMod(clicked.cssSelector, ANNOTATION_CLICKED_COLOR));
+      mods.push(
+        ...annotationCaption({
+          anchorSelector: clicked.cssSelector,
+          position: 'after',
+          ruleClassName: 'zybit-anno-hierarchy-clicked',
+          label: 'Visitors actually click here — give it the heavy treatment',
+          color: ANNOTATION_CLICKED_COLOR,
+        }),
+      );
+    }
+    return mods;
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];
@@ -78,6 +230,17 @@ export const heroHierarchyInversion: AuditRule = {
 
       const finding = evaluatePage(pathRef, snapshot, clicks, ctx);
       if (finding !== null) findings.push(finding);
+    }
+
+    // Site-niche severity downgrade: community/education/devtools hero patterns
+    // are often intentional — an event photo hero or terminal-first hero is
+    // not a CTA mistake. Downgrade warn → info so it surfaces for awareness
+    // without being ranked as a top-priority fix.
+    const nicheModulation = siteNicheModulation('hero-hierarchy-inversion', ctx.siteNiche);
+    if (nicheModulation.severityDowngrade) {
+      for (const f of findings) {
+        if (f.severity === 'warn') f.severity = 'info';
+      }
     }
 
     return findings;
@@ -137,86 +300,114 @@ function evaluatePage(
     return null;
   }
 
-  const heavySignals = heavy.visualWeightSignals.slice(0, 3);
-  const heavySignalList = heavySignals.length > 0 ? heavySignals.join(", ") : "no class signals";
-  const heavyTopSignal = heavy.visualWeightSignals[0] ?? "the dominant treatment";
-  const heavyPairSignals =
-    heavy.visualWeightSignals.length >= 2
-      ? heavy.visualWeightSignals.slice(0, 2).join(" + ")
-      : heavyTopSignal;
-  const promotionSlot =
-    heavy.landmark === "header" ? "the same header position" : "the primary slot";
+  // Vision-pass fallback for `heavyLabel` only: when the parser couldn't
+  // read CTA text — typical for icon-only "Get started" buttons that ship
+  // as `<button><svg/></button>` — borrow the semantic label from
+  // `visualSignals.visualPrimaryCta`. Both `pickHeaviest()` and the vision
+  // pass rank by visual prominence, so the correspondence holds well
+  // enough for evidence copy. Closes handover §12.A's "unnamed-CTA root
+  // cause" item.
+  //
+  // No symmetric fallback for `clickedLabel`: `visualSecondaryCta` is "the
+  // second-most-visually-prominent CTA Gemini saw," not "the CTA visitors
+  // clicked most." Borrowing it would mislabel icon-only most-clicked
+  // elements (hamburger menus, search icons) with whatever vision called
+  // secondary — fabricated evidence on the prospect surface. When clicked
+  // text is missing, fall through to the bail below instead.
+  const visual = snapshot.data.visualSignals;
+  const heavyLabel =
+    (heavy.text && heavy.text.length > 0) ? heavy.text :
+    visual?.visualPrimaryCta?.text ?? '';
+  const clickedLabel = clickedText ?? '';
+
+  // Bail when either side STILL resolves to no text — the finding is
+  // unactionable and the rendered output is gibberish ("your visitors want
+  // '(unnamed button)' but your page emphasizes '(unnamed button)'"). After
+  // vision fallback this is a much narrower bail than before; protects
+  // every audit, not just public.
+  if (!heavyLabel || !clickedLabel) return null;
+
+  const pageName = humanizePath(pathRef);
+  const heavyLocation = describeLandmark(heavy.landmark);
+  const heavyTreatment = describeVisualTreatment(heavy.visualWeightSignals);
+  const windowDays = windowDaysFromTimeWindow(ctx.window);
+  const clickedQ = quote(clickedLabel);
+  const heavyQ = quote(heavyLabel);
 
   const summary =
-    `Most-clicked CTA on ${pathRef} is ${quote(clickedText)} (${pct(clickedShare)}% of CTA clicks, ` +
-    `${formatCount(clickedCount)} clicks). The visually heaviest CTA is ${quote(heavy.text)} ` +
-    `(visual weight ${heavy.visualWeight}, signals: ${heavySignalList}).`;
+    `Of ${formatCount(totalClicks)} button clicks on ${pageName}, ${pct(clickedShare)}% went to ${clickedQ} ` +
+    `— even though ${heavyQ} sits ${heavyLocation} with ${heavyTreatment}. The button your design ` +
+    `emphasizes isn't the button your visitors want.`;
 
   const recommendation: string[] = [
-    `Either reduce the visual weight of ${quote(heavy.text)} or raise ${quote(clickedText)} to match. ` +
+    `Either reduce the visual weight of ${heavyQ} or raise ${clickedQ} to match. ` +
       `The eye should land where the value lands, and right now those are different places.`,
-    `Concretely: drop ${heavyTopSignal} from ${quote(heavy.text)}, or promote ${quote(clickedText)} into ` +
-      `${promotionSlot} and give it ${heavyPairSignals}.`,
+    `Concretely: promote ${clickedQ} ${heavyLocation} and give it ${heavyTreatment}, ` +
+      `or demote ${heavyQ} to a secondary style.`,
   ];
 
   const evidence: AuditFindingEvidence[] = [
     {
-      label: "Most-clicked CTA",
-      value: clickedText ?? "(unnamed CTA)",
-      context: `${pct(clickedShare)}% / ${formatCount(clickedCount)} clicks`,
+      label: 'What visitors click most',
+      value: clickedLabel,
+      context: `${pct(clickedShare)}% of clicks · ${formatCount(clickedCount)} clicks`,
     },
     {
-      label: "Visually heaviest CTA",
-      value: heavy.text || "(unnamed CTA)",
-      context: `weight ${heavy.visualWeight}, ${heavySignalList}`,
+      label: 'What your design emphasizes',
+      value: heavyLabel,
+      context: `${heavyLocation}, ${heavyTreatment}`,
     },
+    { label: 'Page', value: pageName },
     {
-      label: "Heaviest CTA position",
-      value: heavy.landmark,
-      context: `foldGuess: ${heavy.foldGuess}`,
+      label: 'Based on',
+      value: `${formatCount(totalClicks)} button clicks over the last ${windowDays} days`,
     },
-    { label: "Page", value: pathRef },
-    { label: "Sample size", value: totalClicks, context: "CTA clicks in window" },
   ];
 
   const impactEstimate = computeImpactEstimate({
     affectedRate: clickedShare,
     windowVolume: totalClicks,
-    windowDays: windowDaysFromTimeWindow(ctx.window),
+    windowDays,
     goalType: ctx.config.goalType,
     goalConfig: ctx.config.goalConfig,
     signalDescription: `CTA clicks on ${pathRef} going to a lower-priority element`,
   });
 
   const prescription = {
+    whyItMatters:
+      `Your visitors are reaching for ${clickedQ}, but ${pageName} is pointing them at ${heavyQ} ` +
+      `${heavyLocation}. Every visitor who arrives wanting the thing they actually want has to scan past ` +
+      `the loud button to find the small one — that's friction you're paying for on every session.`,
     whatToChange:
-      `Give ${quote(clickedText ?? heavy.text)} the visual weight currently held by ${quote(heavy.text)}. ` +
-      `Specifically: apply ${heavy.visualWeightSignals.slice(0, 2).join(' + ')} to ${quote(clickedText ?? '')} ` +
-      `and demote ${quote(heavy.text)} to a secondary style.`,
+      `Give ${clickedQ} ${heavyTreatment} — the eye-catching look ${heavyQ} has today ${heavyLocation} — ` +
+      `and make ${heavyQ} a quieter, secondary button.`,
     whyItWorks:
-      `Users vote with their clicks — ${pct(clickedShare)}% of CTA clicks go to ${quote(clickedText ?? '')} ` +
-      `but ${quote(heavy.text)} gets the most visual attention. Aligning design emphasis with user preference ` +
-      `removes the mismatch that forces visitors to hunt for the thing they actually want.`,
+      `Designs work when visual emphasis matches user intent — the eye should land where the value lands. ` +
+      `When they don't, visitors slow down, second-guess, and a chunk of them bounce before they find what they came for.`,
     experimentVariantDescription:
-      `Variant B: ${quote(clickedText ?? '')} promoted to primary visual treatment; ` +
-      `${quote(heavy.text)} demoted to secondary. Primary metric: CTA click rate on ${pathRef}.`,
+      `Variant B: ${clickedQ} promoted to primary visual treatment; ${heavyQ} demoted to secondary. ` +
+      `Primary metric: CTA click rate on ${pathRef}.`,
   };
 
   return {
     id: `hero-hierarchy-inversion:${pathRef}`,
-    ruleId: "hero-hierarchy-inversion",
-    category: "hierarchy",
-    severity: clickedShare > 0.4 ? "warn" : "info",
+    ruleId: 'hero-hierarchy-inversion',
+    category: 'hierarchy',
+    severity: clickedShare > 0.4 ? 'warn' : 'info',
     confidence: clamp(0.4 + Math.log10(Math.max(totalClicks, 1)) * 0.2, 0, 0.95),
     priorityScore: clamp(clickedShare + 0.2, 0, 1),
     pathRef,
-    title: `Visual hierarchy inverts user preference on ${pathRef}`,
+    title: `Your visitors want ${clickedQ}, but ${pageName} points them at ${heavyQ}`,
     summary,
     prescription,
     impactEstimate,
     recommendation,
     evidence,
-    refs: { snapshotId: snapshot.id, ctaRef: heavy.ref },
+    refs: {
+      snapshotId: snapshot.id,
+      ctaRef: heavy.ref,
+      ...(clickedCta ? { clickedCtaRef: clickedCta.ref } : {}),
+    },
   };
 }
 
@@ -305,72 +496,77 @@ function evaluatePageWithCapture(
   const heavy = pickHeaviest(visibleCtas) as CtaCandidateMeasured | null;
   if (!heavy) return null;
 
+  // Mirror the snapshot-path guard: don't fire when either side has no text.
+  // See the snapshot-only `evaluate()` path above for the rationale.
+  const clickedHasText = !!clickedText && clickedText.length > 0;
+  const heavyHasText = !!heavy.text && heavy.text.length > 0;
+  if (!clickedHasText || !heavyHasText) return null;
+
   if (sameCta(clickedCta, clickedText, heavy)) return null;
 
-  const heavySignals = heavy.visualWeightSignals.slice(0, 3);
-  const heavySignalList = heavySignals.length > 0 ? heavySignals.join(', ') : 'no class signals';
-  const heavyTopSignal = heavy.visualWeightSignals[0] ?? 'the dominant treatment';
-  const heavyPairSignals =
-    heavy.visualWeightSignals.length >= 2
-      ? heavy.visualWeightSignals.slice(0, 2).join(' + ')
-      : heavyTopSignal;
-  const promotionSlot =
-    heavy.landmark === 'header' ? 'the same header position' : 'the primary slot';
-  const bboxNote = heavy.bbox ? ` (${Math.round(heavy.bbox.width)}×${Math.round(heavy.bbox.height)}px)` : '';
+  const pageName = humanizePath(pathRef);
+  const heavyLocation = describeLandmark(heavy.landmark);
+  const heavyTreatment = describeVisualTreatment(heavy.visualWeightSignals);
+  const windowDays = windowDaysFromTimeWindow(ctx.window);
+  const clickedQ = quote(clickedText);
+  const heavyQ = quote(heavy.text);
+  const sizeNote = heavy.bbox
+    ? ` and is ${Math.round(heavy.bbox.width)}×${Math.round(heavy.bbox.height)}px on desktop`
+    : '';
 
   const summary =
-    `Most-clicked CTA on ${pathRef} is ${quote(clickedText)} (${pct(clickedShare)}% of CTA clicks, ` +
-    `${formatCount(clickedCount)} clicks). The visually heaviest CTA is ${quote(heavy.text)} ` +
-    `(visual weight ${heavy.visualWeight}, signals: ${heavySignalList}${bboxNote}).`;
+    `Of ${formatCount(totalClicks)} button clicks on ${pageName}, ${pct(clickedShare)}% went to ${clickedQ} ` +
+    `— even though ${heavyQ} sits ${heavyLocation} with ${heavyTreatment}${sizeNote}. ` +
+    `The button your design emphasizes isn't the button your visitors want.`;
 
   const recommendation: string[] = [
-    `Either reduce the visual weight of ${quote(heavy.text)} or raise ${quote(clickedText)} to match. ` +
+    `Either reduce the visual weight of ${heavyQ} or raise ${clickedQ} to match. ` +
       `The eye should land where the value lands, and right now those are different places.`,
-    `Concretely: drop ${heavyTopSignal} from ${quote(heavy.text)}, or promote ${quote(clickedText)} into ` +
-      `${promotionSlot} and give it ${heavyPairSignals}.`,
+    `Concretely: promote ${clickedQ} ${heavyLocation} and give it ${heavyTreatment}, ` +
+      `or demote ${heavyQ} to a secondary style.`,
   ];
 
   const evidence = [
     {
-      label: 'Most-clicked CTA',
-      value: clickedText ?? '(unnamed CTA)',
-      context: `${pct(clickedShare)}% / ${formatCount(clickedCount)} clicks`,
+      label: 'What visitors click most',
+      value: clickedText ?? '(unnamed button)',
+      context: `${pct(clickedShare)}% of clicks · ${formatCount(clickedCount)} clicks`,
     },
     {
-      label: 'Visually heaviest CTA',
-      value: heavy.text || '(unnamed CTA)',
-      context: `weight ${heavy.visualWeight}, ${heavySignalList}${bboxNote}`,
+      label: 'What your design emphasizes',
+      value: heavy.text || '(unnamed button)',
+      context: `${heavyLocation}, ${heavyTreatment}${sizeNote}`,
     },
+    { label: 'Page', value: pageName },
     {
-      label: 'Heaviest CTA position',
-      value: heavy.landmark,
-      context: `foldGuess: ${heavy.foldGuess}`,
+      label: 'Based on',
+      value: `${formatCount(totalClicks)} button clicks over the last ${windowDays} days`,
     },
-    { label: 'Page', value: pathRef },
-    { label: 'Sample size', value: totalClicks, context: 'CTA clicks in window' },
   ];
 
   const impactEstimate = computeImpactEstimate({
     affectedRate: clickedShare,
     windowVolume: totalClicks,
-    windowDays: windowDaysFromTimeWindow(ctx.window),
+    windowDays,
     goalType: ctx.config.goalType,
     goalConfig: ctx.config.goalConfig,
     signalDescription: `CTA clicks on ${pathRef} going to a lower-priority element`,
   });
 
   const prescription = {
+    whyItMatters:
+      `Your visitors are reaching for ${clickedQ}, but ${pageName} is pointing them at ${heavyQ} ` +
+      `${heavyLocation}. Every visitor who arrives wanting the thing they actually want has to scan past ` +
+      `the loud button to find the small one — that's friction you're paying for on every session.`,
     whatToChange:
-      `Give ${quote(clickedText ?? heavy.text)} the visual weight currently held by ${quote(heavy.text)}. ` +
-      `Specifically: apply ${heavy.visualWeightSignals.slice(0, 2).join(' + ')} to ${quote(clickedText ?? '')} ` +
-      `and demote ${quote(heavy.text)} to a secondary style.`,
+      `Give ${clickedQ} ${heavyTreatment} — the eye-catching look ${heavyQ} has today ${heavyLocation} — ` +
+      `and make ${heavyQ} a quieter, secondary button.`,
     whyItWorks:
-      `Users vote with their clicks — ${pct(clickedShare)}% of CTA clicks go to ${quote(clickedText ?? '')} ` +
-      `but ${quote(heavy.text)} gets the most visual attention${bboxNote}. Aligning design emphasis with ` +
-      `user preference removes the mismatch that forces visitors to hunt for the thing they actually want.`,
+      `Designs work when visual emphasis matches user intent — the eye should land where the value lands. ` +
+      `When they don't, visitors slow down, second-guess, and a chunk of them bounce before they find what they came for.`,
     experimentVariantDescription:
-      `Variant B: ${quote(clickedText ?? '')} promoted to primary visual treatment; ` +
-      `${quote(heavy.text)} demoted to secondary. Primary metric: CTA click rate on ${pathRef}.`,
+      `Variant B: ${clickedQ} promoted to primary visual treatment; ${heavyQ} demoted to secondary. ` +
+      `Primary metric: CTA click rate on ${pathRef}.`,
   };
 
   return {
@@ -381,11 +577,15 @@ function evaluatePageWithCapture(
     confidence: clamp(0.4 + Math.log10(Math.max(totalClicks, 1)) * 0.2, 0, 0.95),
     priorityScore: clamp(clickedShare + 0.2, 0, 1),
     pathRef,
-    title: `Visual hierarchy inverts user preference on ${pathRef}`,
+    title: `Your visitors want ${clickedQ}, but ${pageName} points them at ${heavyQ}`,
     summary,
     prescription,
     impactEstimate,
     recommendation,
     evidence,
+    refs: {
+      ctaRef: heavy.ref,
+      ...(clickedCta ? { clickedCtaRef: clickedCta.ref } : {}),
+    },
   };
 }

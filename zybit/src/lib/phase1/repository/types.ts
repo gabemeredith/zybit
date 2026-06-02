@@ -48,6 +48,8 @@ export interface Phase1SiteRecord {
   name: string;
   domain: string;
   analyticsProvider?: string;
+  proxySlug?: string;
+  customerSubdomain?: string;
   createdAt: string;
 }
 

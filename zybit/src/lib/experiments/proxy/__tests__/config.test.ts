@@ -14,6 +14,7 @@ const SAMPLE: ProxyConfig = {
       modifications: [{ type: 'element-hide', selector: '.banner' }],
       controlPct: 50,
       durationDays: 14,
+      status: 'running',
     },
   ],
 };

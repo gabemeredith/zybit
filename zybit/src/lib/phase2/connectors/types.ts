@@ -8,7 +8,19 @@ import type { CanonicalEventInput, ISODateString } from "../types";
 
 export type ConnectorProvider = "posthog" | "segment" | "shopify" | "ga4" | "custom";
 
-export type IntegrationStatus = "pending" | "active" | "error" | "disabled";
+/**
+ * Connector lifecycle status. `degraded` and `disconnected` are written by the
+ * circuit breaker (`observability/errorBudget.ts`): an integration degrades
+ * after 3 consecutive sync failures and disconnects after 5 — at which point
+ * the sync crons skip it until a PM hits the resume route (Zybit-154).
+ */
+export type IntegrationStatus =
+  | "pending"
+  | "active"
+  | "error"
+  | "disabled"
+  | "degraded"
+  | "disconnected";
 
 /**
  * A persisted integration row. Secrets are NEVER stored here; only the env-var

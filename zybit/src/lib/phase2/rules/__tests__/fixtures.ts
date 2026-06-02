@@ -4,7 +4,7 @@
  */
 
 import type { CanonicalEvent, GoalConfig, GoalType, Phase2SiteConfig, TimeWindow } from '@/lib/phase2/types';
-import type { CtaCandidate, FormCandidate, FormInputItem, PageSnapshot, PageSnapshotData } from '@/lib/phase2/snapshots/types';
+import type { CtaCandidate, FormCandidate, FormInputItem, ImageItem, PageSnapshot, PageSnapshotData } from '@/lib/phase2/snapshots/types';
 import type { AuditRuleContext } from '@/lib/phase2/rules/types';
 
 let _counter = 0;
@@ -156,6 +156,7 @@ export function makeCta(
 ): CtaCandidate {
   return {
     ref: ref ?? `cta-${uid()}`,
+    cssSelector: null,
     tag: 'button',
     text,
     href: null,
@@ -163,6 +164,29 @@ export function makeCta(
     landmark: 'main',
     visualWeight,
     visualWeightSignals: visualWeight > 0.7 ? ['btn-primary', 'bg-blue-600'] : ['btn-secondary'],
+    foldGuess,
+    domDepth: 3,
+    documentIndex: 0,
+    disabled: false,
+  };
+}
+
+export function makeLink(
+  text: string,
+  href: string,
+  foldGuess: 'above' | 'uncertain' | 'below' = 'above',
+  ref?: string,
+): CtaCandidate {
+  return {
+    ref: ref ?? `link-${uid()}`,
+    cssSelector: null,
+    tag: 'a',
+    text,
+    href,
+    ariaLabel: null,
+    landmark: 'main',
+    visualWeight: 0.3,
+    visualWeightSignals: [],
     foldGuess,
     domDepth: 3,
     documentIndex: 0,
@@ -183,6 +207,7 @@ export function makeForm(
   }));
   return {
     ref,
+    cssSelector: null,
     landmark,
     fieldCount: inputs.length,
     inputs: formInputs,
@@ -191,11 +216,29 @@ export function makeForm(
   };
 }
 
+export function makeImage(
+  src: string,
+  options: { alt?: string | null; hasAlt?: boolean; isCtaChild?: boolean } = {},
+): ImageItem {
+  const hasAlt = options.hasAlt ?? options.alt !== undefined;
+  return {
+    src,
+    alt: options.alt ?? null,
+    hasAlt,
+    width: null,
+    height: null,
+    isCtaChild: options.isCtaChild ?? false,
+    documentIndex: 0,
+  };
+}
+
 export function makeSnapshot(
   pathRef: string,
   ctas: CtaCandidate[],
   headings: Array<{ level: 1 | 2 | 3; text: string }> = [],
   forms: FormCandidate[] = [],
+  images: ImageItem[] = [],
+  metaOverrides: Partial<PageSnapshotData['meta']> = {},
 ): PageSnapshot {
   const data: PageSnapshotData = {
     schemaVersion: 1,
@@ -211,10 +254,12 @@ export function makeSnapshot(
       themeColor: null,
       viewport: 'width=device-width',
       robotsMeta: null,
+      ...metaOverrides,
     },
-    headings: headings.map((h, i) => ({ level: h.level, text: h.text, documentIndex: i })),
+    headings: headings.map((h, i) => ({ level: h.level, text: h.text, documentIndex: i, cssSelector: null })),
     ctas,
     forms,
+    images,
     contentHash: `hash-${uid()}`,
     rawByteSize: 50_000,
     parsedAt: '2026-01-15T12:00:00Z',

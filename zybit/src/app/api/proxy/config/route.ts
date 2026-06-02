@@ -45,12 +45,17 @@ export async function GET(request: Request) {
       modifications: zybitExperiments.modifications,
       controlPct: zybitExperiments.audienceControlPct,
       durationDays: zybitExperiments.durationDays,
+      status: zybitExperiments.status,
     })
     .from(zybitExperiments)
     .where(
       and(
         eq(zybitExperiments.siteId, site.id),
         eq(zybitExperiments.status, 'running'),
+        // Preview-only experiments are projected, never served to real
+        // visitors (free-experiment loop §5). Exclude them here so a preview
+        // can never be published to the proxy, regardless of status.
+        eq(zybitExperiments.previewOnly, false),
       ),
     );
 
@@ -65,6 +70,7 @@ export async function GET(request: Request) {
           modifications: (e.modifications ?? []) as VariantModification[],
           controlPct: e.controlPct,
           durationDays: e.durationDays,
+          status: e.status,
         })),
       },
     },

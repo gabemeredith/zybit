@@ -4,19 +4,22 @@ import { isProxyHost } from '@/lib/experiments/proxy/host';
 
 const PUBLIC_PREFIXES = [
   '/sign-in',
+  '/set-password',
   '/admin/login',
   '/api/auth',
   '/api/admin',
-  '/dashboard',
-  '/docs',
-  '/discovery',
   '/api/intake',
-  '/api/discovery',
   '/api/phase1/health',
   '/api/phase2/health',
   '/api/billing/webhook',
   '/api/loader',
   '/api/proxy',
+  // Public URL-audit lead magnet
+  '/audit',
+  '/api/audit',
+  // Video-ready demo entry — seeds + signs in the synthetic PM user.
+  '/demo',
+  '/api/demo',
 ];
 
 function isPublicPath(pathname: string): boolean {

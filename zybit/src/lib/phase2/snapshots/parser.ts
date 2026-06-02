@@ -11,12 +11,15 @@ import { parse, type HTMLElement } from 'node-html-parser';
 
 import { guessFold } from './foldGuess';
 import { scoreVisualWeight } from './visualWeight';
+import { detectCssSystem, extractClassTokens } from './cssSystemDetector';
+import { computeCssSelector } from './cssSelector';
 import {
   SnapshotError,
   type CtaCandidate,
   type FormCandidate,
   type FormInputItem,
   type HeadingItem,
+  type ImageItem,
   type PageLandmark,
   type PageSnapshotMeta,
   type SnapshotParser,
@@ -37,6 +40,7 @@ const MAX_HEADINGS = 100;
 const MAX_CTAS = 200;
 const MAX_FORMS = 30;
 const MAX_INPUTS_PER_FORM = 30;
+const MAX_IMAGES = 200;
 const TEXT_CAP = 200;
 
 const LANDMARK_TAGS = ['header', 'nav', 'main', 'aside', 'footer', 'dialog'] as const;
@@ -155,9 +159,19 @@ function findHeadings(root: HTMLElement): HeadingItem[] {
     const tag = getTag(el);
     const level = Number(tag.slice(1));
     if (!Number.isInteger(level) || level < 1 || level > 6) continue;
-    const text = el.text.trim().slice(0, TEXT_CAP);
+    // `el.text` can be undefined when the parser hands back a node from a
+    // truncated/malformed DOM (posthog.com hits this on >2 MB pages — the
+    // capture is trimmed at the last `>` and a child element can land with
+    // no text accessor). `?? ''` keeps the crash from poisoning the entire
+    // audit run; the heading is simply skipped by the empty-text guard.
+    const text = (el.text ?? '').trim().slice(0, TEXT_CAP);
     if (!text) continue;
-    results.push({ level: level as HeadingItem['level'], text, documentIndex });
+    results.push({
+      level: level as HeadingItem['level'],
+      text,
+      documentIndex,
+      cssSelector: computeCssSelector(el, tag),
+    });
     documentIndex++;
   }
   return results;
@@ -194,6 +208,110 @@ function firstImgAlt(el: HTMLElement): string {
   return img ? (img.getAttribute('alt') ?? '').trim() : '';
 }
 
+/**
+ * Accessibility skip links ("Skip to content", "Skip to main content",
+ * "Jump to navigation", etc.) are a11y affordances, not call-to-action
+ * candidates. Including them in the CTA inventory pollutes every
+ * downstream rule: they sort to documentIndex=0 on most pages, so the
+ * synthetic generator's doc-order click weighting plus the public-audit
+ * pipeline reports "your visitors want `Skip to content`" — which is
+ * nonsense and destroys the audit's credibility. Detected via:
+ *   - text content matching common skip patterns
+ *   - href pointing at `#main`, `#content`, `#main-content`, `#skip`
+ *   - class names containing `skip-link`, `sr-only`, `visually-hidden`
+ *     (the last two are how skip links are conventionally visually hidden
+ *     until focused)
+ */
+const SKIP_LINK_TEXT = /^(skip|jump)\s+(to|past|over)\s+(main|content|navigation|nav)/i;
+const SKIP_LINK_HREF = /^#(main|content|main-content|skip|skip-link|skip-to-content|primary)$/i;
+const SKIP_LINK_CLASS = /(^|\s)(skip-link|skip-to-content|sr-only|visually-hidden|screen-reader|usa-skipnav)(\s|$)/i;
+
+function isSkipLink(el: HTMLElement, text: string, ariaLabel: string): boolean {
+  if (SKIP_LINK_TEXT.test(text) || SKIP_LINK_TEXT.test(ariaLabel)) return true;
+  const href = el.getAttribute('href') ?? '';
+  if (SKIP_LINK_HREF.test(href)) return true;
+  const cls = el.getAttribute('class') ?? '';
+  if (cls && SKIP_LINK_CLASS.test(cls)) return true;
+  return false;
+}
+
+// Browser-default chrome affordances. These are *always* navigation /
+// dismiss controls — never conversion CTAs anywhere. Without this filter
+// `hero-hierarchy-inversion` on Stripe `/enterprise` named the responsive
+// nav's "Back" button as the "most visually emphasized CTA" and prescribed
+// copying its styling — incoherent on a marketing page. Exact-match only:
+// "Back" → chrome; "Back to overview" → real CTA. Plain "×"/"✕" close
+// glyphs included; multi-letter labels like "Close panel" don't match.
+const CHROME_BUTTON_TEXT = /^(back|close|dismiss|cancel|menu|search|open menu|open navigation|toggle menu|toggle navigation|×|✕|✖|\+|−|‒)$/i;
+
+// Badge/counter text — pure-digit strings with optional "+" suffix (e.g. "0"
+// on a cart icon, "99+" on a notification bell). These are DOM counters, not
+// marketing copy. A cart anchor whose *only* visible text is "0" is structural
+// UI and must not surface as a hero CTA. Filter regardless of tag or href.
+const BADGE_COUNT_TEXT = /^\d+\+?$/;
+
+// State-toggle buttons contain both sides of a visibility toggle concatenated
+// in a single accessible label — the browser shows only one state at a time
+// but the DOM holds both strings. Hamburger menus are the common case:
+// "Open Menu Close Menu" or "Close NavigationOpen Navigation". Matches when
+// the text contains an open-type word followed within 40 chars by a close-type
+// word (or vice versa), case-insensitive.
+const STATE_TOGGLE_TEXT =
+  /\b(open|show)\b.{0,40}\b(close|hide)\b|\b(close|hide)\b.{0,40}\b(open|show)\b/i;
+
+// Site brand logos are commonly authored as `<a href="/"><img alt="Stripe
+// logo"></a>` — a navigation affordance to the homepage, not a conversion
+// CTA. Without this filter `hero-hierarchy-inversion` on Stripe
+// `/enterprise` named the Stripe logo as the most emphasized CTA after
+// the Back-button filter cleared it from the inventory. Same shape:
+// always brand chrome, never a conversion target. Matches plain `logo`
+// or `<word> logo` (e.g. "Stripe logo", "Acme Inc logo").
+const LOGO_ALT_TEXT = /^([a-z0-9][\w&.\- ]{0,40}\s)?logo$/i;
+
+function isChromeButton(
+  tag: string,
+  text: string,
+  ariaLabel: string,
+  imgAlt: string,
+  href: string | null,
+): boolean {
+  // Anchors with a real destination (not a fragment) are real links — never
+  // chrome. Buttons + fragment-only anchors are candidates.
+  const anchorIsReal = tag === 'a' && !!href && !href.startsWith('#');
+  if (!anchorIsReal) {
+    if (CHROME_BUTTON_TEXT.test(text)) return true;
+    if (CHROME_BUTTON_TEXT.test(ariaLabel)) return true;
+  }
+  // Logos are a navigation affordance even when href="/"; filter regardless
+  // of which accessible-name slot the alt text landed in. Stripe authors
+  // their logo as `<a href="/"><span class="sr-only">Stripe logo</span>
+  // <svg/></a>` so the alt text ends up in `text`, not in `imgAlt` —
+  // checking only the alt-text fallback misses this pattern.
+  if (LOGO_ALT_TEXT.test(text)) return true;
+  if (LOGO_ALT_TEXT.test(imgAlt)) return true;
+  if (LOGO_ALT_TEXT.test(ariaLabel)) return true;
+  // Badge/counter text (e.g. "0", "99+") is structural UI — DOM counters for
+  // cart items, notification counts, or numeric indexes are not marketing copy.
+  // Filter regardless of tag or href; a cart anchor whose only text is "0" is
+  // still not a conversion CTA.
+  if (BADGE_COUNT_TEXT.test(text)) return true;
+  if (BADGE_COUNT_TEXT.test(ariaLabel)) return true;
+  // State-toggle text (e.g. "Open Menu Close Menu") is a hamburger button
+  // whose accessible label contains both toggle states. Filter regardless of
+  // tag or href — it is always structural UI, never a marketing headline.
+  if (STATE_TOGGLE_TEXT.test(text)) return true;
+  if (STATE_TOGGLE_TEXT.test(ariaLabel)) return true;
+  return false;
+}
+
+// Collapse internal whitespace (newlines, tabs, multiple spaces) into single
+// spaces so multi-line link text reads as a normal sentence in rule output.
+// Without this, a `<a>Product roadmap\n  See what's ahead</a>` (Stripe's
+// `/atlas` nav pattern) would surface in the email as a multi-line blob.
+function normalizeCtaText(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim();
+}
+
 function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
   const elements = root.querySelectorAll('a, button');
   const candidates: HTMLElement[] = [];
@@ -201,13 +319,19 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     if (candidates.length >= MAX_CTAS) break;
     const tag = getTag(el);
     if (tag !== 'a' && tag !== 'button') continue;
-    const text = el.text.trim();
-    const ariaLabel = (el.getAttribute('aria-label') ?? '').trim();
+    const text = normalizeCtaText(el.text ?? '');
+    const ariaLabel = normalizeCtaText(el.getAttribute('aria-label') ?? '');
     // Graphical buttons / logo links often have no text or aria-label and
     // rely on a child <img alt="..."> for their accessible name. Treat that
     // alt text as a label so we don't drop them from the inventory.
     const imgAlt = !text && !ariaLabel ? firstImgAlt(el) : '';
     if (!text && !ariaLabel && !imgAlt) continue;
+    // Skip links are accessibility affordances, not CTAs — see isSkipLink doc.
+    if (isSkipLink(el, text, ariaLabel)) continue;
+    // Browser-default chrome buttons (Back / Close / Menu / × close glyphs)
+    // and brand logo anchors are never conversion CTAs — see isChromeButton.
+    const hrefForChromeCheck = tag === 'a' ? (el.getAttribute('href') ?? null) : null;
+    if (isChromeButton(tag, text, ariaLabel, imgAlt, hrefForChromeCheck)) continue;
     candidates.push(el);
   }
 
@@ -216,12 +340,12 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
     const el = candidates[i];
     const tag = getTag(el) as 'a' | 'button';
     const className = el.getAttribute('class') ?? null;
-    const directText = el.text.trim();
+    const directText = normalizeCtaText(el.text ?? '');
     // For graphical CTAs, fall back to the first child img's alt as the
     // visible label so downstream rules can reason about them.
     const text = (directText || firstImgAlt(el)).slice(0, TEXT_CAP);
     const href = tag === 'a' ? (el.getAttribute('href') ?? null) : null;
-    const ariaLabel = (el.getAttribute('aria-label') ?? '').trim() || null;
+    const ariaLabel = normalizeCtaText(el.getAttribute('aria-label') ?? '') || null;
     const landmark = computeLandmark(el);
     const { bodyChildIndex, totalBodyChildren } = computeBodyChildIndex(el, body);
     const primary = isPrimaryCandidate(className, el);
@@ -244,6 +368,7 @@ function findCtas(root: HTMLElement, body: HTMLElement | null): CtaCandidate[] {
 
     results.push({
       ref: hashCtaRef(tag, href, text, className ?? ''),
+      cssSelector: computeCssSelector(el, tag),
       tag,
       text,
       href,
@@ -297,6 +422,35 @@ function hashFormRef(action: string, innerSnippet: string): string {
   return createHash('sha256').update(`${action}|${innerSnippet}`).digest('hex').slice(0, 16);
 }
 
+function findImages(target: HTMLElement, ctaElements: Set<HTMLElement>): ImageItem[] {
+  const elements = target.querySelectorAll('img');
+  const results: ImageItem[] = [];
+  let documentIndex = 0;
+  for (const el of elements) {
+    if (results.length >= MAX_IMAGES) break;
+    const src = el.getAttribute('src') ?? '';
+    if (!src) continue;
+    // `getAttribute` returns `undefined` (not `null`) for a missing attribute
+    // in this HTML parser, so a strict `!== null` wrongly treated a missing
+    // alt as present and called `.trim()` on `undefined` — crashing the parse
+    // on any alt-less <img> (e.g. Stripe's /blog). Loose `!= null` catches both
+    // and preserves the "alt present but empty = decorative" distinction.
+    const altAttr = el.getAttribute('alt');
+    const hasAlt = altAttr != null;
+    const alt = altAttr != null ? altAttr.trim() : null;
+    const widthAttr = el.getAttribute('width');
+    const heightAttr = el.getAttribute('height');
+    const width = widthAttr != null && /^\d+$/.test(widthAttr) ? parseInt(widthAttr, 10) : null;
+    const height = heightAttr != null && /^\d+$/.test(heightAttr) ? parseInt(heightAttr, 10) : null;
+    // ctaElements holds the img elements themselves (queried via
+    // `a img, button img`), so a direct membership check is sufficient.
+    const isCtaChild = ctaElements.has(el);
+    results.push({ src: src.slice(0, TEXT_CAP), alt, hasAlt, width, height, isCtaChild, documentIndex });
+    documentIndex++;
+  }
+  return results;
+}
+
 function findForms(root: HTMLElement, target: HTMLElement): FormCandidate[] {
   const forms = target.querySelectorAll('form');
   const results: FormCandidate[] = [];
@@ -333,6 +487,7 @@ function findForms(root: HTMLElement, target: HTMLElement): FormCandidate[] {
     const submit = explicitSubmit ?? bareButton ?? null;
     results.push({
       ref: hashFormRef(action, innerSnippet),
+      cssSelector: computeCssSelector(form, 'form'),
       landmark,
       fieldCount,
       inputs,
@@ -359,6 +514,12 @@ export const parseSnapshot: SnapshotParser = async (input) => {
     const headings = findHeadings(target);
     const ctas = findCtas(target, body);
     const forms = findForms(root, target);
+    // Build a set of <img> elements that are direct children of CTA anchors/buttons
+    // so imageAltTextMissing can skip them (CTA images already handled by the CTA parser).
+    const ctaImgSet = new Set<HTMLElement>(
+      target.querySelectorAll('a img, button img') as unknown as HTMLElement[],
+    );
+    const images = findImages(target, ctaImgSet);
     // Strip <script>, <style>, and <noscript> before hashing — they often
     // carry per-request noise (nonces, csrf tokens, build hashes, analytics
     // payloads) that would otherwise drift contentHash on every fetch even
@@ -371,15 +532,19 @@ export const parseSnapshot: SnapshotParser = async (input) => {
       await webcrypto.subtle.digest('SHA-256', Buffer.from(normalized, 'utf8')),
     ).toString('hex');
 
+    const cssSystem = detectCssSystem(extractClassTokens(input.html));
+
     return {
       schemaVersion: 1,
       meta,
       headings,
       ctas,
       forms,
+      images,
       contentHash: contentHashHex,
       rawByteSize: input.rawByteSize,
       parsedAt: new Date().toISOString(),
+      cssSystem: cssSystem !== 'unknown' ? cssSystem : undefined,
     };
   } catch (err) {
     if (err instanceof SnapshotError) throw err;

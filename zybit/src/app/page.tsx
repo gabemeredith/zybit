@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { ParticleCanvas } from "@/components/particle-background";
 
 import { IntakeModal } from "@/components/IntakeModal";
 import { SiteNav } from "@/components/SiteNav";
+import { PUBLIC_AUDIT_RULE_COUNT } from "@/lib/audit/publicAuditRuleCount";
 
 // ---------------------------------------------------------------------------
 // Main Application
@@ -25,10 +27,10 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
           </h1>
           <div className="sans-text text-sm sm:text-xl md:text-2xl font-medium text-[#6B6B6B] leading-relaxed md:leading-snug space-y-3 md:space-y-4">
             <p className="text-[#111]">
-              Zybit analyzes how people actually use your product (clicks, paths, sessions) and ranks what to change first.
+              Zybit reads how customers move through your product: every click, every drop-off, ranked by revenue impact.
             </p>
             <p>
-              The output is a prioritized fix list tied to real stalls and drop-offs, not opinion decks or generic redesign checklists.
+              Every finding ships with the evidence trail and a dollar estimate. No opinions. No generic checklists.
             </p>
           </div>
         </div>
@@ -40,10 +42,10 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
           {/* Gradient fade — softens the hard bg edge against the particle field on mobile */}
           <div className="absolute -top-12 left-0 right-0 h-12 bg-gradient-to-b from-transparent to-[#FAFAF8] md:hidden" aria-hidden="true" />
           <div className="bg-[#FAFAF8] p-4 md:bg-transparent md:p-0">
-            <h2 className="sans-text text-3xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-3 md:mb-6">Pain shows up in behavior.</h2>
+            <h2 className="sans-text text-3xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-3 md:mb-6">Friction is already in your data.</h2>
             <div className="sans-text text-sm sm:text-xl md:text-2xl text-[#6B6B6B] leading-relaxed md:leading-snug space-y-3 md:space-y-4">
-              <p>If the journey is broken, your analytics already show it: missed clicks, weak conversion, repetitive loops.</p>
-              <p className="text-[#111]">We ground recommendations in that behavior so you solve real friction, not placeholder roadmap items.</p>
+              <p>Dead-end sessions, rage taps, missed CTAs. The events tell you exactly where customers stall.</p>
+              <p className="text-[#111]">Zybit reads the signal and turns it into a ranked, defensible action list.</p>
             </div>
           </div>
         </div>
@@ -54,10 +56,10 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
         <div className="relative w-full md:max-w-[500px] md:mt-[20vh]">
           <div className="absolute -top-12 left-0 right-0 h-12 bg-gradient-to-b from-transparent to-[#FAFAF8] md:hidden" aria-hidden="true" />
           <div className="bg-[#FAFAF8] p-4 md:bg-transparent md:p-0">
-            <h2 className="sans-text text-3xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-3 md:mb-6">Fix what hurts users first.</h2>
+            <h2 className="sans-text text-3xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-3 md:mb-6">Ship what moves the metric.</h2>
             <div className="sans-text text-sm sm:text-xl md:text-2xl text-[#6B6B6B] leading-relaxed md:leading-snug space-y-3 md:space-y-4">
-              <p>Priorities mirror the friction visible in your data.</p>
-              <p className="text-[#111]">You ship changes you can justify with evidence, not scattershot UX tweaks.</p>
+              <p>Findings are ordered by estimated revenue impact, not severity score or gut feel.</p>
+              <p className="text-[#111]">Every prescription carries the evidence trail — defensible in standup, in the roadmap review, in the board deck.</p>
             </div>
           </div>
         </div>
@@ -68,12 +70,12 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
         <div className="relative w-full md:max-w-[500px] md:mt-[15vh]">
           <div className="absolute -top-8 left-0 right-0 h-8 bg-gradient-to-b from-transparent to-[#FAFAF8] md:hidden" aria-hidden="true" />
           <div className="bg-[#FAFAF8] p-4 md:bg-transparent md:p-0">
-            <h2 className="sans-text text-3xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-3 md:mb-6">What Zybit means.</h2>
+            <h2 className="sans-text text-3xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-3 md:mb-6">Built on behavior.</h2>
             <div className="sans-text text-sm sm:text-xl md:text-2xl text-[#6B6B6B] leading-relaxed md:leading-snug space-y-3 md:space-y-4">
               <p>
-                <span className="text-[#111]">Behavior-first:</span> product usage in; ranked, explainable priorities out.
+                <span className="text-[#111]">Behavior in.</span> Ranked, explainable priorities out.
               </p>
-              <p className="text-[#111]">Signal from your data, not gut feel, decides what ships.</p>
+              <p className="text-[#111]">Your data decides what ships — not opinions, not redesigns, not benchmarks.</p>
             </div>
           </div>
         </div>
@@ -87,9 +89,9 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
           </div>
 
           {/* Mobile hero — shows the headline stat before the card */}
-          <div className="lg:hidden text-center mb-10">
+          <div className="lg:hidden text-center mb-8">
             <div className="sans-text text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-3">Estimated monthly impact</div>
-            <div className="sans-text text-7xl font-black tracking-tighter text-[#111] leading-none">$3.2k</div>
+            <div className="sans-text text-[3.75rem] sm:text-7xl font-black tracking-tighter text-[#111] leading-none">$3.2k</div>
             <div className="sans-text text-sm text-[#6B6B6B] mt-2">found from a single friction point</div>
           </div>
 
@@ -99,8 +101,8 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
             {/* Left: product screenshot in browser frame — desktop only */}
             <div className="hidden lg:block w-full lg:flex-1">
               <div
-                className="border-2 border-[#111] overflow-hidden"
-                style={{ boxShadow: '8px 8px 0px #111' }}
+                className="border-2 border-[#111]/50 overflow-hidden"
+                style={{ boxShadow: '8px 8px 0px rgba(17,17,17,0.35)', borderRadius: '2px' }}
               >
                 <div className="bg-[#111] flex items-center gap-1.5 px-4 py-2.5">
                   <div className="w-2 h-2 rounded-full bg-[#3a3a3a]" />
@@ -178,29 +180,47 @@ function MinimalDOM({ openModal }: { openModal: () => void }) {
         </div>
       </section>
 
-      {/* Section 6: CTA */}
+      {/* Section 6: CTA — primary path is Request access (the gated 1:1 motion);
+          the free audit is the lower-commitment path that feeds the same queue.
+          A single solid backdrop (instead of per-element chiclets) so the type
+          breathes against the particle field. */}
       <section className="h-screen w-full flex flex-col items-center justify-center text-center px-6">
-        <h2 className="sans-text text-3xl sm:text-5xl md:text-8xl font-bold tracking-tighter mb-4 md:mb-6 pointer-events-none bg-[#FAFAF8] px-4 py-2">
-          See if Zybit fits.
-        </h2>
-        <div className="sans-text pointer-events-none mb-8 max-w-md mx-auto space-y-2 text-sm text-[#6B6B6B] md:mb-12 md:text-lg bg-[#FAFAF8] px-4 py-3">
-          <p>Send your site—we&rsquo;ll review your funnel manually.</p>
-          <p>We&rsquo;ll only reach out if there&rsquo;s a real match.</p>
-        </div>
-        <button
-          onClick={openModal}
-          className="btn-brutalist pointer-events-auto"
+        <div
+          className="w-full max-w-2xl px-6 py-8 md:px-8 md:py-10 pointer-events-none"
+          style={{
+            background: 'radial-gradient(ellipse at center, rgba(250,250,248,0.92) 30%, rgba(250,250,248,0.55) 70%, transparent 100%)',
+          }}
         >
-          Request Access
-        </button>
+          <div className="sans-text text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B6B6B] mb-5">
+            Closed rollout · onboarded 1:1
+          </div>
+          <h2 className="sans-text text-[2rem] sm:text-5xl md:text-7xl font-bold tracking-tighter mb-5 md:mb-6 leading-[0.95]">
+            See where your{" "}
+            <span className="md:block">funnel leaks.</span>
+          </h2>
+          <p className="sans-text mb-0 mx-auto text-sm text-[#6B6B6B] md:text-lg leading-relaxed">
+            We onboard every customer personally. Request access and we&rsquo;ll reach out to set up a call. Not ready to talk? Run a free audit and see the four highest-impact fixes on your site first &mdash; {PUBLIC_AUDIT_RULE_COUNT} friction rules, evidence, and what to change.
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row items-center gap-4 mt-8 pointer-events-auto">
+          <button onClick={openModal} className="btn-brutalist">
+            Request access
+          </button>
+          <Link
+            href="/audit"
+            className="sans-text text-[10px] font-bold uppercase tracking-[0.18em] text-[#6B6B6B] hover:text-[#111] transition-colors underline underline-offset-4 decoration-[#6B6B6B] hover:decoration-[#111]"
+          >
+            Or run a free audit &rarr;
+          </Link>
+        </div>
       </section>
 
-      {/* Footer: human attribution */}
+      {/* Footer: founder signature. Kept deliberately. */}
       <footer className="relative z-20 w-full bg-[#FAFAF8] border-t border-black/[0.06] px-6 py-6 text-center pointer-events-none">
         <p className="sans-text text-[10px] md:text-[11px] font-medium uppercase tracking-[0.18em] md:tracking-[0.2em] text-[#6B6B6B]">
-          <span className="block md:inline">Built by Jad and Asad at Cornell.</span>
+          <span className="block md:inline">Built by founders.</span>
           <span className="hidden md:inline"> </span>
-          <span className="block md:inline">We review every submission personally.</span>
+          <span className="block md:inline">Every audit is reviewed personally.</span>
         </p>
       </footer>
     </div>

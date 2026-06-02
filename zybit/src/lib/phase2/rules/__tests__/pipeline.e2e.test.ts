@@ -133,15 +133,15 @@ describe('runAuditRules pipeline E2E', () => {
     expect(unique.size).toBe(ids.length);
   });
 
-  it('revenue mode: findings with impactEstimate have unit=USD', () => {
+  it('revenue mode: findings with impactEstimate have unit=conversions (no dollar figures)', () => {
     const events = buildSyntheticEvents();
     const config = makeGoalConfig('revenue');
     const ctx = makeContext(events, buildSnapshots(), config);
     const { findings } = runAuditRules(ctx);
     for (const f of findings) {
       if (f.impactEstimate) {
-        expect(f.impactEstimate.unit).toBe('USD');
-        expect(f.impactEstimate.formatted).toMatch(/^~\$/);
+        expect(f.impactEstimate.unit).toBe('conversions');
+        expect(f.impactEstimate.formatted).not.toContain('$');
       }
     }
   });

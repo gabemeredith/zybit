@@ -1,21 +1,15 @@
 # Zybit — Product Gap Analysis & Roadmap
 
-> **Status:** The analysis engine (Understand → Watch → Identify → Propose) is production-ready with 12 deterministic audit rules, two connectors, and a wired PM dashboard. The "Test → Learn" half does not exist. This document maps every gap between current state and a real, paid startup — and proposes the exact build path for each.
-
----
-
-## State of the Product Today
-
-| Loop Step | Status | What Works |
-|-----------|--------|-----------|
-| **Understand** | ✅ Built | HTTP snapshot → DOM parse → visual-weight scoring |
-| **Watch** | ✅ Built | PostHog pull-sync + Segment webhook, canonical event schema |
-| **Identify** | ✅ Built | 12 audit rules, 193 passing tests, deterministic findings |
-| **Propose** | ✅ Built | Findings ranked by priority score + revenue impact, PM-readable |
-| **Test** | ❌ Missing | Experiment record is metadata only — no traffic, no variant |
-| **Learn** | ❌ Missing | No outcome ingestion, no rule calibration, no feedback |
-| **Pay** | ❌ Missing | No Stripe, no plan limits, no usage metering |
-| **Operate** | ⚠️ Partial | No staging env, no E2E harness, no observability |
+> **For current build state, see [`zybit/AGENTS.md`](./zybit/AGENTS.md) — "Current build state."**
+> That table is the single source of truth for what is built, partial,
+> or not yet built. This document keeps the **historical gap analysis
+> + architectural reasoning** that motivated each gap — the *why*
+> behind each major area of work. The *what is shipped today* lives
+> in AGENTS.md.
+>
+> **For forward-looking priorities, see [`zybit/docs/sprints/next-bets.md`](./zybit/docs/sprints/next-bets.md).**
+> **For per-ticket status, see [`zybit/docs/sprints/REMEDIATION.md`](./zybit/docs/sprints/REMEDIATION.md).**
+> **For the top-level doc map, see [`zybit/docs/INDEX.md`](./zybit/docs/INDEX.md).**
 
 ---
 
@@ -144,7 +138,9 @@ The wildcard approach (`*.zybit.run → Vercel`) avoids per-customer DNS calls. 
 ### Problem
 There is no payment flow, no subscription, no plan enforcement. Zybit cannot charge money. It also cannot enforce limits, meaning a free user could run unlimited experiments and ingest unlimited events.
 
-### Architecture Decision: Use Stripe + Clerk Organizations
+### Architecture Decision: Use Stripe + magic-link sessions (was: Clerk Organizations)
+
+> Clerk was removed in `a786d37`; org scoping now hangs off magic-link sessions in `src/lib/auth/` rather than Clerk Organizations. The Stripe integration described below shipped against this model.
 
 Clerk is already integrated and handles multi-org. Stripe is the clear choice for SaaS billing — no alternatives evaluated (Paddle adds complexity without benefit at this stage). Billing is keyed to Clerk Organization, not individual user.
 
@@ -263,6 +259,8 @@ The proxy stops applying the variant on next Edge Config sync (within 30s). No m
 ---
 
 ## Gap 4 — Outcome Feedback & Learning Loop (P1, The Moat)
+
+> **Status:** ✅ Layers 1 + 2 shipped. **Layer 1 (per-site re-ranking):** `applyLearnRerank` in `zybit/src/lib/phase2/rules/learnReranker.ts` matches new findings against past outcomes via a cascade (`(ruleId, pathRef, modType)` → `(ruleId, pathRef)` → `(ruleId, modType)` → `(ruleId)`) and adjusts `priorityScore` using `clamp(liftPct, ±20) × confidence × tierStrength × 0.01` with a stacked guardrail penalty. Persisted as `learn_adjustment` jsonb on `forge_findings` (drizzle/0013), surfaced as backlog pill, finding-detail "Past tests" panel, and LEARNED timeline entry on `/app/loop`. **Layer 2 (per-site rule-threshold calibration):** `zybit/src/lib/phase2/rules/ruleCalibration.ts` aggregates a site's outcomes per `ruleId` into a detection-floor multiplier `clamp(1 − netSignal, 0.7, 1.3)` (same per-outcome signal as Layer 1, gated at 3+ conclusive outcomes); 11 of 12 rules (`CALIBRATED_RULE_IDS`; `hero-hierarchy-inversion` exempt — its only gate is a sample-size minimum, not a signal floor) route their detection floor through `calibratedFloor`/`calibratedCap`, computed in `runInsightsPipeline` and surfaced in `AuditRuleDiagnostic.calibration`. Unit-verified only — the Lighthouse runner resets outcomes before its single insights pass, so it can't exercise calibration; no PM-facing surface yet. **Layer 3 (cross-site priors, ≥50 customers) remains unbuilt** — see Gap 10.
 
 ### Problem
 Zybit's audit rules produce the same findings regardless of what has already been tested and measured. A rule will flag `form-abandonment` on a page even if Zybit already ran an experiment on that exact form and it did not move the metric. The rules have no memory.

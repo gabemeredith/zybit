@@ -151,25 +151,68 @@ export function minimumSampleSizePerArm(
 }
 
 // ---------------------------------------------------------------------------
+// O'Brien-Fleming α-spending boundary
+// ---------------------------------------------------------------------------
+
+/**
+ * O'Brien-Fleming confidence threshold at look-number information fraction t.
+ *
+ * At look k out of K planned looks, t = k/K. The OBF stopping boundary is
+ *   z_bound(t) = z_{α/2} / √t
+ * giving a two-sided confidence threshold of 1 − erfc(z_bound / √2).
+ *
+ * Properties:
+ *   t = 1/K (first look):  threshold is very strict (protects against false early stops)
+ *   t = 1.0 (final look):  threshold = 1 − erfc(1.96/√2) ≈ 0.95 (nominal α)
+ *
+ * By Lan–DeMets α-spending theory, P(ever reject H₀ across all K looks | H₀) = α,
+ * so this eliminates repeated-peeking false-positive inflation.
+ */
+export function obfConfidenceThreshold(
+  informationFraction: number,
+  alpha = 0.05,
+): number {
+  const t = Math.max(1e-4, Math.min(1, informationFraction));
+  const zAlpha2 = alpha === 0.01 ? 2.576 : alpha === 0.10 ? 1.645 : 1.96;
+  const zBound = zAlpha2 / Math.sqrt(t);
+  return Math.min(1 - erfc(zBound / Math.SQRT2), 1);
+}
+
+// ---------------------------------------------------------------------------
 // Sequential testing guard
 // ---------------------------------------------------------------------------
 
 export interface SequentialGuardParams {
-  confidence: number;        // computed confidence (1 - pValue)
-  participants: number;      // total participants (both arms combined)
-  elapsedDays: number;       // days since experiment start
-  minimumParticipants: number; // from minimumSampleSizePerArm * 2
-  minimumDays?: number;      // default 7
-  confidenceThreshold?: number; // default 0.95
+  confidence: number;           // computed confidence (1 - pValue)
+  participants: number;         // min(control, variant) per-arm participant count
+  elapsedDays: number;          // days since experiment start
+  minimumParticipants: number;  // target per-arm count (from minimumSampleSizePerArm)
+  minimumDays?: number;         // default 7
+  /**
+   * Total experiment duration in days. Required for OBF boundary — used to
+   * compute the look number (elapsedDays − minimumDays + 1) relative to the
+   * total planned number of looks (durationDays − minimumDays + 1).
+   * Defaults to 14 when omitted.
+   */
+  durationDays?: number;
+  /**
+   * Explicit flat confidence threshold. When provided, bypasses OBF and uses
+   * this value directly. Use only in tests that exercise a specific threshold.
+   */
+  confidenceThreshold?: number;
 }
 
 /**
  * Returns true only when ALL three conditions are met:
- *   1. confidence >= threshold (default 0.95)
- *   2. total participants >= minimumParticipants (power analysis)
- *   3. elapsed days >= minimumDays (default 7, to wash out day-of-week noise)
+ *   1. confidence >= threshold  (O'Brien-Fleming boundary by default)
+ *   2. participants >= minimumParticipants  (per-arm power floor)
+ *   3. elapsed days >= minimumDays  (default 7, day-of-week noise washout)
  *
- * This prevents false positives from early stopping on noise.
+ * The OBF boundary uses look number as the information fraction:
+ *   t = (elapsedDays − minimumDays + 1) / (durationDays − minimumDays + 1)
+ * At the final analysis day (t = 1), the threshold converges to nominal 0.95.
+ * On earlier days (t < 1), the threshold is stricter, controlling the overall
+ * Type I error at α = 0.05 across all daily looks regardless of how many are taken.
  */
 export function isReadyToStop(params: SequentialGuardParams): boolean {
   const {
@@ -178,10 +221,21 @@ export function isReadyToStop(params: SequentialGuardParams): boolean {
     elapsedDays,
     minimumParticipants,
     minimumDays = 7,
-    confidenceThreshold = 0.95,
+    durationDays = 14,
+    confidenceThreshold,
   } = params;
+
+  let threshold: number;
+  if (confidenceThreshold !== undefined) {
+    threshold = confidenceThreshold;
+  } else {
+    const lookNumber = Math.max(1, elapsedDays - minimumDays + 1);
+    const totalLooks = Math.max(1, durationDays - minimumDays + 1);
+    threshold = obfConfidenceThreshold(lookNumber / totalLooks);
+  }
+
   return (
-    confidence >= confidenceThreshold &&
+    confidence >= threshold &&
     participants >= minimumParticipants &&
     elapsedDays >= minimumDays
   );

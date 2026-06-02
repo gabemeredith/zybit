@@ -8,7 +8,20 @@
  * means the navigation isn't telling visitors where to start.
  */
 
-import { clamp, formatCount, gini, pct, quote, readStringProp, round, share } from "./helpers";
+import {
+  clamp,
+  displayPath,
+  evidenceFromFinding,
+  formatCount,
+  gini,
+  pct,
+  quote,
+  readStringProp,
+  round,
+  share,
+} from "./helpers";
+import { calibratedCap } from "./ruleCalibration";
+import { pageTypeFromSnapshot, pageTypeModulation } from "./pageTypeModulation";
 import type {
   AuditFinding,
   AuditFindingEvidence,
@@ -24,6 +37,32 @@ export const navDispersion: AuditRule = {
   id: "nav-dispersion",
   name: "Navigation dispersion",
   category: "nav",
+  publicAuditBehavior: 'structural-only',
+
+  // Public-audit rewrite: nav-dispersion derives its core signal from real
+  // nav-link click distribution (Gini over click counts). In public mode
+  // those clicks are synthetic. The structural framing — "your nav exposes
+  // a lot of destinations" — still applies because nav-item count is parsed
+  // from real HTML; the click-distribution claim is dropped.
+  structuralPublicAuditCopy(finding) {
+    const page = displayPath(evidenceFromFinding(finding, 'Page') ?? finding.pathRef);
+    return {
+      title: `Your menu on ${page} has a lot of links`,
+      summary:
+        `When the top menu has many links, every visitor has to stop and choose before they can ` +
+        `do what they came for. The websites that turn the most visitors into customers keep their ` +
+        `main menu to about 4–5 links.`,
+      whyItMatters:
+        `A long menu makes every visitor pause and choose before they can act; the sites that convert best keep the main menu to about 4–5 links.`,
+      evidence: [
+        { label: 'Page', value: page },
+        {
+          label: 'How we know',
+          value: "We counted the links in your page's menu. Connect your analytics later to see which ones visitors actually click.",
+        },
+      ],
+    };
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const counts = new Map<string, number>();
@@ -42,9 +81,27 @@ export const navDispersion: AuditRule = {
     const distinctDests = counts.size;
     if (distinctDests < MIN_DISTINCT_DESTS) return [];
 
+    // PageType modulation — nav-dispersion is site-wide so we read pageType
+    // from the homepage (or the first available snapshot). On docs / legal /
+    // about / support the rule's premise — "a focused IA tells visitors
+    // where to start" — does not apply, so we suppress. On pricing / signup /
+    // checkout we tighten the cap (capMultiplier > 1) because every extra
+    // nav item on a conversion surface is a real exit ramp.
+    const homepageSnapshot =
+      ctx.pageSnapshotsByPath.get('/') ?? ctx.pageSnapshots[0] ?? null;
+    const pageType = pageTypeFromSnapshot(homepageSnapshot?.data?.visualSignals);
+    const modulation = pageTypeModulation('nav-dispersion', pageType);
+    if (modulation.suppress) return [];
+
     const countVector = [...counts.values()];
     const giniValue = gini(countVector);
-    if (giniValue >= MAX_GINI_FOR_FINDING) return [];
+    // Gini is bounded by [0, 1] — clamp the modulated cap below the
+    // theoretical maximum (0.95) so a capMultiplier > 1 on a conversion
+    // surface cannot push the cap to or beyond Gini's ceiling (which
+    // would silently fire the rule on a perfectly focused nav).
+    const baseCap = calibratedCap(ctx, "nav-dispersion", MAX_GINI_FOR_FINDING);
+    const modulatedCap = Math.min(0.95, baseCap * modulation.capMultiplier);
+    if (giniValue >= modulatedCap) return [];
 
     const ordered = [...counts.entries()].sort((a, b) => {
       if (b[1] !== a[1]) return b[1] - a[1];
@@ -84,12 +141,9 @@ export const navDispersion: AuditRule = {
     ];
 
     const topFour = ordered.slice(0, 4).map((e) => quote(e[0])).join(', ');
-    const bottomDestinations = ordered.slice(4).map((e) => quote(e[0])).join(', ');
 
     const prescription = {
-      whatToChange:
-        `Reduce the top-level navigation to 4 entries: ${topFour}. ` +
-        `Move ${demoteCount > 0 ? `${bottomDestinations || 'the remaining items'}` : 'lower-traffic items'} to a secondary dropdown, footer, or contextual surface.`,
+      whatToChange: `Trim the main menu to 4 links: ${topFour}.`,
       whyItWorks:
         `Navigation with Gini ${round(giniValue, 3)} means clicks are spread almost uniformly across ${distinctDests} items — ` +
         `visitors have no clear signal about where to start. Reducing to 4 items creates visual hierarchy and guides intent.`,
@@ -106,7 +160,15 @@ export const navDispersion: AuditRule = {
         severity: giniValue < 0.2 ? "warn" : "info",
         confidence: clamp(0.4 + Math.log10(Math.max(navClicks, 1)) * 0.2, 0, 0.95),
         priorityScore: clamp(1 - giniValue, 0, 1),
-        pathRef: null,
+        // Nav is conceptually site-wide; anchor the finding to `/` so the
+        // email's diversity cascade can apply the homepage boost, the
+        // dashboard's per-page detail view has a real target, and the
+        // rule's own evidence ("your homepage") stops contradicting a
+        // null path (§16.5 row 3). Always `/` — not whichever page
+        // happened to be `pageSnapshots[0]`, which would mislead the PM
+        // into thinking nav is wrong on a specific subpage (saw this fire
+        // as `/docs` on PostHog when the crawl skipped `/`).
+        pathRef: '/',
         title: "Top-level navigation is unfocused",
         summary,
         prescription,

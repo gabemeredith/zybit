@@ -31,6 +31,8 @@ Zybit runs a repeating six-step cycle. The loop is the product — every feature
 ### 1. Understand
 Full-product audit via headless browser. Zybit reads your brand DNA: visual hierarchy, heading structure, CTA inventory, form complexity, messaging. It doesn't impose a template — it learns what makes your product yours, so it can identify deviations from your own intent, not from some generic rulebook.
 
+Understanding is two-level: **each page** (structure, hierarchy, brand DNA) **and the whole product** (how pages connect into flows, and how real users move between them). The page-level audit is built; the product-level flow graph is the next layer — see `docs/PRD.md`.
+
 ### 2. Watch
 Behavioral data collection from your analytics stack (PostHog, Segment, or direct). Zybit tracks how real users move: where they hesitate, where they abandon, which cohorts convert differently, what gets rage-clicked.
 
@@ -44,7 +46,7 @@ Concrete improvement briefs. Each suggestion includes: what to change, why it wo
 One-click A/B deployment to production. PM approves the variant; Zybit manages the test. No engineering ticket required. The change goes live against real traffic.
 
 ### 6. Learn
-Test outcomes — what moved the metric, what didn't — feed back into the model. Every result makes future suggestions sharper. This is what compounds over time, and it is currently the most underbuilt part of the product.
+Test outcomes — what moved the metric, what didn't — feed back into the model. Every result makes future suggestions sharper. This is what compounds over time. Layer 1 (per-site re-ranking) is shipped: past outcomes adjust the priority of new findings via a cascade match + D-with-guardrails formula, surfaced in the backlog pill, finding-detail "Past tests" panel, and the LEARNED timeline entry on `/app/loop`. Layer 2 (per-site rule-threshold calibration) is shipped: `ruleCalibration.ts` turns a site's accumulated outcomes per rule into a detection-floor multiplier — rules that repeatedly win on a site fire on weaker signal, rules that repeatedly lose require stronger signal — applied before the rules run. Layer 3 (cross-site priors) remains future work, explicitly deferred until 50+ customers.
 
 ---
 
@@ -59,6 +61,71 @@ Test outcomes — what moved the metric, what didn't — feed back into the mode
 **Closed-loop measurement.** Not just "here's what to change" but "here's what we tested and what we learned." The value compounds as results feed into better future suggestions. The outcome-labeled dataset from real experiments — which variant won, by how much, on what kind of site — is the durable asset no third-party analytics tool has.
 
 **One ranked backlog.** Instead of scattered analytics tabs, replay sessions, and team gut-feel, PMs get one prioritized, evidence-backed list of improvements — with receipts attached.
+
+---
+
+## The snapshot audit is the front door, not the product
+
+A clarification that must be reflected in every demo, sales call, and
+internal decision about what to build.
+
+**The snapshot audit (Layer D design + Layer E structural + Layer F AI
+copy critique) is the *Understand* step of the loop and the public
+`/audit` lead magnet — nothing more.** It runs on HTML only. It has no
+evidence that anyone is hurt by what it surfaces. It is general-web
+convention applied to a parsed DOM. That is genuinely useful at the top
+of the funnel ("here is something concrete, give us your email") and as
+the element catalog that later behavioral findings attach to. **It is
+not the differentiated product.**
+
+The differentiated product starts at *Watch*. The moment PostHog /
+Segment / GA4 is connected, the behavioral rules light up and we can
+say "73% of mobile users on `/pricing` abandon at the password field"
+or "the visually heaviest CTA on `/checkout` is *not* the one most
+visitors click." Those findings are defensible in a room. "Your H1
+hierarchy skips a level" is not, on a site that is converting fine.
+
+**Operational consequences of treating the audit as front door, not
+product:**
+
+- **Findings on visibly polished sites will look thin.** Stripe, Vercel,
+  GitHub all surface only the two or three most pedantic structural
+  rules in snapshot-only mode. That is the medium, not a bug — there is
+  not much to say about a well-built site without user data.
+- **Public-audit findings have a bar of "interesting enough to convert,"
+  not "must fix."** PMs paying for Zybit should never be sold on the
+  snapshot audit alone — if Stripe paid tomorrow and we showed them only
+  the snapshot findings, they would cancel.
+- **The renewal lives behind the front door.** It lives in the
+  behavioral + outcome-labeled loop. Build budget tracks that, not
+  rule count.
+- **New rules belong here only if they advance the loop.** A new
+  structural rule is acceptable as lead-magnet polish. A new
+  *behavioral* rule grounded in real events is what moves the product
+  forward — but we already have the 12 we need (frozen at 12 per the
+  "What Zybit is not" list). Loop closure is the bottleneck.
+
+**What "ground truth" the audit rules actually enforce** — full table
+in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §"Ground truth per
+rule family". Short version:
+
+- **Layer E structural rules** cite the WCAG 2.1 AA accessibility spec
+  (1.1.1, 1.3.1, 2.4.4) and Google Search Central SEO guidance
+  (canonical, meta description). These are real standards. Findings
+  here are defensible against any reader.
+- **Layer F copy critique rules** cite conversion-copywriting
+  heuristics — specificity over vagueness, proof signals on sales-shaped
+  pages, CTA verb / page-intent alignment. There is no formal standard;
+  the input is the customer's own copy, judged against the page-type
+  context the vision pass classified. Honest in both audit modes.
+- **Layer D design + behavioral rules** are grounded in the customer's
+  *own* user behavior (click distribution, scroll depth, navigation
+  share). They are the most defensible class because they compare the
+  site to its own users, not to a generic template.
+
+If a finding's only support is "general web convention says so," it
+belongs in the lead-magnet surface. If it is backed by the customer's
+own user behavior, it belongs in the paid product.
 
 ---
 
@@ -85,7 +152,7 @@ Four things, in order. Nothing else.
 
 2. **The visible loop view.** A timeline that shows: we detected this, we deployed this variant, it moved the metric by X%, and here is what we learned that changed the next recommendation. This is what every demo runs on and what every renewal renews on.
 
-3. **Proxy reliability.** SPA support and fail-open behavior before any paid pilot routes real production traffic. One outage equals a dead pilot.
+3. **Delivery reliability.** Fail-open behavior before any paid pilot routes real production traffic — one outage equals a dead pilot. Server-rendered HTML sites are delivered via the edge proxy (built). A client-side runtime for SPAs / authenticated products is a deferred, customer-pulled phase, not a scheduled milestone — see `docs/PRD.md` §4.
 
 4. **Preview before deploy.** PM sees the modified page in an iframe before activating it on real traffic. Two days. Removes a trust blocker on every demo.
 
@@ -121,45 +188,89 @@ Zybit's long-term moat is outcome-labeled data, not raw event collection. Models
 - A sentiment analyzer, voice-of-customer tool, or NLP pipeline. Not loop-advancing; pulls us into PII and consent complexity. Never build this.
 - A GitHub PR generator or code deployment system. Cool demo; zero deal-closing value for the PM buyer. Never build this.
 - A PostHog ingestion replacement or direct behavioral event SDK. Fights an incumbent on their strongest ground while abandoning our structural moat. Never build this.
-- A system with more audit rules as the answer. The bottleneck is measurement accuracy and loop closure, not rule count. The 12 rules we have are sufficient for now; more rules do not close the measurement gap.
+- A system where adding behavioral rules (event-based) closes the measurement gap. The 12 behavioral rules are frozen at that count — the bottleneck is loop closure, not behavioral rule count. New rules must be structural/snapshot-grounded (SEO, accessibility, HTML structure) and deterministic pure functions — no LLM calls in rule logic.
 - A cross-site learning system before 50+ customers with real outcome data. The priors mean nothing without the sample size. Build the single-customer loop first.
 
 ---
 
 ## Where we are today
 
-The analysis engine and PM dashboard are complete. Zybit can:
+**For the canonical build-state table, see [`AGENTS.md`](./AGENTS.md) — "Current build state."**
+That table is the single source of truth for what is built, partial, or
+not yet built. This section keeps only what is unique to the doctrine:
+the immediate priorities and what we deliberately do **not** build.
 
-- Audit any product's visual hierarchy via static page snapshots (HTTP fetch + DOM parse; SPA/JS-rendered sites not yet supported)
-- Ingest behavioral data from PostHog (pull-sync) and Segment (webhook)
-- Run 12 deterministic audit rules (5 design + 7 pain) across combined behavioral and design signals
-- Surface specific findings with A/B prescriptions, evidence arrays, and revenue impact estimates
-- Display findings, experiments, and lifecycle status in a wired PM dashboard
-- Assign visitors to control/variant via deterministic bucketing and apply HTML modifications via the proxy layer
-- Bill customers and enforce plan limits via Stripe
+### Immediate priorities (in order)
 
-**What is not yet complete (immediate priorities, in order):**
+The product direction is set by [`docs/PRD.md`](./docs/PRD.md) —
+deliberately **one milestone**, not a platform build.
 
-1. **Measurement rigor** — Experiment results are manually entered. No outcome storage table, no chi-squared computation, no sequential testing, no guardrail metrics. This is the largest gap.
-2. **Visible loop view** — No timeline showing the full detect → deploy → result → learn cycle. The renewal story and the demo depend on this.
-3. **Proxy reliability** — No SPA support (JS-rendered sites serve blank HTML to the audit engine and may break under proxy), no fail-open behavior, no kill switch per experiment.
-4. **Preview before deploy** — No way for a PM to see the modified page before it goes live on real traffic.
-5. **GA4 connector** — GA4 is in the source enum but has no implementation. Required to credibly claim analytics-agnostic.
+1. ~~**Flow-graph advisory (PRD Milestone 1)**~~ ✅ **Complete** — all 5
+   PRD scope items shipped. Everything beyond the committed milestone
+   (client runtime, journey experiments, one-click in-app deploy, full
+   AI advisor, element picker) is **deferred until a customer pulls
+   it** — see [`docs/PRD.md`](./docs/PRD.md) §4.
+2. ~~**URL-audit lead magnet (Phases A + B)**~~ ✅ **Shipped 2026-05-23 in
+   PR #69.** Public `/audit` form → double opt-in confirmation →
+   `runUrlAudit` pipeline → 4-finding HTML report by email.
+   Phase C (founder approval queue) + Phase D (landing-page surface)
+   deferred.
+3. Forward-looking priorities (preview
+   pipeline → manual outcome entry → richer modifications → one-click
+   deploy).
 
-**What is deliberately not being built:**
-Sentiment analysis, GitHub PR generation, PostHog replacement / direct SDK, more audit rules, cross-site priors (before 50 customers with outcomes). See "What Zybit is not."
+### Recently completed
+
+23 audit rules now live (5 design + 7 pain + 1 flow + 7 structural + 3 AI copy critique). The 7 structural rules are Layer E — snapshot-only, no behavioral events required: `headingHierarchyJump`, `formLabelMissing`, `imageAltTextMissing`, `linkTextGeneric`, `missingMetaDescription`, `missingCanonicalUrl`, `deadClickTarget`. **Layer F (2026-05-26, this session)** — three new rules driven by a structured Gemini critique cached at capture time on `snapshot.data.copyCritique`: `vagueClaimDetected` (hero specificity), `proofMissing` (zero proof signals on a sales-shaped page), `ctaVerbMismatch` (CTA verb doesn't fit the vision-classified `pageType`). LLM call lives in `captureCopyCritique.ts` (structured-output + strict validator + fail-soft); rules themselves are pure deterministic functions over the cached output — same trust model as the AI Variant Advisor. **PageType modulation (Ring 2 consumer, same session)** — new `pageTypeModulation.ts` table now drives per-(rule, pageType) threshold modulation across 6 existing rules so a "primary CTA below the fold" finding does not fire on a Privacy Policy page, etc. Fail-open: rules degrade to base thresholds when the vision pass didn't run. Dollar figures removed from `impactEstimate` — revenue/ecommerce goal types return conversion counts. `proposeAnnotations` rewritten across 9 rules so each preview anchor matches its prescription, and `AnnotatedFindingPreview` renders a per-rule "why this is highlighted" callout. `app_users` extended with `industry`, `role_title`, `last_audit_at` and a new `app_user_rules_fired` table scaffolds per-PM personalization (migration `0022`). `VariantModification` gained a 7th type — `element-insert` (splices new HTML at `before`/`after`/`prepend`/`append` of an anchor, sanitized by `sanitizeInsertHtml` with a tag+attr allowlist, no `<script>`/`<iframe>`/`<form>`, no inline handlers, no `javascript:`/`data:` URLs). Audit funnel hardened: cookie hex-format guard, email normalization for HMAC so Outlook safelinks survive, `AUDIT_FROM_EMAIL` precedence cleaned up, `signupLink` only minted at `status === 'done'`. CSP/XSS hardening: `stripScripts` fails closed and defeats the `javascript:` entity bypass, SSRF guard re-checks on every redirect hop, lighthouse preview origin env-gated via `LIGHTHOUSE_PREVIEW_ORIGIN`. Selector auto-fill in the experiment builder fixed (was emitting `[data-zybit-ref=…]` placeholders instead of real CSS selectors).
+
+### What is deliberately not being built
+
+Sentiment analysis, GitHub PR generation, PostHog replacement / direct
+SDK, more behavioral (event-based) rules, cross-site priors before 50
+customers with outcomes. See "What Zybit is not" above for the rationale
+on each.
 
 ---
 
 ## How we build
 
-**Deterministic over generative.** Audit rules are pure functions. Same input, same output. Every finding is reproducible and attributable. We do not use LLMs to generate numbers or invent evidence.
+**Deterministic where it must be; LLM-driven where it's guarded.** This used to read
+"deterministic over generative" — full stop. That was right for the *decision core* and
+we keep it there: whether a finding fires, every number, every statistical measurement,
+and traffic allocation are pure functions — reproducible, attributable, defensible. We
+never let an LLM invent a number or decide that a finding fires.
+
+But "no LLMs make decisions" was too blunt. An LLM is the right tool for judgment that
+isn't reducible to a rule — *how* to phrase a finding for this business, what industry a
+site is in, which variant to propose, how to make a fix on-brand. So the rule is: **an LLM
+may make a decision when it is backed by the full AI-engineering guardrail set, and only
+then.** The guardrails are not optional garnish — they are what turns "a model said so"
+into something we can ship:
+
+1. **Structured output** — schema-constrained, never free-form prose we parse by hope.
+2. **Strict validator** — rejects or coerces malformed output before anything downstream sees it.
+3. **Fail-soft to a deterministic baseline** — if the call errors, times out, or returns
+   garbage, we fall back to the pre-LLM behavior. The feature can never make the product
+   *worse* than it was with the LLM off; worst case it is a no-op.
+4. **Grounding** — numbers must trace to FACTS the deterministic layer computed;
+   classifications anchor on a deterministic prior (e.g. SiteContext's industry starts from
+   the `deriveIndustry` heuristic, the LLM only refines it).
+5. **An eval harness** — we measure the LLM decision against the baseline (e.g. the
+   Lighthouse Context A/B eval: run the same audit with the enrichment off vs on, mark each
+   finding valid/invalid, watch the win-rate). A decision we can't measure, we don't trust.
+6. **A human gate** — nothing customer-facing flips on because a metric crossed a line; a
+   person reviews the eval and flips the flag.
+
+The test for any new LLM call: *"if this returned garbage or nothing, is the system still
+correct?"* If the answer is yes (fail-soft to baseline) and the win is measured, the LLM
+may decide. Capture-time critique, finding prose (Layer B), the variant/fix advisors, and
+SiteContext all live under these guardrails. Rules never call an LLM in their body.
 
 **Every file has a purpose.** No scaffolding, no placeholders, no "we might need this later." If code doesn't serve a current need, it doesn't exist.
 
 **The loop, not the feature.** We don't build analytics features or dashboard charts for their own sake. We build what advances the cycle: understand → propose → test → learn.
 
-**Third-party where it's better.** We own the conversion intelligence layer. We don't own auth (Clerk), email (Resend), analytics ingestion (PostHog/Segment), or hosting (Vercel/edge infrastructure). Integrate the rest; build only what's differentiated.
+**Third-party where it's better.** We own the conversion intelligence layer. We also own auth (approved-access password + Google OAuth on an owned session layer; no Clerk). We don't own email (Resend), analytics ingestion (PostHog/Segment), or hosting (Vercel/edge infrastructure). Integrate the rest; build only what's differentiated.
 
 **PM-first at every layer.** The PM is the user. Engineering integrates Zybit; PMs run it. Every output — finding title, evidence summary, export format — is written for someone who owns a product, not someone who reads curl responses.
 
@@ -173,10 +284,10 @@ zybit/
   src/lib/phase2/         — Canonical events, audit rules, connectors, snapshots
     connectors/posthog/   — PostHog sync + event mapping
     connectors/segment/   — Segment webhook receiver
-    rules/                — 12 audit rules (design + pain) with 193 tests
+    rules/                — 23 audit rules (5 design + 7 pain + 1 flow + 7 structural + 3 AI copy critique); 83 test files in repo
     snapshots/            — Static HTML parse + visual-weight analysis
     rollups/              — Event → InsightInput aggregation pipeline
-  src/lib/auth/           — Clerk auth + M2M API keys
+  src/lib/auth/           — Approved-access auth (password + Google OAuth, owned session layer) + M2M API keys
   src/lib/db/             — Drizzle schema + Postgres migrations
   src/app/api/phase1/     — Readiness + insights HTTP API
   src/app/api/phase2/     — Canonical events, insights run, connectors, snapshots
@@ -190,6 +301,8 @@ zybit/
 | Document | Purpose |
 |----------|---------|
 | `DOCTRINE.md` (this file) | What Zybit is, who it's for, how we build it |
+| `docs/PRD.md` | Ratified product direction: the page-level + flow-level synthesis and its build sequence |
+| `docs/pivot.md` | Superseded by `docs/PRD.md`; retained as the strategic-discussion record |
 | `docs/ARCHITECTURE.md` | Technical architecture: system design, what's built, what's not, scaling |
 | `docs/BACKLOG.md` | Prioritized epics and stories toward commercial launch |
 | `docs/PHASE2_EVIDENCE_MODEL.md` | Technical reference: event schema, audit rules, connector contracts |

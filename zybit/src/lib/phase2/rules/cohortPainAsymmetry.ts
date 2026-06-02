@@ -24,6 +24,7 @@ import {
   sanitizeIdSegment,
   topByCount,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { COHORT_PAIN_ELIGIBILITY, COHORT_PAIN_WEIGHTS } from "./ruleTuning";
 import type { AuditFinding, AuditFindingEvidence, AuditRule, AuditRuleContext } from "./types";
 
@@ -51,13 +52,16 @@ export const cohortPainAsymmetry: AuditRule = {
   id: "cohort-pain-asymmetry",
   name: "Cohort pain asymmetry",
   category: "asymmetry",
+  // Behavioral rule: contrasts pain rates across user cohorts.
+  publicAuditBehavior: 'empty',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessions = groupSessions(ctx.events);
     if (sessions.length === 0) return [];
+    const absoluteFloor = calibratedFloor(ctx, "cohort-pain-asymmetry", compositeAbsoluteFloor);
     const findings: AuditFinding[] = [];
     for (const dim of ctx.config.cohortDimensions) {
-      const finding = evaluateDimension(dim, sessions);
+      const finding = evaluateDimension(dim, sessions, absoluteFloor);
       if (finding !== null) findings.push(finding);
     }
     return findings;
@@ -68,7 +72,11 @@ function stagnationGuess(session: SessionTrace): boolean {
   return session.paths.length <= 1 && session.events.length <= 5;
 }
 
-function evaluateDimension(dim: CohortDimensionConfig, sessions: SessionTrace[]): AuditFinding | null {
+function evaluateDimension(
+  dim: CohortDimensionConfig,
+  sessions: SessionTrace[],
+  absoluteFloor: number,
+): AuditFinding | null {
   const fallback = typeof dim.fallback === "string" ? dim.fallback : "(unassigned)";
 
   const buckets = new Map<string, CohortBucket>();
@@ -135,7 +143,7 @@ function evaluateDimension(dim: CohortDimensionConfig, sessions: SessionTrace[])
 
   const top = eligible[0];
   const multiple = top.composite / Math.max(medianComposite, epsilon);
-  const absoluteOk = top.composite >= compositeAbsoluteFloor;
+  const absoluteOk = top.composite >= absoluteFloor;
   const multipleOk = multiple >= medianMultipleFloor;
   if (!(absoluteOk && multipleOk)) return null;
 

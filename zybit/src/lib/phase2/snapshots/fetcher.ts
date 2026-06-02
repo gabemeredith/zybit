@@ -14,6 +14,7 @@ import {
   type SnapshotFetchResult,
   type SnapshotFetcher,
 } from './types';
+import { isSpaHtml, runBrowserSnapshot } from './browserFetcher';
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const ROBOTS_TIMEOUT_MS = 1_500;
@@ -221,11 +222,28 @@ export const fetchHtml: SnapshotFetcher = async (
 
   const { html, byteSize } = await readBodyWithLimit(response, opts.maxBytes);
 
+  // If the response looks like a SPA shell, attempt a Browserless render.
+  // runBrowserSnapshot returns null when BROWSERLESS_KEY is unset or on error.
+  if (isSpaHtml(html)) {
+    const browserResult = await runBrowserSnapshot(currentUrl, { timeoutMs: opts.timeoutMs });
+    if (browserResult) {
+      return {
+        finalUrl: browserResult.finalUrl,
+        status: response.status,
+        contentType,
+        html: browserResult.html,
+        byteSize: new TextEncoder().encode(browserResult.html).byteLength,
+        snapshotMethod: 'browser',
+      };
+    }
+  }
+
   return {
     finalUrl: currentUrl,
     status: response.status,
     contentType,
     html,
     byteSize,
+    snapshotMethod: 'http-only',
   };
 };

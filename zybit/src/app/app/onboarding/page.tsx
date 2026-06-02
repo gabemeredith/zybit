@@ -5,7 +5,11 @@ import { getServerAuth } from "@/lib/auth/serverAuth";
 import { createPhase1Repository } from "@/lib/phase1";
 import OnboardingWizard from "@/components/app/OnboardingWizard";
 
-export default async function OnboardingPage() {
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ step?: string }>;
+}) {
   const auth = await getServerAuth();
   if (!auth.ok) redirect("/sign-in");
 
@@ -23,10 +27,16 @@ export default async function OnboardingPage() {
 
   const hasIntegration = integrations.length > 0;
 
+  const { step } = await searchParams;
+  const parsed = step ? Number.parseInt(step, 10) : NaN;
+  const initialStep =
+    parsed === 1 || parsed === 2 || parsed === 3 ? parsed : null;
+
   return (
     <OnboardingWizard
       existingSite={existingSite}
       hasIntegration={hasIntegration}
+      initialStep={initialStep}
     />
   );
 }

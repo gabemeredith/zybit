@@ -49,6 +49,14 @@ export interface HeadingItem {
   level: 1 | 2 | 3 | 4 | 5 | 6;
   text: string;
   documentIndex: number;
+  /**
+   * See `CtaCandidate.cssSelector` — same stability ladder, same bail policy.
+   * Populated so the AI Variant Advisor can target headings (insert-shaped
+   * findings like return-visit-thrash anchor a quick-answer block above the
+   * top-most H1; without a selector the advisor degrades to text-replace on
+   * the nearest CTA).
+   */
+  cssSelector: string | null;
 }
 
 /**
@@ -60,6 +68,13 @@ export interface HeadingItem {
 export interface CtaCandidate {
   /** Stable hash derived from outer markup; safe to reference across rules. */
   ref: string;
+  /**
+   * Best-guess browser-runnable CSS selector, computed at parse time. `null`
+   * when no stable attribute was available — better to leave the experiment
+   * builder field empty than to emit a fragile selector that silently breaks
+   * on a CSS refactor. See `cssSelector.ts` for the stability ladder.
+   */
+  cssSelector: string | null;
   tag: 'a' | 'button';
   text: string;
   href: string | null;
@@ -78,6 +93,22 @@ export interface CtaCandidate {
   disabled: boolean;
 }
 
+export interface ImageItem {
+  /** `src` attribute value (may be relative or data URI). */
+  src: string;
+  /** `alt` attribute value, or `null` if the attribute is absent. */
+  alt: string | null;
+  /** True when the `alt` attribute is present (even if empty string). */
+  hasAlt: boolean;
+  /** `width` attribute as a number, or `null` if absent/non-numeric. */
+  width: number | null;
+  /** `height` attribute as a number, or `null` if absent/non-numeric. */
+  height: number | null;
+  /** Whether the image is inside the `<a>` or `<button>` that makes it a CTA (already handled). */
+  isCtaChild: boolean;
+  documentIndex: number;
+}
+
 export interface FormInputItem {
   type: string;
   name: string | null;
@@ -87,11 +118,68 @@ export interface FormInputItem {
 
 export interface FormCandidate {
   ref: string;
+  /** See `CtaCandidate.cssSelector` — same shape, same bail policy. */
+  cssSelector: string | null;
   landmark: PageLandmark;
   fieldCount: number;
   inputs: FormInputItem[];
   documentIndex: number;
   hasSubmitButton: boolean;
+}
+
+/**
+ * Vision-pass-derived observations of what a human actually sees above the
+ * fold. Populated by `captureVisualSignals` during snapshot when a
+ * Browserless screenshot is available. Strict typing — every field is
+ * normalized through a structured-output validator before it lands here.
+ *
+ * Rules read this through `snapshot.data.visualSignals?.…` and fall back
+ * to the parser's structural output when absent. Vision is best-effort:
+ * snapshots without a screenshot, without Gemini, or with a validation
+ * failure all leave `visualSignals` undefined and rules degrade
+ * gracefully to structural-only logic.
+ */
+export type PageType =
+  | 'home'
+  | 'landing'
+  | 'pricing'
+  | 'signup'
+  | 'checkout'
+  | 'docs'
+  | 'about'
+  | 'blog'
+  | 'support'
+  | 'legal'
+  | 'unknown';
+
+export interface VisualCtaSignal {
+  /**
+   * Semantic label the vision pass extracted. For icon-only CTAs this is
+   * the word the human eye reads — closes the "(unnamed button)" gap
+   * `heroHierarchyInversion` previously hit on real sites.
+   */
+  text: string;
+  /** Normalized 0..1 bbox at the captured viewport. */
+  bbox: { x: number; y: number; width: number; height: number };
+  /** 0..1 confidence the model assigned to the identification. */
+  confidence: number;
+}
+
+export interface VisualHeroBlock {
+  headline: string | null;
+  subheadline: string | null;
+  firstParagraph: string | null;
+}
+
+export interface VisualSignals {
+  visualPrimaryCta: VisualCtaSignal | null;
+  visualSecondaryCta: VisualCtaSignal | null;
+  pageType: PageType;
+  heroBlock: VisualHeroBlock | null;
+  /** ISO timestamp of when the vision pass was captured. */
+  capturedAt: string;
+  /** Model + endpoint version that produced the signal. */
+  modelVersion: string;
 }
 
 export interface PageSnapshotData {
@@ -100,12 +188,32 @@ export interface PageSnapshotData {
   headings: HeadingItem[];
   ctas: CtaCandidate[];
   forms: FormCandidate[];
+  /** All <img> elements found in the page body. Used by structural/accessibility rules. Absent on snapshots captured before schema v1.1. */
+  images?: ImageItem[];
   /** sha256 hex of normalized HTML — used to detect drift across re-fetches. */
   contentHash: string;
   /** Bytes of the original HTML response. */
   rawByteSize: number;
   /** ISO timestamp of when parsing completed. */
   parsedAt: string;
+  /** Detected CSS authoring system. Optional — absent on old snapshots. */
+  cssSystem?: import('./cssSystemDetector').CssSystem;
+  /**
+   * Vision-pass observations from `captureVisualSignals`. Absent when the
+   * snapshot was captured without a screenshot or without
+   * `GEMINI_API_KEY` set. Consumers must null-check before reading.
+   */
+  visualSignals?: VisualSignals;
+  /**
+   * Structured copy critique from `captureCopyCritique` — Layer F input.
+   * Populated at capture time when (a) the vision pass extracted a hero
+   * block and (b) `GEMINI_API_KEY` is set. Three Layer F rules
+   * (`vague-claim-detected`, `proof-missing`, `cta-verb-mismatch`) read
+   * this through `snapshot.data.copyCritique?.…` and emit nothing when
+   * it is absent. Optional by design — the audit gracefully degrades to
+   * Layer C-E rules when copy critique is unavailable.
+   */
+  copyCritique?: import('@/lib/audit/captureCopyCritique').CopyCritique;
 }
 
 export interface PageSnapshot {
@@ -172,6 +280,8 @@ export interface SnapshotFetchResult {
   contentType: string | null;
   html: string;
   byteSize: number;
+  /** 'browser' when Browserless was used; 'http-only' otherwise. */
+  snapshotMethod: 'http-only' | 'browser';
 }
 
 export type SnapshotErrorCode =

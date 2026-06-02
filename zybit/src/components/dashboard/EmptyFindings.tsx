@@ -29,7 +29,7 @@ export default function EmptyFindings({
             Zybit requires a data source to build an understanding of your funnel and generate its first prescription.
           </p>
           <Link
-            href="/dashboard/connect"
+            href="/app/onboarding?step=2"
             className="inline-flex items-center justify-center bg-[#111] text-[#FAFAF8] px-8 py-4 rounded-full text-lg font-bold shadow-2xl transition-transform duration-300 hover:scale-105 active:scale-95 group"
           >
             Connect PostHog
@@ -70,7 +70,7 @@ export default function EmptyFindings({
           <div className="max-w-[400px] mx-auto">
             <div className="flex justify-between items-end mb-4">
               <span className="text-sm font-bold uppercase tracking-[0.1em] text-[#6B6B6B]">
-                {sessionsObserved?.toLocaleString() ?? 0} / {threshold?.toLocaleString() ?? "—"}
+                {sessionsObserved?.toLocaleString() ?? 0} / {threshold?.toLocaleString() ?? "n/a"}
               </span>
               <span className="text-3xl font-bold tracking-tighter text-[#111]">
                 {percent}%

@@ -14,13 +14,34 @@ import type { CtaCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { CtaCandidateMeasured, PageCapture } from "@/lib/phase2/capture/types";
 import type { CanonicalEvent } from "@/lib/phase2/types";
 
-import { clamp, formatCount, pct, quote, readScrollFraction } from "./helpers";
+import type { VariantModification } from "@/lib/experiments/types";
+
+import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
+import {
+  annotationCaption,
+  missingPlaceholder,
+  outlineMod,
+  snapshotHeadingSelector,
+} from "./annotationHelpers";
+import {
+  clamp,
+  displayPath,
+  evidenceFromFinding,
+  formatCount,
+  pct,
+  quote,
+  readScrollFraction,
+} from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
+import { pageTypeFromSnapshot, pageTypeModulation } from "./pageTypeModulation";
+import { siteNicheModulation } from "./siteNicheModulation";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
   SnapshotDiagram,
   SnapshotDiagramItem,
 } from "./types";
@@ -34,6 +55,89 @@ export const aboveFoldCoverage: AuditRule = {
   id: "above-fold-coverage",
   name: "Above-fold CTA coverage",
   category: "fold",
+  publicAuditBehavior: 'structural-only',
+
+  // Public-audit rewrite: the rule's evaluate() requires ≥30 page_view events
+  // with scroll metrics; in public mode those events are synthetic. The
+  // structural half ("primary CTA sits below the fold") still holds — the
+  // CTA position is measured from real HTML — so this rewrite keeps that
+  // framing and strips the behavioral overlay.
+  //
+  // Vision-fallback (Ring 2 consumer): when the parser's CTA evidence
+  // resolves to `(unnamed CTA)` (typical for icon-only buttons), borrow
+  // the semantic label from `visualSignals.visualPrimaryCta.text`. Closes
+  // the same root cause as `heroHierarchyInversion`'s vision fallback —
+  // an icon-only "Get started" hero no longer surfaces as an unnamed
+  // placeholder on the prospect surface.
+  structuralPublicAuditCopy(finding, ctx) {
+    const page = displayPath(evidenceFromFinding(finding, 'Page') ?? finding.pathRef);
+    const parsedCtaLabel = evidenceFromFinding(finding, 'Primary CTA') ?? '';
+    let ctaLabel = parsedCtaLabel;
+    if (!ctaLabel || ctaLabel.toLowerCase().includes('unnamed')) {
+      const snapshot = finding.pathRef ? ctx.pageSnapshotsByPath.get(finding.pathRef) : null;
+      const visual = snapshot?.data.visualSignals?.visualPrimaryCta;
+      if (visual?.text) ctaLabel = visual.text;
+    }
+    // Defense-in-depth: if both parser and vision still yield no label, we
+    // must not render "(unnamed CTA)" or a bare quote — that's the same
+    // gibberish the public-audit scrub exists to catch. Return null and
+    // let the orchestrator drop the finding.
+    if (!ctaLabel || ctaLabel.toLowerCase().includes('unnamed')) return null;
+    return {
+      title: `Your main button on ${page} is hidden until visitors scroll`,
+      summary:
+        `On ${page}, your most important button ("${ctaLabel}") only appears after someone scrolls down. ` +
+        `Visitors who don't scroll never see it — and on every site a real share of people don't scroll.`,
+      whyItMatters:
+        `Your most important button ("${ctaLabel}") only shows up after scrolling on ${page} — and a real share of every audience never scrolls that far.`,
+      evidence: [
+        { label: 'Main button', value: ctaLabel },
+        { label: 'Page', value: page },
+        {
+          label: 'How we know',
+          value: 'We measured where the button sits on the page. Connect your analytics later to confirm with real scroll data.',
+        },
+      ],
+    };
+  },
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    // The prescription is "move this CTA above the fold." Two parts to the
+    // story: outline the CTA in red where it lives today (below the fold),
+    // and show a missing-placeholder above the first heading where it should
+    // go. The two annotations together tell the move-from-here-to-there
+    // story — outlining alone would just point at the wrong location.
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    const mods: VariantModification[] = [
+      outlineMod(cta.cssSelector, ANNOTATION_HEAVY_COLOR),
+      ...annotationCaption({
+        anchorSelector: cta.cssSelector,
+        position: 'before',
+        ruleClassName: 'zybit-anno-fold-current',
+        label: 'Below the fold — most visitors never see this',
+        color: ANNOTATION_HEAVY_COLOR,
+      }),
+    ];
+    const headingAnchor = snapshotHeadingSelector(ctx.snapshot.data);
+    if (headingAnchor) {
+      mods.push(
+        ...missingPlaceholder({
+          anchorSelector: headingAnchor,
+          position: 'before',
+          ruleClassName: 'zybit-anno-fold-target',
+          label: 'a duplicate (or moved) primary CTA here — above the fold',
+          color: ANNOTATION_HEAVY_COLOR,
+        }),
+      );
+    }
+    return mods;
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];
@@ -55,21 +159,36 @@ export const aboveFoldCoverage: AuditRule = {
     for (const [pathRef, pageviews] of pageviewsByPath) {
       if (pageviews.length < MIN_PAGEVIEWS) continue;
 
+      // PageType modulation runs *before* the capture/snapshot branch so
+      // suppression and floor-tightening apply uniformly to both paths.
+      // blog / legal / docs / about / support legitimately have content
+      // below the fold — emitting "your primary CTA is below the fold"
+      // on a Privacy Policy is noise regardless of whether we measured
+      // it via headless capture or static snapshot. We still need to
+      // read pageType from the snapshot (the capture itself doesn't
+      // carry visualSignals), so look that up first and fall back to
+      // neutral if no snapshot exists yet.
+      const snapshot = ctx.pageSnapshotsByPath.get(pathRef);
+      const pageType = pageTypeFromSnapshot(snapshot?.data.visualSignals);
+      const modulation = pageTypeModulation("above-fold-coverage", pageType);
+      if (modulation.suppress) continue;
+      const nicheModulation = siteNicheModulation("above-fold-coverage", ctx.siteNiche);
+      if (nicheModulation.suppress) continue;
+
       // Prefer headless capture (precise bbox) over legacy heuristic snapshot
       if (ctx.pageCapturesByPath) {
         const captures = ctx.pageCapturesByPath.get(pathRef);
         if (captures && captures.length > 0) {
           const desktop = captures.find(c => c.breakpoint === 'desktop') ?? captures[0];
-          const finding = evaluatePageWithCapture(pathRef, desktop, pageviews, windowDays, ctx);
+          const finding = evaluatePageWithCapture(pathRef, desktop, pageviews, windowDays, ctx, modulation.floorMultiplier);
           if (finding !== null) findings.push(finding);
           continue;
         }
       }
 
-      const snapshot = ctx.pageSnapshotsByPath.get(pathRef);
       if (!snapshot) continue;
 
-      const finding = evaluatePage(pathRef, snapshot, pageviews, windowDays, ctx);
+      const finding = evaluatePage(pathRef, snapshot, pageviews, windowDays, ctx, modulation.floorMultiplier);
       if (finding !== null) findings.push(finding);
     }
 
@@ -83,6 +202,7 @@ function evaluatePage(
   pageviews: CanonicalEvent[],
   windowDays: number,
   ctx: AuditRuleContext,
+  floorMultiplier = 1,
 ): AuditFinding | null {
   const primary = pickPrimaryBelowFoldCta(snapshot.data.ctas);
   if (!primary) return null;
@@ -98,7 +218,11 @@ function evaluatePage(
   }
   const totalPageviews = pageviews.length;
   const belowFoldShare = totalPageviews > 0 ? lowScrollCount / totalPageviews : 0;
-  if (belowFoldShare <= MIN_BELOW_FOLD_SHARE) return null;
+  // PageType-modulated floor: pricing/signup/checkout get a lower bar
+  // (floorMultiplier ~0.7) because below-fold CTAs on a conversion page are
+  // higher impact. Other rules pass 1 (neutral). Calibrated floor still
+  // applies first — pageType only further loosens or tightens it.
+  if (belowFoldShare <= calibratedFloor(ctx, "above-fold-coverage", MIN_BELOW_FOLD_SHARE) * floorMultiplier) return null;
 
   const signals = primary.visualWeightSignals.slice(0, 3);
   const signalList = signals.length > 0 ? signals.join(", ") : "no class signals";
@@ -174,8 +298,8 @@ function evaluatePage(
 
   const prescription = {
     whatToChange:
-      `Move ${quote(primary.text)} above the fold on ${pathRef}. ` +
-      `If the layout can't be restructured, add a sticky version or duplicate it as a hero button.`,
+      `Move ${quote(primary.text)} up so it shows on ${pathRef} before anyone has to scroll. ` +
+      `If the layout can't change, keep a copy of the button pinned to the top of the screen.`,
     whyItWorks:
       `${pct(belowFoldShare)}% of sessions never scroll past 40% of the page. ` +
       `${quote(primary.text)} has visual weight ${primary.visualWeight} — it's designed to convert, ` +
@@ -249,6 +373,7 @@ function evaluatePageWithCapture(
   pageviews: CanonicalEvent[],
   windowDays: number,
   ctx: AuditRuleContext,
+  floorMultiplier = 1,
 ): AuditFinding | null {
   const primary = pickPrimaryBelowFoldCtaMeasured(capture.ctas, capture.fold.foldY);
   if (!primary) return null;
@@ -261,7 +386,11 @@ function evaluatePageWithCapture(
   }
   const totalPageviews = pageviews.length;
   const belowFoldShare = totalPageviews > 0 ? lowScrollCount / totalPageviews : 0;
-  if (belowFoldShare <= MIN_BELOW_FOLD_SHARE) return null;
+  // PageType-modulated floor (same shape as the snapshot path in
+  // `evaluatePage`): pricing/signup/checkout get a lower bar
+  // (floorMultiplier ~0.7); other rules pass 1 (neutral). Calibrated
+  // floor still applies first.
+  if (belowFoldShare <= calibratedFloor(ctx, "above-fold-coverage", MIN_BELOW_FOLD_SHARE) * floorMultiplier) return null;
 
   const signals = primary.visualWeightSignals.slice(0, 3);
   const signalList = signals.length > 0 ? signals.join(", ") : "no class signals";
@@ -337,8 +466,8 @@ function evaluatePageWithCapture(
 
   const prescription = {
     whatToChange:
-      `Move ${quote(primary.text)} above the fold on ${pathRef}. ` +
-      `If the layout can't be restructured, add a sticky version or duplicate it as a hero button.`,
+      `Move ${quote(primary.text)} up so it shows on ${pathRef} before anyone has to scroll. ` +
+      `If the layout can't change, keep a copy of the button pinned to the top of the screen.`,
     whyItWorks:
       `${pct(belowFoldShare)}% of sessions never scroll past 40% of the page. ` +
       `${quote(primary.text)} has visual weight ${primary.visualWeight}${ctaTopPx !== null ? ` and its top edge is at ${ctaTopPx}px (fold is ${foldPx}px)` : ''} — ` +
@@ -363,5 +492,11 @@ function evaluatePageWithCapture(
     impactEstimate,
     snapshotDiagram,
     evidence,
+    refs: {
+      ...(ctx.pageSnapshotsByPath.get(pathRef)?.id
+        ? { snapshotId: ctx.pageSnapshotsByPath.get(pathRef)!.id }
+        : {}),
+      ctaRef: primary.ref,
+    },
   };
 }

@@ -25,6 +25,7 @@ function makeExperiment(overrides: Partial<ProxyExperiment> = {}): ProxyExperime
     ],
     controlPct: 50,
     durationDays: 14,
+    status: 'running',
     ...overrides,
   };
 }
@@ -102,8 +103,13 @@ describe('handleProxyRequest', () => {
     const event = makeEvent();
     const res = await handleProxyRequest(makeRequest('https://acme.zybit.run/home'), event);
     const body = await res.text();
-    expect(body).toBe(HTML_BODY);
+    // Control sees original content (no variant modifications)…
+    expect(body).toContain('<h1 class="title">Original</h1>');
     expect(body).not.toContain('Variant Title');
+    expect(body).not.toContain('display: none !important');
+    // …but still carries the PostHog bridge so control conversions attribute.
+    expect(body).toContain('data-zybit-bridge');
+    expect(body).toContain('zybit_vid');
     // Cookie set for stickiness on the experiment + visitor
     const setCookie = res.headers.getSetCookie();
     expect(setCookie.some((c) => c.includes(VISITOR_COOKIE))).toBe(true);
@@ -195,7 +201,12 @@ describe('handleProxyRequest', () => {
     );
     const body = await res.text();
 
-    expect(body).toBe(HTML_BODY); // sticky control → unmodified
+    // Sticky control → unmodified content, but bridge still injected with
+    // the existing visitor ID so the conversion join can match.
+    expect(body).toContain('<h1 class="title">Original</h1>');
+    expect(body).not.toContain('Variant Title');
+    expect(body).toContain('data-zybit-bridge');
+    expect(body).toContain('visitor-existing');
     const setCookie = res.headers.getSetCookie();
     expect(setCookie.some((c) => c.includes(VISITOR_COOKIE))).toBe(false);
     expect(setCookie.some((c) => c.includes(bucketCookieName('exp-1')))).toBe(false);

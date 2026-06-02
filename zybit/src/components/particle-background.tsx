@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useMemo } from "react";
+import React, { useRef, useMemo, useEffect, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
@@ -441,9 +441,84 @@ function ParticleSwarm() {
   const coreScale = isMobile ? 0.65 : 1.0;
 
   const mountTimeRef = useRef<number | null>(null);
-  // Both refs lerp with the same factor so Y-pan and morph progress stay in sync.
-  const smoothPanRef = useRef(0);
   const smoothProgressRef = useRef(0);
+
+  // Stable vh for offset math. On mobile Safari the canvas `<div class="fixed inset-0">`
+  // resizes when the URL bar collapses/expands, which would otherwise teleport every
+  // particle mid-scroll. We update it on desktop resize or mobile orientation change,
+  // but ignore mobile URL bar height fluctuations.
+  const [stableVh, setStableVh] = useState(() => viewport.height);
+  const lastWidthRef = useRef(size.width);
+  useEffect(() => {
+    const w = size.width;
+    const isMobileViewport = w < 768;
+    if (!isMobileViewport || Math.abs(w - lastWidthRef.current) > 4) {
+      setStableVh(viewport.height);
+      lastWidthRef.current = w;
+    }
+  }, [size.width, size.height, viewport.height]);
+
+  // Section anchors: scroll-Y position at which each of the 6 shapes is fully formed.
+  // Computed from the actual DOM section centers — robust to any section being taller
+  // than 100vh (e.g. the Sample Finding section with its big receipt card on mobile).
+  // 6 entries → uProgress 0..5 interpolates between them.
+  //
+  // The vh used to center each section is captured at mount and only refreshed on
+  // orientationchange / large width deltas; iOS Safari URL-bar resizes would
+  // otherwise shift every anchor by ~30 px mid-scroll.
+  const anchorsRef = useRef<number[] | null>(null);
+  useEffect(() => {
+    let lastWidth = window.innerWidth;
+    let lastVh = window.innerHeight;
+
+    const measure = () => {
+      const sections = document.querySelectorAll("main section");
+      if (sections.length < 6) {
+        anchorsRef.current = null;
+        return;
+      }
+      const next: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        const el = sections[i] as HTMLElement;
+        // First section anchored at 0 so the page-load state shows shape 0 fully formed.
+        const anchor = i === 0
+          ? 0
+          : Math.max(0, el.offsetTop + el.offsetHeight / 2 - lastVh / 2);
+        next.push(anchor);
+      }
+      // Monotonic guard in case a section's center precedes the previous one's.
+      for (let i = 1; i < next.length; i++) {
+        if (next[i] <= next[i - 1]) next[i] = next[i - 1] + lastVh * 0.5;
+      }
+      anchorsRef.current = next;
+    };
+
+    const onResize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const isMobileViewport = w < 768;
+      // Desktop: always update vh (vertical resize is common).
+      // Mobile: only update on width change to ignore iOS Safari URL-bar collapse.
+      if (!isMobileViewport || Math.abs(w - lastWidth) > 4) {
+        lastWidth = w;
+        lastVh = h;
+      }
+      measure();
+    };
+
+    measure();
+    // Re-measure after layout settles (fonts, images, hydration).
+    const t1 = window.setTimeout(measure, 250);
+    const t2 = window.setTimeout(measure, 1500);
+    window.addEventListener("resize", onResize, { passive: true });
+    window.addEventListener("load", measure, { once: true });
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("load", measure);
+    };
+  }, []);
 
   // Generate centered buffers
   const buffers = useMemo(() => ({
@@ -456,12 +531,12 @@ function ParticleSwarm() {
     pos6: getSilkWavePoints(PARTICLE_COUNT),
   }), [PARTICLE_COUNT]);
 
-  // Define global spatial offsets mapping to DOM — responsive.
-  // With linear uP = scrollInVH (0→5) and swarm.y = scrollInVH * vh,
-  // each shape N must sit at Y = -N * vh so it's centered on screen when
-  // scrollInVH === N and the swarm has panned up by N * vh.
+  // Global spatial offsets in world units (three.js units). For each shape N,
+  // the swarm is panned to bring its offset to world Y=0 when uProgress=N, so
+  // shape N is centered when its anchor scroll-Y is reached. Offsets use the
+  // stable vh so they don't reflow with the iOS URL bar.
   const offsets = useMemo(() => {
-    const vh = viewport.height;
+    const vh = stableVh;
     if (isMobile) {
       return [
         new THREE.Vector3(0, vh * 0.2, -1),            // 0: DataCore
@@ -469,7 +544,12 @@ function ParticleSwarm() {
         new THREE.Vector3(0, -vh * 2 + vh * 0.2, -1),  // 2: Jet
         new THREE.Vector3(0, -vh * 3 - vh * 0.15, -1), // 3: Chip — pushed below top text
         new THREE.Vector3(0, -vh * 4, -1),              // 4: Scatter (finding card)
-        new THREE.Vector3(0, -vh * 5 - 0.5, -1),       // 5: SilkWave (CTA)
+        // 5: SilkWave (CTA) — anchored low enough that the wave crest stays in the
+        // bottom band of the viewport and never climbs into the "Or request product
+        // access" link sitting under the primary CTA button. Previous value of -0.5
+        // put the shape centre near world origin, so the upper third of the wave
+        // sat right behind the secondary link and made it unreadable.
+        new THREE.Vector3(0, -vh * 5 - 3.0, -1),
       ];
     }
     return [
@@ -478,9 +558,13 @@ function ParticleSwarm() {
       new THREE.Vector3(-2.5, -vh * 2, 0),     // 2: Jet left
       new THREE.Vector3(4.5, -vh * 3, 0),      // 3: Chip right
       new THREE.Vector3(0, -vh * 4, 0),        // 4: Scatter (finding card) center
-      new THREE.Vector3(0, -vh * 5 - 0.5, 0), // 5: SilkWave (CTA) center
+      // 5: SilkWave (CTA) — desktop uScale=1.0 makes the shape ~4× taller than on
+      // mobile, so the previous -0.5 anchor put the wave crest right through the
+      // body paragraph and obscured the "Or request product access" link. Drop
+      // anchor to keep the wave a contained decorative band at the bottom.
+      new THREE.Vector3(0, -vh * 5 - 4.0, 0),
     ];
-  }, [viewport.height, isMobile]);
+  }, [isMobile, stableVh]);
 
   const uniforms = useMemo(() => ({
     uProgress: { value: 0 },
@@ -498,38 +582,56 @@ function ParticleSwarm() {
 
     const time = state.clock.getElapsedTime();
 
-    // Use native scroll for zero-latency syncing
-    // Clamp scrollY to prevent negative values (overscroll bounce on Mac/iOS)
+    // Native scroll for zero-latency syncing; clamp negatives (Mac/iOS overscroll bounce).
     const scrollY = Math.max(0, window.scrollY);
-    
-    // Slower spawn: 3 seconds on desktop, 1.5 seconds on mobile for snappier feel
+
     const spawnDuration = isMobile ? 1500 : 3000;
     if (mountTimeRef.current === null) {
       mountTimeRef.current = Date.now();
     }
     const elapsedSpawn = (Date.now() - mountTimeRef.current) / spawnDuration;
-    
-    const scrollInVH = scrollY / window.innerHeight;
 
-    // Normalize progress against the actual page height so morph state and Y-pan
-    // always use the same scale. When page height != exactly 5×vh (e.g. min-h-screen
-    // section 5 is taller on mobile), keeping them in sync prevents shapes from
-    // appearing at the wrong scroll positions.
-    const maxScrollInVH = Math.max(5.0, (document.documentElement.scrollHeight - window.innerHeight) / window.innerHeight);
-    const uP = Math.min(5.0, scrollInVH * (5.0 / maxScrollInVH));
+    // Anchor-based mapping: each shape is fully formed when the user reaches the
+    // matching section's center. Linear interpolation between anchors gives a
+    // section-locked feel that holds regardless of section heights (e.g. the
+    // Sample Finding section on mobile is taller than 100vh; the CTA section is
+    // 100vh; the previous vh-arithmetic mapping silently broke in that case).
+    let uP: number;
+    const anchors = anchorsRef.current;
+    if (anchors && anchors.length === 6) {
+      if (scrollY <= anchors[0]) {
+        uP = 0;
+      } else if (scrollY >= anchors[5]) {
+        uP = 5;
+      } else {
+        // Find the segment [anchors[i], anchors[i+1]) containing scrollY.
+        let seg = 0;
+        for (let i = 0; i < 5; i++) {
+          if (scrollY < anchors[i + 1]) { seg = i; break; }
+        }
+        const span = anchors[seg + 1] - anchors[seg];
+        const local = span > 0 ? (scrollY - anchors[seg]) / span : 0;
+        uP = seg + local;
+      }
+    } else {
+      // Fallback while anchors are being measured (first paint, very short window).
+      uP = Math.min(5, scrollY / window.innerHeight);
+    }
 
-    // Exponential-decay lerp at lambda=5: smooth on 60/90/120 Hz ProMotion without lag.
-    // Both Y-pan and morph progress target the same uP so they stay perfectly in sync,
-    // giving particles a preset-path feel where movement is fully determined by scroll.
-    const lerpFactor = isMobile ? 1 - Math.exp(-5 * delta) : 1.0;
-    smoothPanRef.current += (uP - smoothPanRef.current) * lerpFactor;
+    // Cap delta so a browser pause (tab switch, GC) doesn't produce a one-frame teleport.
+    const dt = Math.min(delta, 0.05);
+    // Mobile: lambda=10 → τ≈100ms. Soft enough to absorb frame drops without visible lag.
+    // Desktop: instant tracking — precise mice feel best without trailing.
+    const lerpFactor = isMobile ? 1 - Math.exp(-10 * dt) : 1.0;
     smoothProgressRef.current += (uP - smoothProgressRef.current) * lerpFactor;
 
+    const smoothed = smoothProgressRef.current;
     shaderRef.current.uniforms.uTime.value = time;
-    shaderRef.current.uniforms.uProgress.value = isMobile ? smoothProgressRef.current : uP;
+    shaderRef.current.uniforms.uProgress.value = smoothed;
     shaderRef.current.uniforms.uSpawnTime.value = Math.min(1.0, elapsedSpawn);
 
-    pointsRef.current.position.y = smoothPanRef.current * viewport.height;
+    // Pan tracks the same smoothed progress so pan + morph never desync.
+    pointsRef.current.position.y = smoothed * stableVh;
   });
 
   return (
@@ -565,8 +667,12 @@ export function ParticleCanvas() {
   const dpr: [number, number] = isMobile ? [1, 1] : [1, 1.5];
   return (
     <div className="fixed inset-0 w-full h-full pointer-events-none z-0">
-      <Canvas camera={{ position: [0, 0, 10], fov: 45 }} dpr={dpr}>
-        <ambientLight intensity={1} />
+      <Canvas
+        camera={{ position: [0, 0, 10], fov: 45 }}
+        dpr={dpr}
+        gl={{ antialias: false }}
+        performance={{ min: 0.5 }}
+      >
         <ParticleSwarm />
       </Canvas>
     </div>

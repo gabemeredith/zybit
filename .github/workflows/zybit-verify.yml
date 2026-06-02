@@ -10,6 +10,12 @@ on:
       - 'zybit/**'
       - '.github/workflows/zybit-verify.yml'
 
+# Cancel an in-flight run when a new commit lands on the same ref so PRs do
+# not pile up multiple in-progress CIs after rapid pushes.
+concurrency:
+  group: zybit-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -27,6 +33,8 @@ jobs:
 
       - run: npm ci
 
+      # `npm run verify` already runs lint + tsc + tests + build. Running
+      # `npm run test` separately afterwards was duplicating ~16s of work.
       - run: npm run verify
 
   migrate-smoke:

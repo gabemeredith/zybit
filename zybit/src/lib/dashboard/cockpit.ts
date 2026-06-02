@@ -1,8 +1,10 @@
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, max } from 'drizzle-orm';
 import { getDb } from '@/lib/db/client';
-import { zybitExperiments, zybitFindings } from '@/lib/db/schema';
+import { phase2PageSnapshots, zybitExperiments, zybitFindings } from '@/lib/db/schema';
 import { createPhase1Repository } from '@/lib/phase1';
 import { buildInsightInputFromEvents, runInsightInputGate } from '@/lib/phase2';
+import { isGa4OnlyMeasurementGap } from '@/lib/phase2/connectors/measurementGrain';
+import { snapshotStaleDays } from '@/lib/phase2/snapshots/refresh';
 import type { RollupContext } from '@/lib/phase2/types';
 
 export interface CockpitIntegration {
@@ -28,6 +30,14 @@ export interface CockpitData {
     integrations: CockpitIntegration[];
     lastSync: string | null;
     healthy: boolean;
+    /** Canonical events ingested for this site in the last 7 days. */
+    eventCount7d: number;
+    /**
+     * True when GA4 is the only connected integration (Zybit-157). GA4 is
+     * aggregate-grain — findings work, but the measurement loop produces no
+     * outcomes. The cockpit surfaces this as an amber banner.
+     */
+    ga4OnlyMeasurementGap: boolean;
   } | null;
   gate: {
     trustworthy: boolean;
@@ -41,13 +51,139 @@ export interface CockpitData {
   experiments: {
     runningCount: number;
     totalCount: number;
+    /**
+     * When experiment results were last refreshed. The compute-outcomes
+     * cron bumps `updatedAt` on every running/concluded experiment each
+     * pass, so MAX(updatedAt) is the measurement-freshness signal (Zybit-086).
+     */
+    lastComputedAt: string | null;
   };
+  /**
+   * Snapshot freshness (Zybit-023). MAX(fetchedAt) across the site's page
+   * snapshots, and whole-days since — surfaced so a stale Understand layer
+   * is visible to the PM. Null when the site has no snapshots yet.
+   */
+  snapshots: {
+    lastSnapshotAt: string | null;
+    staleDays: number | null;
+    /**
+     * Per-path snapshot freshness (Zybit-135), newest-stale first. Lets the
+     * cockpit show which specific pages have a stale Understand layer rather
+     * than only a site-global max.
+     */
+    perPath: Array<{ pathRef: string; lastSnapshotAt: string; staleDays: number | null }>;
+  };
+  /**
+   * PostHog visitor-ID bridge health (Zybit-126). The proxy logs
+   * `experiment_assignment` events keyed by the Zybit visitor id; conversions
+   * only join when the bridge registers `zybit_vid` on PostHog events. If
+   * assignments exist but no conversion shares an assigned visitor id, the
+   * bridge isn't firing and outcomes silently undercount.
+   */
+  bridge: BridgeHealth;
   lastInsightAt: string | null;
+}
+
+export type BridgeHealthState = 'healthy' | 'not-detected' | 'inactive';
+
+export interface BridgeHealth {
+  state: BridgeHealthState;
+  label: string;
+  tone: 'green' | 'amber' | 'gray';
+  /** Distinct visitors assigned to an experiment in the window. */
+  assignedVisitors: number;
+  /** Distinct assigned visitors that also produced a joinable conversion. */
+  bridgedVisitors: number;
 }
 
 const SESSION_DISPLAY_THRESHOLD = 100;
 
 export { SESSION_DISPLAY_THRESHOLD };
+
+export type IntegrationHealthState = 'watching' | 'no-data' | 'degraded' | 'disconnected';
+
+export interface IntegrationHealth {
+  state: IntegrationHealthState;
+  label: string;
+  tone: 'green' | 'amber' | 'red' | 'gray';
+}
+
+/** Sync older than this is treated as stale (connector cron runs hourly). */
+const STALE_SYNC_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Pure: classify a connected integration into a PM-readable health state.
+ * "Zybit is watching" vs "No data yet" vs "Degraded" vs "Disconnected".
+ */
+export function deriveIntegrationHealth(
+  integration: { status: string; lastSyncedAt: string | null; lastErrorCode: string | null },
+  now: number = Date.now(),
+): IntegrationHealth {
+  if (integration.status === 'disabled') {
+    return { state: 'disconnected', label: 'Disconnected', tone: 'gray' };
+  }
+  if (integration.lastErrorCode || integration.status === 'error') {
+    return {
+      state: 'degraded',
+      label: integration.lastErrorCode
+        ? `Degraded: ${integration.lastErrorCode}`
+        : 'Degraded',
+      tone: 'red',
+    };
+  }
+  if (!integration.lastSyncedAt) {
+    return { state: 'no-data', label: 'No data yet', tone: 'amber' };
+  }
+  const age = now - new Date(integration.lastSyncedAt).getTime();
+  if (Number.isFinite(age) && age > STALE_SYNC_MS) {
+    return { state: 'degraded', label: 'Degraded, sync stale', tone: 'amber' };
+  }
+  return { state: 'watching', label: 'Zybit is watching', tone: 'green' };
+}
+
+/**
+ * Pure: classify bridge health from assignment vs. joined-conversion counts.
+ * `not-detected` only fires once there's enough assignment traffic to expect a
+ * conversion, so a brand-new experiment doesn't flap amber on its first hits.
+ */
+const BRIDGE_MIN_ASSIGNED = 20;
+
+export function deriveBridgeHealth(assignedVisitors: number, bridgedVisitors: number): BridgeHealth {
+  if (assignedVisitors === 0) {
+    return { state: 'inactive', label: 'No experiment traffic yet', tone: 'gray', assignedVisitors, bridgedVisitors };
+  }
+  if (bridgedVisitors === 0 && assignedVisitors >= BRIDGE_MIN_ASSIGNED) {
+    return {
+      state: 'not-detected',
+      label: 'PostHog bridge not detected. Conversions may be undercounted.',
+      tone: 'amber',
+      assignedVisitors,
+      bridgedVisitors,
+    };
+  }
+  return { state: 'healthy', label: 'Conversion bridge active', tone: 'green', assignedVisitors, bridgedVisitors };
+}
+
+/**
+ * Count distinct assigned visitors and how many of them produced a joinable
+ * conversion (a non-proxy, non-assignment event sharing the assigned visitor
+ * id — i.e. the bridge stamped `zybit_vid` so the cross-provider join lands).
+ */
+function computeBridgeCounts(events: { type: string; source: string; sessionId: string }[]): {
+  assignedVisitors: number;
+  bridgedVisitors: number;
+} {
+  const assigned = new Set<string>();
+  for (const e of events) {
+    if (e.type === 'experiment_assignment') assigned.add(e.sessionId);
+  }
+  const bridged = new Set<string>();
+  for (const e of events) {
+    if (e.type === 'experiment_assignment' || e.source === 'proxy') continue;
+    if (assigned.has(e.sessionId)) bridged.add(e.sessionId);
+  }
+  return { assignedVisitors: assigned.size, bridgedVisitors: bridged.size };
+}
 
 export async function getCockpitData(organizationId: string): Promise<CockpitData> {
   const repository = createPhase1Repository();
@@ -60,7 +196,9 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
       pipeline: null,
       gate: null,
       findings: { openCount: 0, topFinding: null },
-      experiments: { runningCount: 0, totalCount: 0 },
+      experiments: { runningCount: 0, totalCount: 0, lastComputedAt: null },
+      snapshots: { lastSnapshotAt: null, staleDays: null, perPath: [] },
+      bridge: deriveBridgeHealth(0, 0),
       lastInsightAt: null,
     };
   }
@@ -71,8 +209,17 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
     end: new Date(now).toISOString(),
   };
 
-  const [integrations, events, config, openFindingRows, topFindingRows, experimentRows] =
-    await Promise.all([
+  const [
+    integrations,
+    events,
+    config,
+    openFindingRows,
+    topFindingRows,
+    experimentRows,
+    experimentComputedRows,
+    snapshotFreshnessRows,
+    snapshotPerPathRows,
+  ] = await Promise.all([
       repository.listIntegrations({ organizationId, siteId: site.id }),
       repository.listEventsInWindow({ organizationId, siteId: site.id, window: window7d }),
       repository.getPhase2SiteConfig({ organizationId, siteId: site.id }),
@@ -98,6 +245,27 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
         .from(zybitExperiments)
         .where(eq(zybitExperiments.siteId, site.id))
         .groupBy(zybitExperiments.status),
+      getDb()
+        .select({ lastComputedAt: max(zybitExperiments.updatedAt) })
+        .from(zybitExperiments)
+        .where(
+          and(
+            eq(zybitExperiments.siteId, site.id),
+            inArray(zybitExperiments.status, ['running', 'completed', 'stopped']),
+          ),
+        ),
+      getDb()
+        .select({ lastFetchedAt: max(phase2PageSnapshots.fetchedAt) })
+        .from(phase2PageSnapshots)
+        .where(eq(phase2PageSnapshots.siteId, site.id)),
+      getDb()
+        .select({
+          pathRef: phase2PageSnapshots.pathRef,
+          lastFetchedAt: max(phase2PageSnapshots.fetchedAt),
+        })
+        .from(phase2PageSnapshots)
+        .where(eq(phase2PageSnapshots.siteId, site.id))
+        .groupBy(phase2PageSnapshots.pathRef),
     ]);
 
   const resolvedConfig = config ?? {
@@ -134,6 +302,44 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
   );
   const totalCount = experimentRows.reduce((sum, r) => sum + Number(r.n), 0);
 
+  const rawLastComputed = experimentComputedRows[0]?.lastComputedAt ?? null;
+  const lastComputedAt =
+    rawLastComputed instanceof Date
+      ? rawLastComputed.toISOString()
+      : rawLastComputed
+        ? new Date(rawLastComputed).toISOString()
+        : null;
+
+  const rawLastSnapshot = snapshotFreshnessRows[0]?.lastFetchedAt ?? null;
+  const lastSnapshotDate =
+    rawLastSnapshot instanceof Date
+      ? rawLastSnapshot
+      : rawLastSnapshot
+        ? new Date(rawLastSnapshot)
+        : null;
+  const lastSnapshotAt = lastSnapshotDate ? lastSnapshotDate.toISOString() : null;
+  const staleDays = snapshotStaleDays(lastSnapshotDate);
+
+  const perPathSnapshots = snapshotPerPathRows
+    .map((r) => {
+      const d =
+        r.lastFetchedAt instanceof Date
+          ? r.lastFetchedAt
+          : r.lastFetchedAt
+            ? new Date(r.lastFetchedAt)
+            : null;
+      return {
+        pathRef: r.pathRef,
+        lastSnapshotAt: d ? d.toISOString() : '',
+        staleDays: snapshotStaleDays(d),
+      };
+    })
+    .filter((p) => p.lastSnapshotAt !== '')
+    .sort((a, b) => (b.staleDays ?? 0) - (a.staleDays ?? 0));
+
+  const { assignedVisitors, bridgedVisitors } = computeBridgeCounts(events);
+  const bridge = deriveBridgeHealth(assignedVisitors, bridgedVisitors);
+
   const lastInsightAt =
     topFinding
       ? (
@@ -158,6 +364,8 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
       })),
       lastSync,
       healthy: integrations.length > 0 && integrations.every((i) => !i.lastErrorCode),
+      eventCount7d: events.length,
+      ga4OnlyMeasurementGap: isGa4OnlyMeasurementGap(integrations),
     },
     gate: {
       trustworthy: gate.ok,
@@ -169,7 +377,9 @@ export async function getCockpitData(organizationId: string): Promise<CockpitDat
       })),
     },
     findings: { openCount, topFinding },
-    experiments: { runningCount, totalCount },
+    experiments: { runningCount, totalCount, lastComputedAt },
+    snapshots: { lastSnapshotAt, staleDays, perPath: perPathSnapshots },
+    bridge,
     lastInsightAt,
   };
 }

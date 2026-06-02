@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { returnVisitThrash } from '@/lib/phase2/rules/returnVisitThrash';
-import { makeContext, makeEvent, makeGoalConfig, makeConfig } from './fixtures';
+import { makeContext, makeCta, makeEvent, makeGoalConfig, makeConfig, makeSnapshot } from './fixtures';
 
 const PATH = '/docs';
 
@@ -104,7 +104,7 @@ describe('returnVisitThrash rule', () => {
     const findings = returnVisitThrash.evaluate(ctx);
     expect(findings.length).toBeGreaterThanOrEqual(1);
     expect(findings[0].impactEstimate).toBeDefined();
-    expect(findings[0].impactEstimate!.unit).toBe('USD');
+    expect(findings[0].impactEstimate!.unit).toBe('conversions');
   });
 
   it('with narrative config → thrash at 3+ visits (not 4)', () => {
@@ -145,5 +145,45 @@ describe('returnVisitThrash rule', () => {
     const ctx = makeThrashContext(40, 60);
     const [f] = returnVisitThrash.evaluate(ctx);
     expect(f.evidence.length).toBeGreaterThan(0);
+  });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { ctaRef?: string }) {
+      return {
+        id: 'return-visit-thrash:_docs',
+        ruleId: 'return-visit-thrash',
+        category: 'thrash' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: PATH,
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('inserts a "Missing: quick-answer" placeholder above the first heading (amber)', () => {
+      const cta = { ...makeCta('Open account', 0.9, 'above', 'open-cta'), cssSelector: 'a.open' };
+      const out = returnVisitThrash.proposeAnnotations!(
+        makeFinding({ ctaRef: 'open-cta' }),
+        { snapshot: makeSnapshot(PATH, [cta], [{ level: 1, text: 'Checking accounts' }]), designTokens: null },
+      );
+      expect(out).toHaveLength(2);
+      expect(out[0]).toMatchObject({ type: 'element-insert', position: 'before', selector: 'h1:nth-of-type(1)' });
+      expect(out[1]).toMatchObject({ type: 'css-inject', selector: '.zybit-anno-thrash' });
+      if (out[1].type === 'css-inject') expect(out[1].css).toContain('#f59e0b');
+    });
+
+    it('returns [] when the page has no headings (rare — nothing to anchor to)', () => {
+      const cta = { ...makeCta('Open account', 0.9, 'above', 'open-cta'), cssSelector: 'a.open' };
+      const out = returnVisitThrash.proposeAnnotations!(
+        makeFinding({ ctaRef: 'open-cta' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
   });
 });

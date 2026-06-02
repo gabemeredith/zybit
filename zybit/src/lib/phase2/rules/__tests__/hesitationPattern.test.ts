@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { hesitationPattern } from '@/lib/phase2/rules/hesitationPattern';
-import { makeContext, makeEvent, makeGoalConfig } from './fixtures';
+import { makeContext, makeCta, makeEvent, makeGoalConfig, makeSnapshot } from './fixtures';
 
 const PATH = '/pricing';
 
@@ -114,5 +114,54 @@ describe('hesitationPattern rule', () => {
     const ctx = makeHesitationContext(35, 5);
     const [f] = hesitationPattern.evaluate(ctx);
     expect(['critical', 'warn', 'info']).toContain(f.severity);
+  });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { ctaRef?: string }) {
+      return {
+        id: 'hesitation-pattern:_pricing',
+        ruleId: 'hesitation-pattern',
+        category: 'hesitation' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: PATH,
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('inserts a "Missing: proof line" placeholder immediately above the CTA (amber)', () => {
+      const cta = { ...makeCta('Choose plan', 0.85, 'above', 'plan-cta'), cssSelector: 'button.plan' };
+      const out = hesitationPattern.proposeAnnotations!(
+        makeFinding({ ctaRef: 'plan-cta' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toHaveLength(2);
+      expect(out[0]).toMatchObject({ type: 'element-insert', position: 'before', selector: 'button.plan' });
+      expect(out[1]).toMatchObject({ type: 'css-inject', selector: '.zybit-anno-hesitation' });
+      if (out[1].type === 'css-inject') expect(out[1].css).toContain('#f59e0b');
+    });
+
+    it('returns [] when ctaRef present but the CTA has no cssSelector', () => {
+      const cta = makeCta('Choose plan', 0.85, 'above', 'plan-cta');
+      const out = hesitationPattern.proposeAnnotations!(
+        makeFinding({ ctaRef: 'plan-cta' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns [] when refs.ctaRef is absent', () => {
+      const cta = { ...makeCta('Choose plan', 0.85, 'above', 'plan-cta'), cssSelector: 'button.plan' };
+      const out = hesitationPattern.proposeAnnotations!(
+        makeFinding({}),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
   });
 });

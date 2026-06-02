@@ -8,8 +8,7 @@
 import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { getStripe } from '@/lib/billing/stripe';
-import { planIdFromStripePriceId } from '@/lib/billing/plans';
-import { invalidatePlanCache } from '@/lib/billing/checkPlanLimit';
+import { planIdFromStripePriceId, isValidPlanId } from '@/lib/billing/plans';
 import { getDb } from '@/lib/db/client';
 import { organizations } from '@/lib/db/schema';
 import type Stripe from 'stripe';
@@ -52,7 +51,7 @@ export async function POST(request: Request) {
       const planId = session.metadata?.planId;
       const orgId = session.metadata?.orgId;
 
-      if (orgId && planId && customerId) {
+      if (orgId && planId && isValidPlanId(planId) && customerId) {
         const [org] = await db
           .select({ id: organizations.id })
           .from(organizations)
@@ -74,8 +73,6 @@ export async function POST(request: Request) {
               planUpdatedAt: new Date(),
             })
             .where(eq(organizations.id, org.id));
-
-          invalidatePlanCache(org.id);
         }
       }
       break;
@@ -109,8 +106,6 @@ export async function POST(request: Request) {
                 planUpdatedAt: new Date(),
               })
               .where(eq(organizations.id, org.id));
-
-            invalidatePlanCache(org.id);
           }
         }
       }
@@ -141,8 +136,6 @@ export async function POST(request: Request) {
               planUpdatedAt: new Date(),
             })
             .where(eq(organizations.id, org.id));
-
-          invalidatePlanCache(org.id);
         }
       }
       break;

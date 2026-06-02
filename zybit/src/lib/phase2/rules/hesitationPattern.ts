@@ -10,25 +10,31 @@
  * Aggregate per page: emit when ≥ 30 distinct sessions hesitate.
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
 import type { CtaCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { CanonicalEvent, GoalConfig, GoalType } from "@/lib/phase2/types";
 
+import { ANNOTATION_WARN_COLOR } from "./annotationColors";
+import { missingPlaceholder } from "./annotationHelpers";
 import {
   clamp,
   formatCount,
   groupSessions,
   nextEventAfter,
   pct,
+  pickPrimaryCta,
   quote,
   sanitizeIdSegment,
   share,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const MIN_ACTIVE_SECONDS = 45;
@@ -50,6 +56,30 @@ export const hesitationPattern: AuditRule = {
   id: "hesitation-pattern",
   name: "Hesitation pattern",
   category: "hesitation",
+  // Behavioral rule: needs active-dwell durations alongside click events.
+  publicAuditBehavior: 'empty',
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    // The prescription is "add 1-3 sentences of proof immediately above the
+    // CTA — a specific outcome, a number, or a quote." So the annotation
+    // shows the missing proof block in the exact spot the prescription
+    // names. Outlining the CTA itself (the old behavior) was misleading:
+    // the CTA isn't the broken thing — what's missing is the proof above it.
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    return missingPlaceholder({
+      anchorSelector: cta.cssSelector,
+      position: 'before',
+      ruleClassName: 'zybit-anno-hesitation',
+      label: '1-3 sentences of proof — a number, a specific outcome, or a quote — visitors hesitate here because there\'s no reason to click yet',
+      color: ANNOTATION_WARN_COLOR,
+    });
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessions = groupSessions(ctx.events);
@@ -95,10 +125,11 @@ export const hesitationPattern: AuditRule = {
       }
     }
 
+    const minHesitationSessions = calibratedFloor(ctx, "hesitation-pattern", MIN_HESITATION_SESSIONS);
     const findings: AuditFinding[] = [];
     for (const [pathRef, bucket] of byPath) {
       const hesitationSessions = bucket.hesitationSessions.size;
-      if (hesitationSessions < MIN_HESITATION_SESSIONS) continue;
+      if (hesitationSessions < minHesitationSessions) continue;
       const longDwellSessions = bucket.longDwellSessions.size;
       const hesitationShare = share(hesitationSessions, longDwellSessions) ?? 0;
       const snapshot = ctx.pageSnapshotsByPath.get(pathRef);
@@ -223,23 +254,15 @@ function buildFinding(inputs: FindingInputs): AuditFinding {
     impactEstimate,
     recommendation,
     evidence,
-    ...(snapshot ? { refs: { snapshotId: snapshot.id } } : {}),
+    ...(snapshot
+      ? {
+          refs: {
+            snapshotId: snapshot.id,
+            ...(primary ? { ctaRef: primary.ref } : {}),
+          },
+        }
+      : {}),
   };
-}
-
-function pickPrimaryCta(ctas: readonly CtaCandidate[]): CtaCandidate | null {
-  let best: CtaCandidate | null = null;
-  for (const cta of ctas) {
-    if (cta.disabled) continue;
-    if (
-      best === null ||
-      cta.visualWeight > best.visualWeight ||
-      (cta.visualWeight === best.visualWeight && cta.documentIndex < best.documentIndex)
-    ) {
-      best = cta;
-    }
-  }
-  return best;
 }
 
 function medianRounded(values: readonly number[]): number {

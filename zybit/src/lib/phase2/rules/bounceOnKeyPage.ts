@@ -8,9 +8,16 @@
  * ≥ 100 and bounce rate exceeds 50%.
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
 import type { CtaCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { GoalConfig, GoalType } from "@/lib/phase2/types";
 
+import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
+import {
+  annotationCaption,
+  outlineMod,
+  snapshotHeadingSelector,
+} from "./annotationHelpers";
 import {
   clamp,
   formatCount,
@@ -25,12 +32,14 @@ import {
   topByCount,
 } from "./helpers";
 import type { SessionTrace } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const MIN_ENTRIES = 100;
@@ -58,6 +67,30 @@ export const bounceOnKeyPage: AuditRule = {
   id: "bounce-on-key-page",
   name: "Bounce on key page",
   category: "bounce",
+  // Behavioral rule: needs single-page-session counts from the events stream.
+  publicAuditBehavior: 'empty',
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    // The prescription is "rewrite the hero headline to answer the implied
+    // question in the top referrer traffic." The element being asked to
+    // change is the headline, not the CTA — so outline the first heading
+    // in red and label it with the "why."
+    const anchor = snapshotHeadingSelector(ctx.snapshot.data);
+    if (!anchor) return [];
+    return [
+      outlineMod(anchor, ANNOTATION_HEAVY_COLOR),
+      ...annotationCaption({
+        anchorSelector: anchor,
+        position: 'after',
+        ruleClassName: 'zybit-anno-bounce',
+        label: 'Rewrite to answer the question referrer traffic is arriving with',
+        color: ANNOTATION_HEAVY_COLOR,
+      }),
+    ];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessions = groupSessions(ctx.events);
@@ -97,7 +130,7 @@ export const bounceOnKeyPage: AuditRule = {
       const snapshot = ctx.pageSnapshotsByPath.get(pathRef);
       if (!isKeyPath(pathRef, ctx.config, snapshot)) continue;
       const bounceRate = share(bucket.bounces, bucket.entries) ?? 0;
-      if (bounceRate <= MIN_BOUNCE_RATE) continue;
+      if (bounceRate <= calibratedFloor(ctx, "bounce-on-key-page", MIN_BOUNCE_RATE)) continue;
 
       findings.push(
         buildFinding({

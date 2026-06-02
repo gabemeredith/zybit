@@ -22,6 +22,7 @@ import {
   share,
   topByCount,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
@@ -48,6 +49,8 @@ export const errorExposure: AuditRule = {
   id: "error-exposure",
   name: "Error exposure cluster",
   category: "error",
+  // Behavioral rule: consumes JS error events from the analytics connector.
+  publicAuditBehavior: 'empty',
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessionsByPath = new Map<string, Set<string>>();
@@ -75,8 +78,9 @@ export const errorExposure: AuditRule = {
       group.events.push(event);
     }
 
+    const minErrorCount = calibratedFloor(ctx, "error-exposure", MIN_ERROR_COUNT);
     const eligible = [...groups.values()]
-      .filter((g) => g.events.length >= MIN_ERROR_COUNT)
+      .filter((g) => g.events.length >= minErrorCount)
       .sort((a, b) => {
         if (b.events.length !== a.events.length) return b.events.length - a.events.length;
         const pathCmp = a.pathRef.localeCompare(b.pathRef);

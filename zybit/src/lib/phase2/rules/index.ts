@@ -1,12 +1,21 @@
 /**
  * Phase 2 — Audit rules barrel.
  *
- * Two flavors live here:
+ * Four layers live here:
  *   - **Design rules** (Layer C): hierarchy/fold/nav/asymmetry findings
  *     grounded in page snapshots + click distribution.
  *   - **Pain rules**   (Layer D): abandonment / help-seeking / hesitation /
  *     bounce / error / thrash / cohort-pain findings grounded in session
  *     traces + structured PostHog signals.
+ *   - **Structural rules** (Layer E): accessibility + SEO findings grounded
+ *     entirely in snapshot data — no behavioral events required. These fire
+ *     on every site from the first snapshot, even before PostHog data exists.
+ *   - **AI copy critique** (Layer F): vague-claim / proof-missing /
+ *     cta-verb-mismatch findings grounded in a structured Gemini critique
+ *     of the page's own hero copy (cached on the snapshot at capture
+ *     time by `captureCopyCritique`). Rules stay pure — the LLM call
+ *     lives at capture time, validated against a strict schema before
+ *     the rule reads it.
  *
  * Each rule is a pure `AuditRule` that consumes a `AuditRuleContext` and
  * returns zero or more `AuditFinding`s. `runAuditRules` is the orchestration
@@ -39,6 +48,23 @@ import { helpSeekingSpike } from "./helpSeekingSpike";
 import { hesitationPattern } from "./hesitationPattern";
 import { returnVisitThrash } from "./returnVisitThrash";
 
+// Flow rules
+import { flowInterStepDropoff } from "./flowInterStepDropoff";
+
+// Structural rules (Layer E) — snapshot-only, no behavioral events required
+import { headingHierarchyJump } from "./headingHierarchyJump";
+import { formLabelMissing } from "./formLabelMissing";
+import { imageAltTextMissing } from "./imageAltTextMissing";
+import { linkTextGeneric } from "./linkTextGeneric";
+import { missingMetaDescription } from "./missingMetaDescription";
+import { missingCanonicalUrl } from "./missingCanonicalUrl";
+import { deadClickTarget } from "./deadClickTarget";
+
+// AI copy critique (Layer F) — capture-time Gemini critique, deterministic rule
+import { vagueClaimDetected } from "./vagueClaimDetected";
+import { proofMissing } from "./proofMissing";
+import { ctaVerbMismatch } from "./ctaVerbMismatch";
+
 export { aboveFoldCoverage } from "./aboveFoldCoverage";
 export { heroHierarchyInversion } from "./heroHierarchyInversion";
 export { mobileEngagementAsymmetry } from "./mobileEngagementAsymmetry";
@@ -51,6 +77,21 @@ export { formAbandonment } from "./formAbandonment";
 export { helpSeekingSpike } from "./helpSeekingSpike";
 export { hesitationPattern } from "./hesitationPattern";
 export { returnVisitThrash } from "./returnVisitThrash";
+export { flowInterStepDropoff } from "./flowInterStepDropoff";
+export { headingHierarchyJump } from "./headingHierarchyJump";
+export { formLabelMissing } from "./formLabelMissing";
+export { imageAltTextMissing } from "./imageAltTextMissing";
+export { linkTextGeneric } from "./linkTextGeneric";
+export { missingMetaDescription } from "./missingMetaDescription";
+export { missingCanonicalUrl } from "./missingCanonicalUrl";
+export { deadClickTarget } from "./deadClickTarget";
+export { vagueClaimDetected } from "./vagueClaimDetected";
+export { proofMissing } from "./proofMissing";
+export { ctaVerbMismatch } from "./ctaVerbMismatch";
+
+export function getRuleById(ruleId: string): AuditRule | null {
+  return ALL_AUDIT_RULES.find((r) => r.id === ruleId) ?? null;
+}
 
 export const ALL_AUDIT_RULES: readonly AuditRule[] = [
   // Design (Layer C)
@@ -67,6 +108,20 @@ export const ALL_AUDIT_RULES: readonly AuditRule[] = [
   hesitationPattern,
   returnVisitThrash,
   cohortPainAsymmetry,
+  // Flow rules
+  flowInterStepDropoff,
+  // Structural / accessibility / SEO (Layer E) — snapshot-only
+  headingHierarchyJump,
+  formLabelMissing,
+  imageAltTextMissing,
+  linkTextGeneric,
+  missingMetaDescription,
+  missingCanonicalUrl,
+  deadClickTarget,
+  // AI copy critique (Layer F) — capture-time Gemini critique, pure rule
+  vagueClaimDetected,
+  proofMissing,
+  ctaVerbMismatch,
 ];
 
 const SEVERITY_RANK: Record<AuditFindingSeverity, number> = {
@@ -78,12 +133,83 @@ const SEVERITY_RANK: Record<AuditFindingSeverity, number> = {
 export function runAuditRules(ctx: AuditRuleContext): AuditFindingsReport {
   const findings: AuditFinding[] = [];
   const diagnostics: AuditRuleDiagnostic[] = [];
+  const isPublicAudit = ctx.mode === 'public-audit';
 
   for (const rule of ALL_AUDIT_RULES) {
     try {
-      const out = rule.evaluate(ctx);
+      // Fail-closed in public-audit mode: a rule with no declaration emits
+      // nothing on the prospect surface. New behavioral rules that forget to
+      // declare cannot leak fabricated counts.
+      const behavior = rule.publicAuditBehavior ?? 'empty';
+      if (isPublicAudit && behavior === 'empty') {
+        diagnostics.push({
+          ruleId: rule.id,
+          emitted: 0,
+          skippedReason: 'PUBLIC_AUDIT_BEHAVIOR_EMPTY',
+        });
+        continue;
+      }
+
+      let out = rule.evaluate(ctx);
+
+      // Apply structural-only rewrites in-place so persisted rows and the
+      // email read identically. The rewrite is colocated with the rule it
+      // covers — see each rule's `structuralPublicAuditCopy`. A null rewrite
+      // means the rule decided this finding cannot be safely reframed for a
+      // prospect — drop it here rather than letting the original behavioral
+      // copy fall through to the defense-in-depth scrub.
+      if (isPublicAudit && behavior === 'structural-only' && rule.structuralPublicAuditCopy) {
+        const rewritten: AuditFinding[] = [];
+        for (const f of out) {
+          const rewrite = rule.structuralPublicAuditCopy(f, ctx);
+          if (!rewrite) continue;
+          f.title = rewrite.title;
+          f.summary = rewrite.summary;
+          f.evidence = rewrite.evidence;
+          // When `f.prescription` is undefined the fallback seeds `whatToChange`
+          // from `f.recommendation?.[0]` — the route reads `prescription.whatToChange`
+          // first via `??`, and an empty string is not nullish, so seeding `''`
+          // would shadow a valid recommendation downstream.
+          f.prescription = {
+            ...(f.prescription ?? {
+              whatToChange: f.recommendation?.[0] ?? '',
+              whyItWorks: '',
+              experimentVariantDescription: '',
+            }),
+            whyItMatters: rewrite.whyItMatters,
+          };
+          rewritten.push(f);
+        }
+        out = rewritten;
+      }
+
+      const cal = ctx.calibration?.get(rule.id);
+      // Annotate each finding with the calibration that was active when the
+      // rule ran so the PM surface can show "Tuned for your site" receipts.
+      if (cal && cal.direction !== 'neutral') {
+        for (const f of out) {
+          f.calibration = {
+            direction: cal.direction,
+            multiplier: cal.multiplier,
+            reason: cal.reason,
+            conclusiveCount: cal.conclusiveCount,
+          };
+        }
+      }
       findings.push(...out);
-      diagnostics.push({ ruleId: rule.id, emitted: out.length });
+      diagnostics.push({
+        ruleId: rule.id,
+        emitted: out.length,
+        ...(cal && cal.direction !== 'neutral'
+          ? {
+              calibration: {
+                multiplier: cal.multiplier,
+                direction: cal.direction,
+                reason: cal.reason,
+              },
+            }
+          : {}),
+      });
     } catch (err) {
       diagnostics.push({
         ruleId: rule.id,

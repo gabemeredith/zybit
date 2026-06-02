@@ -9,9 +9,12 @@
  * costing the funnel — emit one finding per form.
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
 import type { FormCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { CanonicalEvent, GoalConfig, GoalType } from "@/lib/phase2/types";
 
+import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
+import { annotationCaption, outlineMod } from "./annotationHelpers";
 import {
   clamp,
   formatCount,
@@ -22,12 +25,14 @@ import {
   sanitizeIdSegment,
   share,
 } from "./helpers";
+import { calibratedCap } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const MIN_FIELD_COUNT = 2;
@@ -39,6 +44,33 @@ export const formAbandonment: AuditRule = {
   id: "form-abandonment",
   name: "Form abandonment",
   category: "abandonment",
+  // Behavioral rule: contrasts form_view vs form_submit events.
+  publicAuditBehavior: 'empty',
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    // The prescription is "shorten the submit copy + move any non-essential
+    // required fields (phone, company size) to step 2 after the user has
+    // committed." The form *is* the broken element — keep the red outline,
+    // but add a caption above it so the PM doesn't have to read the
+    // finding summary to know what to look for.
+    const ref = finding.refs?.formRef;
+    if (!ref) return [];
+    const form = ctx.snapshot.data.forms.find((f) => f.ref === ref);
+    if (!form?.cssSelector) return [];
+    return [
+      outlineMod(form.cssSelector, ANNOTATION_HEAVY_COLOR),
+      ...annotationCaption({
+        anchorSelector: form.cssSelector,
+        position: 'before',
+        ruleClassName: 'zybit-anno-abandon',
+        label: 'Shorten this form — move non-essential fields to a step after the commit click',
+        color: ANNOTATION_HEAVY_COLOR,
+      }),
+    ];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const findings: AuditFinding[] = [];
@@ -63,6 +95,7 @@ export const formAbandonment: AuditRule = {
       }
     }
 
+    const maxSubmitRate = calibratedCap(ctx, "form-abandonment", MAX_SUBMIT_RATE);
     for (const snapshot of ctx.pageSnapshots) {
       const pathRef = snapshot.pathRef;
       for (const form of snapshot.data.forms) {
@@ -82,7 +115,7 @@ export const formAbandonment: AuditRule = {
         }
         const formSubmits = submitterSessions.size;
         const submitRate = share(formSubmits, formViews) ?? 0;
-        if (submitRate >= MAX_SUBMIT_RATE) continue;
+        if (submitRate >= maxSubmitRate) continue;
 
         findings.push(
           buildFinding({

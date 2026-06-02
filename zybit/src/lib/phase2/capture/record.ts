@@ -90,6 +90,7 @@ function mergeFormsMeasured(
     });
     return {
       ref: form.ref,
+      cssSelector: form.cssSelector,
       landmark: form.landmark,
       fieldCount: form.fieldCount,
       documentIndex: form.documentIndex,
@@ -236,6 +237,7 @@ async function captureOnePage(
       pathRef: opts.pathRef,
       breakpoint: opts.breakpoint,
       error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
     });
     throw new CaptureError(
       'PAGE_CAPTURE_FAILED',

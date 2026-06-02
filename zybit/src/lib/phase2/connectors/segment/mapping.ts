@@ -165,3 +165,32 @@ export function unwrapSegmentPayload(body: unknown): unknown[] {
   if (Array.isArray(o.batch)) return o.batch;
   return [body];
 }
+
+/** Segment caps batches well under this; reject larger payloads as malformed/abusive. */
+export const MAX_SEGMENT_BATCH_SIZE = 1000;
+
+export type SegmentBatchGuard =
+  | { ok: true; items: unknown[] }
+  | { ok: false; code: 'SEGMENT_PAYLOAD_INVALID' | 'SEGMENT_BATCH_TOO_LARGE'; message: string };
+
+/**
+ * Schema guard (Zybit-137) — validate the webhook envelope before mapping.
+ * Rejects non-object/non-array bodies and oversized batches up front so a
+ * malformed or abusive payload can't reach the mapper or the DB. Individual
+ * message-shape validation stays in `mapSegmentMessageToCanonical` (unknown
+ * shapes map to null and are skipped).
+ */
+export function guardSegmentBatch(body: unknown): SegmentBatchGuard {
+  if (!body || typeof body !== 'object') {
+    return { ok: false, code: 'SEGMENT_PAYLOAD_INVALID', message: 'Webhook body must be a JSON object or array.' };
+  }
+  const items = unwrapSegmentPayload(body);
+  if (items.length > MAX_SEGMENT_BATCH_SIZE) {
+    return {
+      ok: false,
+      code: 'SEGMENT_BATCH_TOO_LARGE',
+      message: `Batch exceeds ${MAX_SEGMENT_BATCH_SIZE} messages.`,
+    };
+  }
+  return { ok: true, items };
+}

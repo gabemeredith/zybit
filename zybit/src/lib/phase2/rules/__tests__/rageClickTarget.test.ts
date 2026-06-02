@@ -66,7 +66,7 @@ describe('rageClickTarget rule', () => {
     const ctx = makeContext(events, [], config);
     const [f] = rageClickTarget.evaluate(ctx);
     expect(f.impactEstimate).toBeDefined();
-    expect(f.impactEstimate!.unit).toBe('USD');
+    expect(f.impactEstimate!.unit).toBe('conversions');
   });
 
   it('finding id includes ruleId and path', () => {
@@ -105,5 +105,55 @@ describe('rageClickTarget rule', () => {
     ];
     // Empty text is valid but let's verify it doesn't crash
     expect(() => rageClickTarget.evaluate(makeContext(events))).not.toThrow();
+  });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { ctaRef?: string }) {
+      return {
+        id: 'rage-click-target:/pricing:x',
+        ruleId: 'rage-click-target',
+        category: 'rage' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: PATH,
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('outlines the rage target (red) + captions it "Visitors rage-click here"', () => {
+      const cta = { ...makeCta('Submit', 0.7, 'above', 'rage-cta'), cssSelector: 'button.submit' };
+      const out = rageClickTarget.proposeAnnotations!(
+        makeFinding({ ctaRef: 'rage-cta' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toHaveLength(3);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.submit' });
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+      expect(out[1]).toMatchObject({ type: 'element-insert', position: 'after', selector: 'button.submit' });
+      expect(out[2]).toMatchObject({ type: 'css-inject', selector: '.zybit-anno-rage' });
+    });
+
+    it('returns [] when ctaRef is present but the CTA has no cssSelector', () => {
+      const cta = makeCta('Submit', 0.7, 'above', 'rage-cta');
+      const out = rageClickTarget.proposeAnnotations!(
+        makeFinding({ ctaRef: 'rage-cta' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns [] when refs.ctaRef is absent (rage event matched no snapshot CTA)', () => {
+      const cta = { ...makeCta('Submit', 0.7, 'above', 'rage-cta'), cssSelector: 'button.submit' };
+      const out = rageClickTarget.proposeAnnotations!(
+        makeFinding({}),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
   });
 });

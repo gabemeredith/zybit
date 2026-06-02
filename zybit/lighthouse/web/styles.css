@@ -1,0 +1,680 @@
+:root {
+  color-scheme: light dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 2.5rem 1.5rem;
+  background: canvas;
+  color: canvastext;
+}
+
+#root {
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 1rem;
+}
+
+.loading {
+  opacity: 0.6;
+}
+
+.login {
+  max-width: 22rem;
+  margin: 4rem auto;
+  padding: 1.5rem;
+  border: 1px solid color-mix(in srgb, canvastext 20%, transparent);
+  border-radius: 0.6rem;
+}
+
+.login form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+input[type="password"],
+input[type="text"],
+input[type="number"],
+select {
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid color-mix(in srgb, canvastext 25%, transparent);
+  border-radius: 0.4rem;
+  background: canvas;
+  color: canvastext;
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid color-mix(in srgb, canvastext 35%, transparent);
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, canvastext 8%, canvas);
+  color: canvastext;
+  cursor: pointer;
+}
+
+button:hover {
+  background: color-mix(in srgb, canvastext 14%, canvas);
+}
+
+button.primary {
+  border-color: transparent;
+  background: canvastext;
+  color: canvas;
+}
+
+button.primary:hover {
+  opacity: 0.9;
+}
+
+.error {
+  color: #c44;
+  margin: 0.4rem 0 0;
+  font-size: 0.85em;
+}
+
+header.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid color-mix(in srgb, canvastext 15%, transparent);
+  padding-bottom: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+header.app-header .right {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+.empty {
+  margin: 3rem 0;
+  text-align: center;
+  opacity: 0.6;
+}
+
+.controls {
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, canvastext 15%, transparent);
+  border-radius: 0.5rem;
+}
+
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.control-row label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85em;
+  gap: 0.25rem;
+}
+
+.runpane {
+  margin-top: 1.5rem;
+  /* Break out of #root's 64rem cap so the embedded PM iframe has real
+     estate. Stops 1rem from each viewport edge. */
+  width: calc(100vw - 2rem);
+  max-width: 100rem;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 1.5rem;
+}
+
+.col h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  margin: 0 0 0.5rem;
+}
+
+.col .subhead {
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  margin: 1.25rem 0 0.4rem;
+  font-weight: 600;
+}
+
+.pm-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pm-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pm-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+.pm-iframe {
+  width: 100%;
+  height: calc(100vh - 200px);
+  min-height: 32rem;
+  border: 1px solid color-mix(in srgb, canvastext 20%, transparent);
+  border-radius: 0.4rem;
+  background: canvas;
+}
+
+ul.progress {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85em;
+}
+
+ul.progress li {
+  padding: 0.3rem 0.5rem;
+  border-left: 2px solid color-mix(in srgb, canvastext 25%, transparent);
+}
+
+ul.progress li.step-done {
+  border-left-color: #2a8;
+}
+
+ul.progress li.step-error {
+  border-left-color: #c44;
+}
+
+table.counts {
+  border-collapse: collapse;
+  margin: 0.5rem 0 1rem;
+}
+
+table.counts th,
+table.counts td {
+  padding: 0.3rem 0.8rem;
+  text-align: left;
+}
+
+table.counts th {
+  font-weight: normal;
+  opacity: 0.7;
+}
+
+details.group {
+  margin: 0.5rem 0;
+  border: 1px solid color-mix(in srgb, canvastext 12%, transparent);
+  border-radius: 0.35rem;
+}
+
+details.group summary {
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+}
+
+details.group pre {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-top: 1px solid color-mix(in srgb, canvastext 12%, transparent);
+  font-size: 0.78em;
+  overflow-x: auto;
+  max-height: 36rem;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.9em;
+  background: color-mix(in srgb, canvastext 8%, canvas);
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+}
+
+/* --- Layer B (LLM finding prose) panel --- */
+.layerb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+details.layerb-panel {
+  border-left: 3px solid #6a5acd;
+}
+.layerb-card {
+  border: 1px solid color-mix(in srgb, canvastext 14%, transparent);
+  border-radius: 0.4rem;
+  padding: 0.6rem;
+  margin: 0.6rem 0;
+}
+.layerb-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+.layerb-badge {
+  font-size: 0.7em;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+}
+.layerb-badge.is-llm {
+  background: color-mix(in srgb, #2a8 30%, canvas);
+}
+.layerb-badge.is-template {
+  background: color-mix(in srgb, #d90 30%, canvas);
+}
+.layerb-outcome {
+  font-size: 0.75em;
+  opacity: 0.7;
+}
+.layerb-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+.layerb-prose {
+  background: color-mix(in srgb, canvastext 5%, canvas);
+  border-radius: 0.3rem;
+  padding: 0.5rem;
+  font-size: 0.85em;
+}
+.layerb-prose h5 {
+  margin: 0 0 0.3rem;
+  font-size: 0.7em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.layerb-prose-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.layerb-fail {
+  color: #c44;
+  font-size: 0.82em;
+  margin: 0.4rem 0 0;
+}
+details.layerb-raw {
+  margin-top: 0.4rem;
+}
+
+/* --- Eval calibration (judge vs human) panel --- */
+details.calib-panel {
+  border-left: 3px solid #2a8;
+  margin-top: 0.8rem;
+}
+.calib-instructions {
+  font-size: 0.82em;
+  opacity: 0.75;
+  margin: 0.5rem 0.6rem;
+}
+.calib-card {
+  border: 1px solid color-mix(in srgb, canvastext 14%, transparent);
+  border-radius: 0.4rem;
+  padding: 0.6rem;
+  margin: 0.6rem;
+}
+.calib-card-head {
+  margin-bottom: 0.4rem;
+}
+.calib-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+.calib-pick-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.calib-pick.is-picked {
+  border-color: transparent;
+  background: #2a8;
+  color: canvas;
+}
+.calib-actions {
+  margin: 0.8rem 0.6rem;
+}
+.calib-result {
+  margin: 0 0.6rem 0.6rem;
+}
+.calib-verdict {
+  font-size: 0.9em;
+  font-weight: 600;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.35rem;
+  margin: 0.4rem 0;
+}
+.calib-verdict.is-pass {
+  background: color-mix(in srgb, #2a8 22%, canvas);
+}
+.calib-verdict.is-fail {
+  background: color-mix(in srgb, #c44 22%, canvas);
+}
+table.calib-breakdown {
+  font-size: 0.85em;
+}
+
+/* --- Developer log panel ------------------------------------------------ */
+.logpane {
+  margin-top: 1.5rem;
+}
+.log-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.log-head h2 {
+  margin: 0;
+}
+.log-filters {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.85em;
+}
+.log-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.log-count {
+  margin-left: auto;
+  font-size: 0.8em;
+  opacity: 0.65;
+}
+.log-stream {
+  margin-top: 0.5rem;
+  max-height: 24rem;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  background: color-mix(in srgb, canvastext 6%, canvas);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.6rem;
+}
+.log-line {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.05rem 0;
+  border-bottom: 1px solid color-mix(in srgb, canvastext 5%, canvas);
+  word-break: break-word;
+}
+.log-ts {
+  opacity: 0.5;
+  flex: 0 0 auto;
+}
+.log-cat {
+  flex: 0 0 4.5rem;
+  text-align: center;
+  font-size: 0.7rem;
+  border-radius: 0.25rem;
+  padding: 0 0.25rem;
+  background: color-mix(in srgb, canvastext 12%, canvas);
+}
+.cat-badge-ai {
+  background: color-mix(in srgb, #7c5cff 35%, canvas);
+}
+.cat-badge-snapshot {
+  background: color-mix(in srgb, #2a8 28%, canvas);
+}
+.cat-badge-db {
+  background: color-mix(in srgb, #d90 28%, canvas);
+}
+.cat-badge-pipeline {
+  background: color-mix(in srgb, #2b9 24%, canvas);
+}
+.log-msg {
+  flex: 1 1 auto;
+}
+.log-fields {
+  opacity: 0.7;
+  font-size: 0.72rem;
+}
+.log-line.cat-ai .log-msg {
+  font-weight: 600;
+}
+.log-warn {
+  background: color-mix(in srgb, #d90 12%, canvas);
+}
+.log-error {
+  background: color-mix(in srgb, #c44 16%, canvas);
+}
+.log-end {
+  opacity: 0.6;
+  font-style: italic;
+}
+/* Category filter toggles. */
+.log-stream.hide-ai .log-line.cat-ai,
+.log-stream.hide-snapshot .log-line.cat-snapshot,
+.log-stream.hide-db .log-line.cat-db,
+.log-stream.hide-pipeline .log-line.cat-pipeline,
+.log-stream.hide-http .log-line.cat-http,
+.log-stream.hide-other .log-line.cat-other {
+  display: none;
+}
+
+/* --- Read-only database browser ---------------------------------------- */
+.datapane {
+  margin-top: 1.5rem;
+}
+.data-controls {
+  margin: 0.5rem 0;
+}
+.data-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85em;
+  margin: 0.4rem 0;
+}
+.data-pager span {
+  opacity: 0.7;
+}
+.data-table-wrap {
+  overflow-x: auto;
+  border-radius: 0.4rem;
+  border: 1px solid color-mix(in srgb, canvastext 12%, canvas);
+}
+table.data-table {
+  border-collapse: collapse;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+table.data-table th,
+table.data-table td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, canvastext 8%, canvas);
+  text-align: left;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+table.data-table thead th {
+  position: sticky;
+  top: 0;
+  background: color-mix(in srgb, canvastext 12%, canvas);
+}
+.data-detail td {
+  white-space: normal;
+  max-width: none;
+  background: color-mix(in srgb, canvastext 5%, canvas);
+}
+.data-detail pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+button.data-expand {
+  padding: 0 0.4rem;
+  line-height: 1.2;
+}
+.data-note {
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+.data-tables {
+  margin-top: 0.5rem;
+}
+.data-table-section {
+  margin: 0.35rem 0;
+}
+.data-table-section > summary {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85em;
+}
+.data-section-body {
+  margin-top: 0.35rem;
+}
+
+/* --- Fix-preview + variant-advisor cards (URL-audit full LLM depth) ----- */
+.fp-card,
+.vp-card {
+  border: 1px solid color-mix(in srgb, canvastext 12%, canvas);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  margin: 0.4rem 0;
+}
+.fp-head,
+.vp-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.85em;
+}
+.fp-tier {
+  font-size: 0.75em;
+  opacity: 0.7;
+}
+.fp-imgs {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+}
+.fp-fig {
+  margin: 0;
+  flex: 1 1 12rem;
+  min-width: 10rem;
+}
+.fp-fig img {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, canvastext 12%, canvas);
+  border-radius: 0.25rem;
+}
+.fp-fig figcaption {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  text-align: center;
+}
+.fp-rationale {
+  font-size: 0.82em;
+  margin: 0.4rem 0 0;
+}
+.vp-error {
+  font-size: 0.75em;
+  color: #c44;
+}
+.vp-note {
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+.vp-option > summary {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.8em;
+}
+.preset-row {
+  align-items: center;
+}
+.preset-label {
+  font-size: 0.82em;
+  opacity: 0.7;
+}
+button.preset-btn {
+  background: color-mix(in srgb, #7c5cff 22%, canvas);
+}
+
+/* --- In-GUI documentation ---------------------------------------------- */
+.help {
+  font-size: 0.82em;
+  opacity: 0.72;
+  margin: 0.3rem 0;
+  line-height: 1.5;
+}
+.help-panel {
+  margin: 0.75rem 0;
+  background: color-mix(in srgb, canvastext 4%, canvas);
+}
+.help-panel > summary {
+  font-weight: 600;
+}
+.help-section h4 {
+  margin: 0.6rem 0 0.15rem;
+  font-size: 0.9em;
+}
+.help-section ul {
+  margin: 0.15rem 0 0.5rem;
+  padding-left: 1.15rem;
+  font-size: 0.82em;
+  opacity: 0.8;
+  line-height: 1.5;
+}
+
+/* --- Context A/B eval ---------------------------------------------------- */
+.eval-head { margin-bottom: 12px; }
+.eval-head h3 { margin: 0 0 4px; }
+.eval-ctx { font-size: 13px; margin: 2px 0; }
+.eval-counts { font-size: 12px; color: #6b7280; margin: 2px 0; }
+.eval-scoreboard { font-size: 13px; margin-top: 6px; padding: 6px 10px; background: #f3f4f6; border-radius: 6px; }
+.eval-scoreboard .win { color: #15803d; }
+.eval-scoreboard .lose { color: #b91c1c; }
+.eval-row { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+.eval-row-head { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+.eval-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.eval-col { border: 1px solid #eee; border-radius: 6px; padding: 8px; background: #fafafa; }
+.eval-col-head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; margin-bottom: 4px; }
+.eval-summary { margin: 0 0 6px; font-size: 13px; }
+.eval-change { margin: 0 0 6px; font-size: 12px; color: #374151; }
+.verdict-row { display: inline-flex; gap: 6px; }
+.verdict-btn { font-size: 12px; padding: 2px 8px; cursor: pointer; }
+.verdict-btn.chosen { background: #1a73e8; color: #fff; }
+.badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; }
+.badge-presence { background: #fef3c7; color: #92400e; }
+.badge-changed { background: #dbeafe; color: #1e40af; }
+.badge-same { background: #f3f4f6; color: #6b7280; }
+.muted { color: #9ca3af; font-size: 12px; }

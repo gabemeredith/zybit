@@ -7,9 +7,11 @@ import {
   parseOptionalString,
   parsePositiveInt,
   parseString,
+  planLimitExceeded,
   success,
 } from '../_shared';
 import { assertApiKeyHasAnyScope, assertApiKeyHasScope, resolveZybitActor } from '@/lib/auth/actor';
+import { checkPlanLimit } from '@/lib/billing/checkPlanLimit';
 
 export async function POST(request: Request) {
   try {
@@ -39,6 +41,11 @@ export async function POST(request: Request) {
     }
     const scopeErr = assertApiKeyHasScope(actorResult.actor, 'integrations:manage');
     if (scopeErr) return scopeErr;
+
+    const limit = await checkPlanLimit(actorResult.actor.organizationId, 'sites');
+    if (!limit.allowed) {
+      return planLimitExceeded('sites', limit);
+    }
 
     const repository = createPhase1Repository();
     const site = {

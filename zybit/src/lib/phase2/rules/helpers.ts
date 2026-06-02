@@ -10,6 +10,38 @@ import type {
   Phase2SiteConfig,
 } from "@/lib/phase2/types";
 import type { CtaCandidate, PageSnapshot } from "@/lib/phase2/snapshots/types";
+import type { AuditFinding } from "./types";
+
+/**
+ * Lookup an evidence row by label and return its value as a string. Returns
+ * `null` when the label is absent. Used by `structuralPublicAuditCopy`
+ * rewrites that need to re-key off the rule's own evidence — keeps every
+ * rule's public-audit rewrite reading from a single shape of data.
+ */
+export function evidenceFromFinding(finding: AuditFinding, label: string): string | null {
+  const row = finding.evidence.find((e) => e.label === label);
+  return row ? String(row.value) : null;
+}
+
+/**
+ * Pick the visually-dominant non-disabled CTA. Visual weight desc,
+ * documentIndex asc as tiebreak. Returns null if there are no eligible CTAs.
+ * Shared across rules that annotate "the page's primary CTA."
+ */
+export function pickPrimaryCta(ctas: readonly CtaCandidate[]): CtaCandidate | null {
+  let best: CtaCandidate | null = null;
+  for (const cta of ctas) {
+    if (cta.disabled) continue;
+    if (
+      best === null ||
+      cta.visualWeight > best.visualWeight ||
+      (cta.visualWeight === best.visualWeight && cta.documentIndex < best.documentIndex)
+    ) {
+      best = cta;
+    }
+  }
+  return best;
+}
 
 /** Lowercase + collapse whitespace for fuzzy text matching. */
 export function normalizeText(s: string): string {
@@ -167,6 +199,16 @@ export function quote(text: string | null | undefined): string {
   const trimmed = text.trim();
   if (trimmed.length === 0) return "(unnamed CTA)";
   return `\`${trimmed}\``;
+}
+
+/**
+ * Render a page path for prospect-facing copy. The root path `/` reads as a
+ * bare slash to a non-technical reader, so show "your homepage" instead.
+ * Other paths are left as-is (the user only ever asked about the slash).
+ */
+export function displayPath(pathRef: string | null | undefined): string {
+  if (!pathRef || pathRef === '/') return 'your homepage';
+  return pathRef;
 }
 
 /** Cap a number to N decimal places, returned as a number. */

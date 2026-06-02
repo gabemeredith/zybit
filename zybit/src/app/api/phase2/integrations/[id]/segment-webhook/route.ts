@@ -14,7 +14,7 @@ import {
   assertSegmentProvider,
   mapSegmentMessageToCanonical,
   resolveSegmentWebhookSecret,
-  unwrapSegmentPayload,
+  guardSegmentBatch,
   SegmentConnectorError,
 } from '@/lib/phase2/connectors/segment';
 import type { CanonicalEventInput } from '@/lib/phase2/types';
@@ -127,7 +127,15 @@ export async function POST(request: Request, context: RouteCtx) {
     const parsed = await parseJsonObject(request);
     if (!parsed.ok) return badRequest(parsed.message);
 
-    const rawItems = unwrapSegmentPayload(parsed.value);
+    // Schema guard (Zybit-137): reject malformed/oversized batches up front.
+    const guard = guardSegmentBatch(parsed.value);
+    if (!guard.ok) {
+      return NextResponse.json(
+        { success: false, error: { code: guard.code, message: guard.message } },
+        { status: guard.code === 'SEGMENT_BATCH_TOO_LARGE' ? 413 : 400 },
+      );
+    }
+    const rawItems = guard.items;
     const inputs = rawItems
       .map((msg) =>
         mapSegmentMessageToCanonical(msg, { siteId: integration.siteId })

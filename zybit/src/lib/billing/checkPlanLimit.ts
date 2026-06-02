@@ -14,16 +14,17 @@ export interface PlanLimitResult {
   plan: string;
 }
 
-// Simple in-memory cache with TTL for org plan data
-const planCache = new Map<string, { plan: PlanId; expiresAt: number }>();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
+/**
+ * Read the org's current plan from Postgres. Deliberately uncached: the
+ * Stripe webhook that writes `organizations.plan` runs in a different
+ * serverless instance than the request that enforces the limit, so an
+ * in-process cache would serve a stale plan for minutes after an
+ * upgrade/downgrade. This is a single indexed PK lookup, hit only at
+ * enforcement boundaries (site/experiment creation, the usage endpoint),
+ * not a hot path. Unknown/garbage plan values fail safe to `starter`
+ * (the most restrictive tier).
+ */
 async function getOrgPlan(orgId: string): Promise<PlanId> {
-  const cached = planCache.get(orgId);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.plan;
-  }
-
   const db = getDb();
   const [org] = await db
     .select({ plan: organizations.plan })
@@ -31,14 +32,7 @@ async function getOrgPlan(orgId: string): Promise<PlanId> {
     .where(eq(organizations.id, orgId))
     .limit(1);
 
-  const plan = org && isValidPlanId(org.plan) ? org.plan : 'starter';
-  planCache.set(orgId, { plan, expiresAt: Date.now() + CACHE_TTL_MS });
-  return plan;
-}
-
-/** Clear cached plan for an org (call after plan changes). */
-export function invalidatePlanCache(orgId: string): void {
-  planCache.delete(orgId);
+  return org && isValidPlanId(org.plan) ? org.plan : 'starter';
 }
 
 function currentPeriod(): string {

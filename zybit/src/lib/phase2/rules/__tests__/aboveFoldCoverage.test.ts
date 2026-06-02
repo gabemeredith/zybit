@@ -72,7 +72,7 @@ describe('aboveFoldCoverage rule', () => {
     const ctxWithConfig = makeContext(ctx.events, ctx.pageSnapshots, config);
     const [f] = aboveFoldCoverage.evaluate(ctxWithConfig);
     expect(f.impactEstimate).toBeDefined();
-    expect(f.impactEstimate!.unit).toBe('USD');
+    expect(f.impactEstimate!.unit).toBe('conversions');
     expect(f.impactEstimate!.value).toBeGreaterThan(0);
   });
 
@@ -125,5 +125,68 @@ describe('aboveFoldCoverage rule', () => {
     const snapshot = makeSnapshot(PATH, [cta]);
     const ctx = makeContext(events, [snapshot]);
     expect(aboveFoldCoverage.evaluate(ctx)).toEqual([]);
+  });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { ctaRef?: string }) {
+      return {
+        id: 'above-fold-coverage:/pricing',
+        ruleId: 'above-fold-coverage',
+        category: 'fold' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: PATH,
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('outlines the below-fold CTA + captions it + inserts a "move here" placeholder above the first heading', () => {
+      const cta = { ...makeCta('Get started', 0.85, 'below', 'cta-x'), cssSelector: 'button.get-started' };
+      const out = aboveFoldCoverage.proposeAnnotations!(
+        makeFinding({ ctaRef: 'cta-x' }),
+        { snapshot: makeSnapshot(PATH, [cta], [{ level: 1, text: 'Pricing' }]), designTokens: null },
+      );
+      // 1: outline current CTA (red); 2-3: caption-insert + caption-css;
+      // 4-5: missing-placeholder-insert + missing-css above the H1.
+      expect(out).toHaveLength(5);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.get-started' });
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+      expect(out[3]).toMatchObject({ type: 'element-insert', position: 'before', selector: 'h1:nth-of-type(1)' });
+      expect(out[4]).toMatchObject({ type: 'css-inject', selector: '.zybit-anno-fold-target' });
+    });
+
+    it('falls back to outline + caption only (2-3 mods) when the page has no headings', () => {
+      const cta = { ...makeCta('Get started', 0.85, 'below', 'cta-x'), cssSelector: 'button.get-started' };
+      const out = aboveFoldCoverage.proposeAnnotations!(
+        makeFinding({ ctaRef: 'cta-x' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toHaveLength(3);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'button.get-started' });
+    });
+
+    it('returns [] when ctaRef present but the CTA has no cssSelector', () => {
+      const cta = makeCta('Get started', 0.85, 'below', 'cta-x');
+      expect(cta.cssSelector).toBeNull();
+      const out = aboveFoldCoverage.proposeAnnotations!(
+        makeFinding({ ctaRef: 'cta-x' }),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
+
+    it('returns [] when refs.ctaRef is absent', () => {
+      const cta = { ...makeCta('Get started', 0.85, 'below', 'cta-x'), cssSelector: 'button.x' };
+      const out = aboveFoldCoverage.proposeAnnotations!(
+        makeFinding({}),
+        { snapshot: makeSnapshot(PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
   });
 });

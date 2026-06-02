@@ -7,7 +7,7 @@ import { launchExperimentAction } from "@/app/app/findings/[id]/experiment/actio
 interface ExperimentBrief {
   experimentName: string;
   selector: string;
-  changeType: "copy" | "style" | "hide";
+  changeType: "copy" | "style" | "hide" | "insert";
   newValue: string;
   variantDescription: string;
   primaryMetric: string;
@@ -19,7 +19,14 @@ const CHANGE_TYPE_LABELS: Record<ExperimentBrief["changeType"], string> = {
   copy: "Change text copy",
   style: "Swap CSS classes",
   hide: "Hide element",
+  insert: "Add a section",
 };
+
+function valueLabelFor(changeType: ExperimentBrief["changeType"]): string {
+  if (changeType === "copy") return "Variant copy";
+  if (changeType === "insert") return "New section";
+  return "CSS classes";
+}
 
 function toBriefText(brief: ExperimentBrief): string {
   const lines = [
@@ -28,18 +35,17 @@ function toBriefText(brief: ExperimentBrief): string {
     `**Change:** ${CHANGE_TYPE_LABELS[brief.changeType]}`,
   ];
   if (brief.changeType !== "hide" && brief.newValue) {
-    const valueLabel = brief.changeType === "copy" ? "Variant copy" : "CSS classes";
-    lines.push(`**${valueLabel}:** ${brief.newValue}`);
+    lines.push(`**${valueLabelFor(brief.changeType)}:** ${brief.newValue}`);
   }
   lines.push(
     `**Variant B:** ${brief.variantDescription}`,
     `**Primary metric:** ${brief.primaryMetric}`,
-    `**Hypothesis:** ${brief.hypothesis ?? "—"}`,
+    `**Hypothesis:** ${brief.hypothesis ?? "(none)"}`,
   );
   return lines.join("\n");
 }
 
-const SECTION_LABEL = "text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-1";
+const SECTION_LABEL = "brut-label mb-1";
 
 function BriefRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -59,6 +65,17 @@ export default function ExperimentBriefCard({
 }) {
   const [copied, setCopied] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [overlaps, setOverlaps] = useState<Array<{ id: string; name: string }> | null>(null);
+  const [spaUrl, setSpaUrl] = useState<string | null>(null);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  // Track which warnings the PM has actually acknowledged. The overlap and SPA
+  // gates are independent and may surface in sequence; each "Launch anyway"
+  // must carry forward the *other* gate's real ack state. Overlap acks are
+  // tracked by experiment id, not a boolean — acknowledging "skip overlaps"
+  // wholesale would miss an experiment that starts after the PM acknowledged
+  // the original set (e.g. while a follow-up SPA warning is on screen).
+  const [acknowledgedOverlapIds, setAcknowledgedOverlapIds] = useState<string[]>([]);
+  const [spaAcked, setSpaAcked] = useState(false);
 
   function handleCopy() {
     navigator.clipboard.writeText(toBriefText(brief));
@@ -66,9 +83,47 @@ export default function ExperimentBriefCard({
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function handleLaunch(overlapIds: string[] = [], acknowledgeSpa = false) {
+    setLaunching(true);
+    setLaunchError(null);
+    try {
+      const result = await launchExperimentAction(findingId, overlapIds, acknowledgeSpa);
+      if (result?.type === "overlap_warning") {
+        setSpaUrl(null);
+        setOverlaps(result.overlaps);
+      } else if (result?.type === "spa_warning") {
+        setOverlaps(null);
+        setSpaUrl(result.targetUrl);
+      } else if (result?.type === "free_experiment_used") {
+        setLaunchError("You've used your free experiment. Upgrade to launch more.");
+      } else if (result?.type === "validation_error") {
+        setLaunchError(`${result.message} Edit the brief to fix.`);
+      }
+    } finally {
+      setLaunching(false);
+    }
+  }
+
+  function acknowledgeOverlapAndLaunch() {
+    // Acknowledge exactly the overlaps currently shown — not a blanket skip —
+    // so an experiment that starts later is still surfaced. The server re-runs
+    // the SPA check unless it was already acknowledged.
+    const ackedIds = overlaps?.map((o) => o.id) ?? [];
+    setAcknowledgedOverlapIds(ackedIds);
+    handleLaunch(ackedIds, spaAcked);
+  }
+
+  function acknowledgeSpaAndLaunch() {
+    setSpaAcked(true);
+    // Carry forward only the overlaps actually acknowledged. The server re-runs
+    // the overlap check and re-warns if a new experiment started while the SPA
+    // warning was on screen.
+    handleLaunch(acknowledgedOverlapIds, true);
+  }
+
   return (
-    <div className="bg-white border border-black/[0.05] rounded-2xl p-6">
-      <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-5">
+    <div className="brut-card p-6">
+      <div className="brut-label mb-5">
         Experiment brief
       </div>
 
@@ -82,16 +137,16 @@ export default function ExperimentBriefCard({
 
         <div>
           <div className={SECTION_LABEL}>Change type</div>
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-black/[0.04] text-[#6B6B6B]">
+          <span className="brut-badge">
             {CHANGE_TYPE_LABELS[brief.changeType]}
           </span>
         </div>
 
         {brief.changeType !== "hide" && brief.newValue && (
           <BriefRow
-            label={brief.changeType === "copy" ? "Variant copy" : "CSS classes"}
+            label={valueLabelFor(brief.changeType)}
             value={brief.newValue}
-            mono={brief.changeType === "style"}
+            mono={brief.changeType === "style" || brief.changeType === "insert"}
           />
         )}
 
@@ -103,35 +158,119 @@ export default function ExperimentBriefCard({
         )}
       </div>
 
-      <div className="flex items-center gap-3 pt-4 border-t border-black/[0.04]">
+      {/* Overlap warning — shown before the user acknowledges */}
+      {overlaps && (
+        <div className="mb-4 bg-amber-50 border-l-4 border-amber-300 p-4">
+          <p className="text-sm font-bold text-amber-900 mb-1">
+            {overlaps.length === 1
+              ? "1 experiment is already running on this site."
+              : `${overlaps.length} experiments are already running on this site.`}
+          </p>
+          <ul className="text-sm text-amber-800 space-y-0.5 mb-3">
+            {overlaps.map((o) => (
+              <li key={o.id} className="flex items-center gap-1.5">
+                <span className="w-1 h-1 bg-amber-400 shrink-0" />
+                <Link
+                  href={`/app/experiments/${o.id}`}
+                  className="underline underline-offset-2 hover:text-amber-900 transition-colors"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {o.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-amber-700 mb-3">
+            Concurrent experiments split traffic and can confound results. Launch only if you
+            intentionally want to run them in parallel.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={launching}
+              onClick={acknowledgeOverlapAndLaunch}
+              className="bg-amber-800 text-white px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
+            >
+              {launching ? "Launching…" : "Launch anyway"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOverlaps(null)}
+              className="text-sm text-amber-700 hover:text-amber-900 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* SPA-shell warning (Zybit-123) — shown before the user acknowledges */}
+      {spaUrl && (
+        <div className="mb-4 bg-amber-50 border-l-4 border-amber-300 p-4">
+          <p className="text-sm font-bold text-amber-900 mb-1">
+            This page appears to render client-side.
+          </p>
+          <p className="text-xs text-amber-700 mb-2 break-all font-mono">{spaUrl}</p>
+          <p className="text-xs text-amber-700 mb-3">
+            Zybit applies variant changes to the page&apos;s server-rendered HTML. On a
+            client-side-rendered page the target element may not exist yet, so the variant
+            could render identical to control — and the experiment would record no real
+            difference. Launch only if your selector targets an element present in the
+            initial HTML.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={launching}
+              onClick={acknowledgeSpaAndLaunch}
+              className="bg-amber-800 text-white px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
+            >
+              {launching ? "Launching…" : "Launch anyway"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSpaUrl(null)}
+              className="text-sm text-amber-700 hover:text-amber-900 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {launchError && (
+        <div className="mb-4 bg-red-50 border-l-4 border-red-500 p-4">
+          <p className="text-sm text-red-700">{launchError}</p>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 pt-4 border-t-[1.5px] border-black/[0.08]">
         <button
           type="button"
           onClick={handleCopy}
-          className={`px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] rounded-lg transition-all border ${
-            copied
-              ? "text-emerald-600 border-emerald-200 bg-emerald-50"
-              : "bg-white border-black/[0.1] text-[#6B6B6B] hover:text-[#111] hover:border-black/[0.2]"
+          className={`brut-action-ghost ${
+            copied ? "!border-emerald-500 !text-emerald-600 hover:!bg-emerald-50 hover:!text-emerald-600" : ""
           }`}
         >
           {copied ? "Copied" : "Copy brief"}
         </button>
         <Link
           href={`/app/findings/${findingId}/experiment`}
-          className="px-4 py-2 text-sm font-bold uppercase tracking-[0.08em] rounded-lg bg-white border border-black/[0.1] text-[#6B6B6B] hover:text-[#111] hover:border-black/[0.2] transition-all"
+          className="brut-action-ghost"
         >
           Edit
         </Link>
-        <button
-          type="button"
-          disabled={launching}
-          onClick={async () => {
-            setLaunching(true);
-            await launchExperimentAction(findingId);
-          }}
-          className="ml-auto bg-[#111] text-[#FAFAF8] px-5 py-2.5 text-sm font-bold uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
-        >
-          {launching ? "Launching…" : "Launch experiment"}
-        </button>
+        {!overlaps && !spaUrl && (
+          <button
+            type="button"
+            disabled={launching}
+            onClick={() => handleLaunch(acknowledgedOverlapIds, spaAcked)}
+            className="brut-action ml-auto"
+          >
+            {launching ? "Launching…" : "Launch experiment"}
+          </button>
+        )}
       </div>
     </div>
   );

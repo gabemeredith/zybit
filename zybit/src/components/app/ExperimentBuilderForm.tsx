@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { saveExperimentBriefAction } from "@/app/app/findings/[id]/experiment/actions";
-import type { ChangeType, SelectorSuggestion } from "@/app/app/findings/[id]/experiment/page";
+import type { ChangeType, InsertPosition, SelectorSuggestion } from "@/app/app/findings/[id]/experiment/page";
+import type { CssSystem } from "@/lib/phase2/snapshots/cssSystemDetector";
+import { copyHints } from "@/lib/experiments/copyHint";
+import AiAdvisorPanel, { type AppliedProposal } from "./AiAdvisorPanel";
 
 interface FormDefaults {
   experimentName: string;
@@ -12,24 +15,124 @@ interface FormDefaults {
   variantDescription: string;
   primaryMetric: string;
   hypothesis: string;
+  insertPosition: InsertPosition;
 }
 
 interface Props {
   findingId: string;
   defaults: FormDefaults;
   suggestions: SelectorSuggestion[];
+  cssSystem?: CssSystem;
+}
+
+const CSS_SYSTEM_HINTS: Partial<Record<CssSystem, { label: string; example: string }>> = {
+  tailwind: {
+    label: "Tailwind CSS detected",
+    example: "Use utility classes like bg-blue-600 text-white font-bold px-4 py-2",
+  },
+  "styled-components": {
+    label: "styled-components detected",
+    example: "Class names are hashed at runtime. Use data-zybit-ref selectors from the suggestions above.",
+  },
+  emotion: {
+    label: "Emotion CSS detected",
+    example: "Class names are generated at runtime. Use data-zybit-ref selectors from the suggestions above.",
+  },
+  "css-modules": {
+    label: "CSS Modules detected",
+    example: "Class names are hashed per-build. Prefer element-level selectors like button or h1.",
+  },
+  bootstrap: {
+    label: "Bootstrap detected",
+    example: "Use Bootstrap utility classes like btn-primary d-flex justify-content-center",
+  },
+};
+
+type ValidateStatus = 'ok' | 'invalid_selector' | 'no_snapshot' | 'empty';
+interface ValidateResult {
+  count: number | null;
+  status: ValidateStatus;
 }
 
 const CHANGE_TYPE_OPTIONS: Array<{ value: ChangeType; label: string; hint: string }> = [
   { value: "copy", label: "Change text copy", hint: "Replaces element text content" },
   { value: "style", label: "Swap CSS classes", hint: "Adds/removes class names" },
   { value: "hide", label: "Hide element", hint: "Sets display: none on element" },
+  { value: "insert", label: "Add new section", hint: "Splices a new block of HTML next to the anchor element" },
+];
+
+const INSERT_POSITION_OPTIONS: Array<{ value: InsertPosition; label: string; hint: string }> = [
+  { value: "before", label: "Before anchor", hint: "Insert as the previous sibling" },
+  { value: "prepend", label: "Inside, at top", hint: "Insert as the first child of the anchor" },
+  { value: "append", label: "Inside, at bottom", hint: "Insert as the last child of the anchor" },
+  { value: "after", label: "After anchor", hint: "Insert as the next sibling" },
 ];
 
 const INPUT_CLASS =
-  "w-full border border-black/[0.1] rounded-lg px-3 py-2 text-sm text-[#111] bg-white focus:outline-none focus:ring-1 focus:ring-black/[0.2] placeholder-[#9B9B9B]";
+  "brut-input px-3 py-2 text-sm text-[#111] placeholder-[#9B9B9B]";
 
-const SECTION_LABEL = "block text-[11px] font-bold uppercase tracking-[0.15em] text-[#6B6B6B] mb-2";
+const SECTION_LABEL = "brut-label mb-2";
+
+function SelectorBadge({ result, loading }: { result: ValidateResult | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <span className="brut-badge bg-black/[0.04] text-[#9B9B9B]">
+        <span className="w-1.5 h-1.5 bg-[#9B9B9B] animate-pulse" />
+        Checking…
+      </span>
+    );
+  }
+  if (!result || result.status === 'empty') return null;
+  if (result.status === 'invalid_selector') {
+    return (
+      <span className="brut-badge bg-[#FF4A5A] text-[#111]">
+        Invalid selector
+      </span>
+    );
+  }
+  if (result.status === 'no_snapshot') {
+    return (
+      <span className="brut-badge bg-black/[0.04] text-[#9B9B9B]">
+        No snapshot to validate against
+      </span>
+    );
+  }
+  const count = result.count ?? 0;
+  if (count === 0) {
+    return (
+      <span className="brut-badge bg-[#FF4A5A] text-[#111]">
+        <span className="w-1.5 h-1.5 bg-[#111]" />
+        No matches
+      </span>
+    );
+  }
+  if (count === 1) {
+    return (
+      <span className="brut-badge bg-emerald-300 text-[#111]">
+        <span className="w-1.5 h-1.5 bg-[#111]" />
+        1 match
+      </span>
+    );
+  }
+  const MULTI_MATCH_STYLES = {
+    neutral: {
+      badge: "bg-black/[0.04] text-[#6B6B6B]",
+      dot: "w-1.5 h-1.5 bg-[#9B9B9B]",
+    },
+    red: {
+      badge: "bg-red-50 text-red-700",
+      dot: "w-1.5 h-1.5 bg-red-400",
+    },
+  } as const;
+  const variant = count <= 5 ? "neutral" : "red";
+  const s = MULTI_MATCH_STYLES[variant];
+  return (
+    <span className={`brut-badge ${s.badge}`}>
+      <span className={s.dot} />
+      {count} matches{count > 5 ? " (too broad?)" : ""}
+    </span>
+  );
+}
 
 function SuggestionsDropdown({
   suggestions,
@@ -52,22 +155,42 @@ function SuggestionsDropdown({
 
   if (suggestions.length === 0) {
     return (
-      <div ref={ref} className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/[0.1] rounded-xl shadow-lg z-20 p-3">
-        <p className="text-xs text-[#9B9B9B]">No snapshot elements available — type a selector manually.</p>
+      <div ref={ref} className="absolute top-full left-0 right-0 mt-1 bg-white border-[1.5px] border-[#111] shadow-[4px_4px_0_#111] z-20 p-3">
+        <p className="text-xs text-[#9B9B9B]">No snapshot elements available. Type a selector manually.</p>
       </div>
     );
   }
 
   return (
-    <div ref={ref} className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/[0.1] rounded-xl shadow-lg z-20 max-h-52 overflow-y-auto">
+    <div ref={ref} className="absolute top-full left-0 right-0 mt-1 bg-white border-[1.5px] border-[#111] shadow-[4px_4px_0_#111] z-20 max-h-52 overflow-y-auto">
       {suggestions.map((s, i) => (
         <button
           key={i}
           type="button"
           onClick={() => { onSelect(s.selector); onClose(); }}
-          className="w-full text-left px-3 py-2.5 hover:bg-black/[0.03] transition-colors border-b border-black/[0.04] last:border-0"
+          className="w-full text-left px-3 py-2.5 hover:bg-black/[0.03] transition-colors border-b-[1.5px] border-black/[0.08] last:border-0"
         >
-          <div className="text-xs font-medium text-[#111] truncate">{s.label}</div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-[#111] truncate">{s.label}</span>
+            <span
+              className={`shrink-0 ml-auto brut-badge ${
+                s.stability === "stable"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : s.stability === "fragile"
+                    ? "bg-red-50 text-red-700"
+                    : "bg-black/[0.04] text-[#9B9B9B]"
+              }`}
+              title={
+                s.stability === "stable"
+                  ? "Robust selector (survives most redesigns)"
+                  : s.stability === "fragile"
+                    ? "Positional selector (breaks if markup order changes)"
+                    : "Moderately stable selector"
+              }
+            >
+              {s.stability}
+            </span>
+          </div>
           <div className="font-mono text-[10px] text-[#9B9B9B] truncate mt-0.5">{s.selector}</div>
         </button>
       ))}
@@ -75,22 +198,93 @@ function SuggestionsDropdown({
   );
 }
 
-export default function ExperimentBuilderForm({ findingId, defaults, suggestions }: Props) {
+export default function ExperimentBuilderForm({ findingId, defaults, suggestions, cssSystem }: Props) {
   const [experimentName, setExperimentName] = useState(defaults.experimentName);
   const [selector, setSelector] = useState(defaults.selector);
   const [changeType, setChangeType] = useState<ChangeType>(defaults.changeType);
   const [newValue, setNewValue] = useState(defaults.newValue);
+  const [insertPosition, setInsertPosition] = useState<InsertPosition>(defaults.insertPosition);
   const [variantDescription, setVariantDescription] = useState(defaults.variantDescription);
   const [primaryMetric, setPrimaryMetric] = useState(defaults.primaryMetric);
   const [hypothesis, setHypothesis] = useState(defaults.hypothesis);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
+  const [validateLoading, setValidateLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const validateSelector = useCallback(async (sel: string) => {
+    if (!sel.trim()) {
+      setValidateResult(null);
+      setValidateLoading(false);
+      return;
+    }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setValidateLoading(true);
+    try {
+      const res = await fetch('/api/selector-validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ findingId, selector: sel }),
+        signal: controller.signal,
+      });
+      if (res.ok) {
+        const data = await res.json() as ValidateResult;
+        setValidateResult(data);
+      }
+    } catch {
+      // Network error or abort — silently suppress, don't block the form
+    } finally {
+      if (!controller.signal.aborted) setValidateLoading(false);
+    }
+  }, [findingId]);
+
+  function handleSelectorChange(val: string) {
+    setSelector(val);
+    setValidateLoading(!!val.trim());
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => validateSelector(val), 500);
+  }
+
+  function applyAiProposal(proposal: AppliedProposal) {
+    setChangeType(proposal.changeType);
+    setNewValue(proposal.newValue);
+    if (proposal.insertPosition) setInsertPosition(proposal.insertPosition);
+    handleSelectorChange(proposal.selector);
+  }
+
+  // Validate initial selector on mount (deferred so setState runs outside effect body)
+  useEffect(() => {
+    if (defaults.selector) {
+      const t = setTimeout(() => validateSelector(defaults.selector), 0);
+      return () => {
+        clearTimeout(t);
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+      };
+    }
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Block submit when the validator has confirmed the selector matches nothing
+  // or is malformed. `no_snapshot` is *not* blocking — we can't verify without
+  // a snapshot, so trust the PM. `null` (validator hasn't returned yet) is
+  // also not blocking; the server-side check is the backstop.
+  const selectorBlocked =
+    validateResult?.status === 'invalid_selector' ||
+    (validateResult?.status === 'ok' && (validateResult.count ?? 0) === 0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (selectorBlocked) return;
+    setServerError(null);
     setSaving(true);
     try {
-      await saveExperimentBriefAction({
+      const result = await saveExperimentBriefAction({
         findingId,
         experimentName,
         selector,
@@ -99,7 +293,12 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
         variantDescription,
         primaryMetric,
         hypothesis,
+        insertPosition: changeType === "insert" ? insertPosition : undefined,
       });
+      if (result?.type === "validation_error") {
+        setServerError(result.message);
+        return;
+      }
     } finally {
       setSaving(false);
     }
@@ -107,6 +306,9 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* AI variant advisor (Zybit-145) */}
+      <AiAdvisorPanel findingId={findingId} onApply={applyAiProposal} />
+
       {/* Experiment name */}
       <div>
         <label className={SECTION_LABEL} htmlFor="experiment-name">
@@ -125,24 +327,29 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
 
       {/* CSS selector */}
       <div>
-        <label className={SECTION_LABEL} htmlFor="selector">
-          CSS selector
-        </label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="brut-label" htmlFor="selector">
+            CSS selector
+          </label>
+          <SelectorBadge result={validateResult} loading={validateLoading} />
+        </div>
         <div className="relative">
           <div className="flex gap-2">
             <input
               id="selector"
               type="text"
               value={selector}
-              onChange={(e) => setSelector(e.target.value)}
+              onChange={(e) => handleSelectorChange(e.target.value)}
               placeholder="e.g. .hero h1, button.btn-primary"
+              required
+              aria-invalid={selectorBlocked}
               className={`${INPUT_CLASS} font-mono`}
             />
             {suggestions.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowSuggestions((v) => !v)}
-                className="shrink-0 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.1em] border border-black/[0.1] rounded-lg text-[#6B6B6B] hover:text-[#111] hover:border-black/[0.2] transition-colors bg-white"
+                className="brut-action-ghost shrink-0 px-3 py-2"
               >
                 Suggest
               </button>
@@ -151,13 +358,13 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
           {showSuggestions && (
             <SuggestionsDropdown
               suggestions={suggestions}
-              onSelect={setSelector}
+              onSelect={(sel) => { handleSelectorChange(sel); setShowSuggestions(false); }}
               onClose={() => setShowSuggestions(false)}
             />
           )}
         </div>
         <p className="text-[11px] text-[#9B9B9B] mt-1.5">
-          Targets the element the script modifies at runtime — no code changes needed
+          Targets the element the script modifies at runtime (no code changes needed)
         </p>
       </div>
 
@@ -171,7 +378,7 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
               type="button"
               title={opt.hint}
               onClick={() => setChangeType(opt.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 text-sm font-medium transition-colors ${
                 changeType === opt.value
                   ? "bg-[#111] text-[#FAFAF8]"
                   : "bg-black/[0.04] text-[#6B6B6B] hover:bg-black/[0.07]"
@@ -186,29 +393,109 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
         </p>
       </div>
 
+      {/* CSS system hint — shown when "style" change type is selected */}
+      {changeType === "style" && cssSystem && CSS_SYSTEM_HINTS[cssSystem] && (
+        <div className="bg-sky-50 border-l-4 border-sky-500 px-4 py-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-sky-700 mb-0.5">
+            {CSS_SYSTEM_HINTS[cssSystem]!.label}
+          </p>
+          <p className="text-xs text-sky-800 leading-relaxed">
+            {CSS_SYSTEM_HINTS[cssSystem]!.example}
+          </p>
+        </div>
+      )}
+
+      {/* Insert position — only for the "insert" change type */}
+      {changeType === "insert" && (
+        <div>
+          <span className={SECTION_LABEL}>Where to insert</span>
+          <div className="flex flex-wrap gap-2">
+            {INSERT_POSITION_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                title={opt.hint}
+                onClick={() => setInsertPosition(opt.value)}
+                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                  insertPosition === opt.value
+                    ? "bg-[#111] text-[#FAFAF8]"
+                    : "bg-black/[0.04] text-[#6B6B6B] hover:bg-black/[0.07]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-[#9B9B9B] mt-1.5">
+            {INSERT_POSITION_OPTIONS.find((o) => o.value === insertPosition)?.hint}
+          </p>
+        </div>
+      )}
+
       {/* New value — hidden for "hide" type */}
       {changeType !== "hide" && (
         <div>
           <label className={SECTION_LABEL} htmlFor="new-value">
-            {changeType === "copy" ? "Variant copy" : "CSS classes to apply"}
+            {changeType === "copy"
+              ? "Variant copy"
+              : changeType === "insert"
+                ? "New section HTML"
+                : "CSS classes to apply"}
           </label>
-          <input
-            id="new-value"
-            type="text"
-            value={newValue}
-            onChange={(e) => setNewValue(e.target.value)}
-            placeholder={
-              changeType === "copy"
-                ? "e.g. Get started — free"
-                : "e.g. bg-blue-600 text-white font-bold"
-            }
-            className={changeType === "style" ? `${INPUT_CLASS} font-mono` : INPUT_CLASS}
-          />
+          {changeType === "insert" ? (
+            <textarea
+              id="new-value"
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              placeholder={
+                '<section class="quick-answer">\n  <h2>Looking for checking accounts?</h2>\n  <p>Compare options and apply in 5 minutes.</p>\n  <a href="#apply">See accounts</a>\n</section>'
+              }
+              required
+              rows={8}
+              className={`${INPUT_CLASS} font-mono resize-y`}
+            />
+          ) : (
+            <input
+              id="new-value"
+              type="text"
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              placeholder={
+                changeType === "copy"
+                  ? "e.g. Get started, free"
+                  : "e.g. bg-blue-600 text-white font-bold"
+              }
+              required
+              className={changeType === "style" ? `${INPUT_CLASS} font-mono` : INPUT_CLASS}
+            />
+          )}
           <p className="text-[11px] text-[#9B9B9B] mt-1.5">
             {changeType === "copy"
               ? "The replacement text the script writes into the element"
-              : "Space-separated class names added to the element in the variant"}
+              : changeType === "insert"
+                ? "Allowed tags: section, nav, div, h1-h6, p, ul/ol/li, a, button, img, span, strong, em. Scripts, styles, iframes, and event handlers are stripped before the markup ships to your visitors."
+                : "Space-separated class names added to the element in the variant"}
           </p>
+          {/* Copy-quality hints (Zybit-125) — advisory, deterministic, non-blocking */}
+          {changeType === "copy" && (() => {
+            const hints = copyHints(newValue);
+            if (hints.length === 0) return null;
+            return (
+              <ul className="mt-2 space-y-1">
+                {hints.map((h, i) => (
+                  <li
+                    key={i}
+                    className={`flex items-start gap-1.5 text-[11px] ${
+                      h.level === "warn" ? "text-amber-700" : "text-[#6B6B6B]"
+                    }`}
+                  >
+                    <span className={`mt-1 h-1 w-1 shrink-0 ${h.level === "warn" ? "bg-amber-400" : "bg-[#C9C9C9]"}`} />
+                    {h.message}
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
         </div>
       )}
 
@@ -269,11 +556,21 @@ export default function ExperimentBuilderForm({ findingId, defaults, suggestions
       <div className="pt-2">
         <button
           type="submit"
-          disabled={saving}
-          className="bg-[#111] text-[#FAFAF8] px-5 py-2.5 font-bold text-sm uppercase tracking-[0.08em] hover:opacity-80 disabled:opacity-40 transition-opacity"
+          disabled={saving || selectorBlocked}
+          className="brut-action px-5 py-2.5 disabled:opacity-40"
         >
           {saving ? "Saving…" : "Save brief"}
         </button>
+        {selectorBlocked && (
+          <p className="text-[11px] text-red-600 mt-2">
+            {validateResult?.status === 'invalid_selector'
+              ? "Selector is malformed. Fix it before saving."
+              : "Selector matches no element on the snapshot. Pick one that does."}
+          </p>
+        )}
+        {serverError && (
+          <p className="text-[11px] text-red-600 mt-2">{serverError}</p>
+        )}
       </div>
     </form>
   );

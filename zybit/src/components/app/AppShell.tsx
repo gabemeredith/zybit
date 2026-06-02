@@ -42,6 +42,26 @@ function ExperimentsIcon() {
   );
 }
 
+function FlowIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="3" cy="8" r="2" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="13" cy="4" r="2" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="13" cy="12" r="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5 7.5C7 7.5 8 5 11 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5 8.5C7 8.5 8 11 11 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TryIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M9 1L2 9h5l-1 6 7-8H8l1-6z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -54,7 +74,9 @@ function SettingsIcon() {
 const NAV_ITEMS: NavItem[] = [
   { label: "Cockpit", href: "/app", icon: <GridIcon /> },
   { label: "Findings", href: "/app/findings", icon: <FindingsIcon /> },
+  { label: "Flow", href: "/app/flow", icon: <FlowIcon /> },
   { label: "Experiments", href: "/app/experiments", icon: <ExperimentsIcon /> },
+  { label: "Try free", href: "/app/try", icon: <TryIcon /> },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
@@ -65,10 +87,10 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   return (
     <Link
       href={item.href}
-      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+      className={`flex items-center gap-3 px-3 py-2.5 mono-text text-[11px] font-bold uppercase tracking-[0.12em] border-l-2 transition-colors ${
         active
-          ? "bg-white/10 text-white"
-          : "text-white/50 hover:text-white/80 hover:bg-white/[0.05]"
+          ? "border-l-white bg-white/[0.08] text-white"
+          : "border-l-transparent text-white/45 hover:text-white/85 hover:bg-white/[0.04]"
       }`}
     >
       <span className={active ? "text-white" : "text-white/40"}>{item.icon}</span>
@@ -88,17 +110,17 @@ export default function AppShell({ domain, children }: AppShellProps) {
   return (
     <div className="flex h-screen bg-[#FAFAF8] sans-text overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-52 shrink-0 flex flex-col bg-[#111] border-r border-white/[0.06]">
+      <aside className="w-52 shrink-0 flex flex-col bg-[#111] border-r-2 border-[#111]">
         {/* Logo + site */}
-        <div className="px-4 pt-5 pb-4 border-b border-white/[0.06]">
+        <div className="px-4 pt-5 pb-4 border-b border-white/[0.08]">
           <Link href="/app" className="flex items-center gap-2.5 mb-3">
             <Logo className="w-5 h-5 text-white" />
-            <span className="text-white font-bold text-base tracking-tight">Zybit</span>
+            <span className="text-white font-bold text-base tracking-tighter">Zybit</span>
           </Link>
           {domain && (
             <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-              <span className="text-white/40 text-xs truncate">{domain}</span>
+              <span className="w-1.5 h-1.5 bg-emerald-400 shrink-0" />
+              <span className="mono-text text-white/45 text-[11px] truncate">{domain}</span>
             </div>
           )}
         </div>
@@ -111,14 +133,14 @@ export default function AppShell({ domain, children }: AppShellProps) {
         </nav>
 
         {/* Bottom nav */}
-        <div className="px-2 pb-4 pt-2 border-t border-white/[0.06] space-y-0.5">
+        <div className="px-2 pb-4 pt-2 border-t border-white/[0.08] space-y-0.5">
           {BOTTOM_NAV.map((item) => (
             <NavLink key={item.href} item={item} active={isActive(item.href)} />
           ))}
           <form action="/api/auth/sign-out" method="post" className="w-full">
             <button
               type="submit"
-              className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-medium text-white/50 hover:text-white/80 hover:bg-white/[0.05] transition-colors"
+              className="flex items-center gap-3 w-full px-3 py-2.5 border-l-2 border-l-transparent mono-text text-[11px] font-bold uppercase tracking-[0.12em] text-white/45 hover:text-white/85 hover:bg-white/[0.04] transition-colors"
             >
               <span className="text-white/40">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>

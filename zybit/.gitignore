@@ -47,3 +47,18 @@ PRD.full.md
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# lighthouse — cloned upstream OSS sites used as Phase 1 fixtures.
+# Manifests + patches under each site dir ARE tracked; the clones are not.
+/lighthouse/sites/*/
+!/lighthouse/sites/*/manifest.json
+!/lighthouse/sites/*/patches/
+!/lighthouse/sites/README.md
+.env.local
+
+# Layer B eval reports — run-specific, timestamped artifacts (the golden set
+# itself, evals/golden-sites.json, IS committed).
+/evals/out/
+
+# Lighthouse context-eval verdict store (local only)
+lighthouse/.eval-verdicts.json

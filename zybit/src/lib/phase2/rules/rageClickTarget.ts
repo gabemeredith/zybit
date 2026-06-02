@@ -7,8 +7,11 @@
  * its page rage-click it, the affordance is misleading — emit a finding.
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
 import type { CanonicalEvent } from "@/lib/phase2/types";
 
+import { ANNOTATION_HEAVY_COLOR } from "./annotationColors";
+import { annotationCaption, outlineMod } from "./annotationHelpers";
 import {
   clamp,
   formatCount,
@@ -19,12 +22,14 @@ import {
   readStringProp,
   sanitizeIdSegment,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const MIN_RAGE_CLICKS = 5;
@@ -45,6 +50,33 @@ export const rageClickTarget: AuditRule = {
   id: "rage-click-target",
   name: "Rage-click target cluster",
   category: "rage",
+  // Behavioral rule: needs real rage-click sessions; synthetic generator
+  // no longer fabricates them. Skipped on public audits.
+  publicAuditBehavior: 'empty',
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    // The rage target *is* the broken element — keep the red outline. Add a
+    // small caption so the PM immediately sees why it's flagged (visitors
+    // expected it to respond and it didn't), instead of having to read the
+    // finding body.
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    return [
+      outlineMod(cta.cssSelector, ANNOTATION_HEAVY_COLOR),
+      ...annotationCaption({
+        anchorSelector: cta.cssSelector,
+        position: 'after',
+        ruleClassName: 'zybit-anno-rage',
+        label: 'Visitors rage-click here — they expect it to respond and it doesn\'t',
+        color: ANNOTATION_HEAVY_COLOR,
+      }),
+    ];
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessionsByPath = countSessionsByPath(ctx.events);
@@ -118,7 +150,7 @@ function evaluateGroup(
     rageSessions.add(event.sessionId);
   }
   const rageRate = rageSessions.size / totalSessionsOnPage;
-  if (rageRate <= MIN_RAGE_RATE) return null;
+  if (rageRate <= calibratedFloor(ctx, "rage-click-target", MIN_RAGE_RATE)) return null;
 
   // Try to upgrade the label by matching a snapshot CTA — gives the
   // finding the page's actual button text instead of the property value.
@@ -186,7 +218,11 @@ function evaluateGroup(
 
   const idSlug =
     matchedRef ?? group.rageTargetRef ?? (sanitizeIdSegment(displayText) || "_");
-  const refsCtaRef = matchedRef ?? group.rageTargetRef ?? undefined;
+  // Only persist ctaRef when it resolved against snapshot.data.ctas — the
+  // event-side `rage_target_ref` lives in a different namespace and would
+  // mislead downstream consumers (e.g. the AI Advisor) that treat ctaRef
+  // as a snapshot-CTA reference.
+  const refsCtaRef = matchedRef ?? undefined;
 
   const impactEstimate = computeImpactEstimate({
     affectedRate: rageRate,

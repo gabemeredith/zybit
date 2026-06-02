@@ -14,7 +14,7 @@ Zybit is a single Next.js application deployed on Vercel. All domain logic runs 
 │                                                         │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐  │
 │  │ Dashboard │  │ API      │  │ Cron     │  │ Auth   │  │
-│  │ (React)  │  │ Routes   │  │ Jobs     │  │ (Clerk)│  │
+│  │ (React)  │  │ Routes   │  │ Jobs     │  │(Magic) │  │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────────┘  │
 │       │              │              │                    │
 │  ┌────┴──────────────┴──────────────┴──────────────┐    │
@@ -29,8 +29,8 @@ Zybit is a single Next.js application deployed on Vercel. All domain logic runs 
 │  │  ┌───────────┐  ┌────────────┐  ┌────────────┐  │    │
 │  │  │ Variant   │  │ Experiment │  │ Outcome    │  │    │
 │  │  │ Engine    │  │ Deployer   │  │ Tracker    │  │    │
-│  │  │ (Propose) │  │ (Test)     │  │ (Learn)    │  │    │
-│  │  │ NOT BUILT │  │ NOT BUILT  │  │ NOT BUILT  │  │    │
+│  │  │ (Propose) │  │ (Test)     │  │ (Measure)  │  │    │
+│  │  │   BUILT   │  │  PARTIAL   │  │   BUILT    │  │    │
 │  │  └───────────┘  └────────────┘  └────────────┘  │    │
 │  └──────────────────────────────────────────────────┘    │
 │                          │                               │
@@ -50,6 +50,12 @@ Zybit is a single Next.js application deployed on Vercel. All domain logic runs 
 
 ## What Exists (built, tested, working)
 
+> **For current build-state status (✅/⚠️/⬛), see [`../AGENTS.md`](../AGENTS.md)
+> — "Current build state."** This section is the **technical reference** —
+> per-component file paths, schema, and design decisions. The two are
+> complementary: AGENTS.md answers *"is X shipped?"*; this section answers
+> *"where in the codebase is X and how does it work?"*
+
 ### Understand — Page Audit (`src/lib/phase2/snapshots/`)
 
 Static HTML analysis. Fetches pages via HTTP, parses DOM structure.
@@ -60,8 +66,10 @@ Static HTML analysis. Fetches pages via HTTP, parses DOM structure.
 | Parser | `parser.ts` | Extracts headings, CTAs (buttons + links), forms, meta tags, landmarks |
 | Visual weight | `visualWeight.ts` | Scores element prominence from Tailwind class tokens (text-2xl, bg-primary, font-bold) |
 | Fold guess | `foldGuess.ts` | Estimates above/below fold from DOM position + landmark proximity |
+| Refresh cron | `refresh.ts` + `cron/refresh-snapshots/route.ts` | Daily 03:00 UTC re-fetch of the latest snapshot per pathRef; compares `contentHash` for HTML drift; cockpit surfaces `snapshots.staleDays` (amber > 7d). Distinct from `refresh-captures` (Playwright artifacts). (Zybit-023) |
+| Design token extractor | `tokenExtractor.ts` | Pure `extractDesignTokens(computedStyles, parser)` derives a compact token set (primary/secondary/accent colour, font family, type scale, border radius, spacing unit, CTA vocabulary) from captured computed styles. Co-written atomically into the design-snapshot row by `buildFullDesignSnapshot` in `designCapture.ts`. The AI Variant Advisor reads this as its design-system context. (Zybit-143) |
 
-**Limitation:** No JavaScript execution. SPAs render blank. Visual weight is heuristic (class token matching), not measured pixel positions. **SPA support is a prerequisite for any paid pilot** — the majority of B2B SaaS products are React/Vue/Next.js apps. The Browserless upgrade path is documented in "What Needs to Be Built" below.
+**Limitation:** SPA pages return blank HTTP responses. `fetcher.ts` checks `isSpaHtml()` and falls back to `runBrowserSnapshot()` via Browserless.io when a shell is detected (`snapshotMethod: 'browser'`). HTTP-only fallback when `BROWSERLESS_KEY` is absent. Visual weight is heuristic (class token matching), not measured pixel positions.
 
 ### Watch — Data Collection (`src/lib/phase2/connectors/`)
 
@@ -71,20 +79,147 @@ Event ingestion from customer analytics tools.
 |-----------|--------|--------|
 | PostHog | API pull (paginated, cursor-tracked, retry/backoff) | Working |
 | Segment | Webhook receiver | Working |
-| GA4 | — | Not built |
+| GA4 | API pull (Google Analytics Data API v1beta) | Built — service-account JWT + `runReport` pagination + cron. Aggregate-grain (Identify/Propose only, not joinable to assignments) |
 | Direct JS SDK | — | Not built |
 
 Events are normalized to a canonical schema (`CanonicalEvent v2`) with deduplication on `(siteId, source, sourceEventId)`.
 
 ### Identify — Audit Rules (`src/lib/phase2/rules/`)
 
-12 deterministic rules. Pure functions. Same input → same output.
+23 deterministic rules. Pure functions. Same input → same output.
 
 **Design rules (5):** hero-hierarchy-inversion, above-fold-coverage, rage-click-target, mobile-engagement-asymmetry, nav-dispersion
 
 **Pain rules (7):** form-abandonment, help-seeking-spike, hesitation-pattern, bounce-on-key-page, error-exposure, return-visit-thrash, cohort-pain-asymmetry
 
-Each finding includes: severity, confidence, priority score, structured evidence array, text prescription (what to change, why, variant description), and revenue impact estimate.
+**Flow rules (1):** flow-inter-step-dropoff (PRD Milestone 1) — identifies the mid-flow route with the highest session loss; only fires on nodes with inbound navigation edges (excludes pure landing pages); routed through Layer 2 calibration; emits a `flow-funnel` snapshot diagram.
+
+**Structural rules (7) — Layer E, snapshot-only, no behavioral events required:** heading-hierarchy-jump, form-label-missing, image-alt-text-missing, link-text-generic, missing-meta-description, missing-canonical-url, dead-click-target
+
+**AI copy critique rules (3) — Layer F, snapshot + capture-time Gemini call:** vague-claim-detected, proof-missing, cta-verb-mismatch. Pure deterministic functions over `snapshot.data.copyCritique` (validated structured output from `captureCopyCritique.ts`). `publicAuditBehavior: 'as-is'` — the rule's input is the customer's own copy, honest in both modes.
+
+Each finding includes: severity, confidence, priority score, structured evidence array, text prescription (what to change, why, variant description), conversion impact estimate, and (for the 9 rules that annotate the preview) a `proposeAnnotations(ctx, finding)` function whose output anchors each preview callout to the element the prescription is talking about — return-visit-thrash anchors a quick-answer placeholder above hero, help-seeking-spike anchors FAQ above the CTA, hesitation-pattern anchors a proof line above the CTA, above-fold-coverage shows the duplicate-CTA placement, bounce-on-key-page captions the first heading, etc. Dollar figures are intentionally absent — impact expressed as conversion counts to prevent fabricated revenue projections when site ARPU is not configured (revenue/ecommerce goal types now emit conversion counts, not currency amounts).
+
+#### Ground truth per rule family
+
+The audit rules enforce three different classes of "good design" with three
+different evidence standards. This matters because findings in the
+snapshot-only classes (Layers E + F) are general-web convention applied to
+HTML — defensible as lead-magnet polish, not as the differentiated product.
+The behavioral classes are the real product. See `DOCTRINE.md` §"The
+snapshot audit is the front door, not the product" for the strategic
+framing.
+
+**Layer E — accessibility & SEO (citable standards):**
+
+| Rule | Standard cited | Source |
+|------|----------------|--------|
+| `form-label-missing` | WCAG 2.1 AA — 1.3.1 Info and Relationships | [W3C WCAG 2.1](https://www.w3.org/TR/WCAG21/#info-and-relationships) |
+| `image-alt-text-missing` | WCAG 2.1 AA — 1.1.1 Non-text Content | [W3C WCAG 2.1](https://www.w3.org/TR/WCAG21/#non-text-content) |
+| `link-text-generic` | WCAG 2.1 AA — 2.4.4 Link Purpose (In Context) | [W3C WCAG 2.1](https://www.w3.org/TR/WCAG21/#link-purpose-in-context) |
+| `heading-hierarchy-jump` | WCAG-adjacent semantic structure + Google heading guidance | [WCAG 1.3.1](https://www.w3.org/TR/WCAG21/#info-and-relationships), [Google SEO Starter Guide — headings](https://developers.google.com/search/docs/fundamentals/seo-starter-guide) |
+| `missing-meta-description` | Google Search Central — snippet/meta description guidance | [Google Search Central](https://developers.google.com/search/docs/appearance/snippet) |
+| `missing-canonical-url` | Google Search Central — canonical URL guidance | [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/canonicalization) |
+| `dead-click-target` | HTML interactive-affordance hygiene (no formal spec, but obvious UX bug — `<a href="">` reloads the page, `href="#"` jumps to top) | HTML Living Standard — anchor element semantics |
+
+These rules are defensible against any reader: a screen-reader user
+*does* lose meaning when a form input has no label; Google *does*
+generate unpredictable SERP snippets when the meta description is
+missing. The standards are public and stable.
+
+**Layer F — copy / conversion (heuristic, vision-classified context):**
+
+| Rule | What it checks | Convention source |
+|------|---------------|-------------------|
+| `vague-claim-detected` | Hero specificity score < 0.4 (e.g. "Empower your team" → low; "Cut SOC2 audits from 80 hours to 6 hours" → high) | Conversion copywriting tradition — specificity beats abstraction. No formal standard. |
+| `proof-missing` | Zero proof signals (named logos, metrics, press, badges, testimonials, ratings) on `home` / `landing` / `pricing` pages | Cialdini-style social proof; widely-held conversion heuristic. No formal standard. |
+| `cta-verb-mismatch` | Primary CTA verb does not align with the vision-classified `pageType` (e.g. "Read more" on a pricing page) | Conversion copywriting — CTA verb must match buyer intent at that step. No formal standard. |
+
+Layer F rules are heuristics, not standards. They are honest because
+they critique the customer's *own* copy against the page-type the
+vision pass classified — they don't invent missing copy. But a PM
+cannot cite a W3C clause when defending one of these findings; the
+defense is "this pattern is widely-observed in conversion copywriting
+and we ran it against a Gemini structured-output critique of your own
+hero." Treat as advisory, not blocking.
+
+**Layer D + behavioral — grounded in the customer's own user data:**
+
+| Rule | What grounds it |
+|------|----------------|
+| `hero-hierarchy-inversion` | Compares visual weight (snapshot) to click distribution (behavioral). Fires when the visually heaviest CTA is *not* the most-clicked. The customer's own users decide. |
+| `above-fold-coverage` | Compares CTA position (snapshot) to scroll-depth distribution (behavioral). Fires when the only meaningful CTA is below the fold *and* most pageviews never scroll. |
+| `nav-dispersion` | Computes Gini coefficient over nav-click counts. The customer's own users decide whether the IA is focused or scattered. |
+| `rage-click-target`, `form-abandonment`, `hesitation-pattern`, `help-seeking-spike`, `bounce-on-key-page`, `error-exposure`, `return-visit-thrash`, `cohort-pain-asymmetry`, `mobile-engagement-asymmetry` | Pain rules — fire on observed user-event patterns (rage clicks, form-field abandonment, repeated FAQ visits, etc.). The behavior *is* the evidence. |
+| `flow-inter-step-dropoff` | Multi-step session-loss attribution from canonical events. The route with the worst conversion loss is identifiable from the customer's own sessions. |
+
+These are the most defensible class because they compare the site to
+its own users, not to a generic template. They cite no external
+standard because they need none — the evidence chain ends in the
+customer's own behavioral data.
+
+**Implication for product positioning:** "this page violates WCAG 2.4.4"
+is real but rarely a revenue-mover. "62% of your mobile pricing-page
+visitors abandon before reaching the CTA" is what closes deals. Build
+budget and PM attention should track the second class, not the first.
+
+### Flow-Graph Advisory (`src/lib/phase2/flow/`)
+
+Deterministic per-site route-transition graph derived from canonical events — the product-level complement to the page-level audit (PRD Milestone 1, all 5 scope items complete).
+
+| Component | File | What it does |
+|-----------|------|--------------|
+| Type contracts | `types.ts` | `FlowNode`, `FlowEdge`, `FlowGraph` — pure data shapes |
+| Route normalization | `normalizeRoute.ts` | Strips query/hash, collapses `:id` segments (digits/UUIDs/long hex) |
+| Derivation | `deriveFlowGraph.ts` | Groups events by session, collapses consecutive same-route arrivals, derives nodes + edges with outbound share; capped at 40 nodes / 120 edges |
+| Repository | `repository.ts` | `get(orgId, siteId)` / `upsert(graph, orgId)` — one row per site in `phase2_flow_graph` |
+| Layout engine | `layout.ts` | Deterministic layered SVG layout via longest-path relaxation; `layoutFlowGraph(graph): FlowLayout`; SVG cubic-bezier edge paths |
+| Barrel | `index.ts` | Re-exports `deriveFlowGraph`, `createFlowGraphRepository` |
+
+The derived graph feeds `runInsightsPipeline` (passed to audit rules as `ctx.flowGraph`) and is persisted after each insights run by `maybeRunInsightsForSite`. The `/app/flow` dashboard surface reads the cached graph from `phase2_flow_graph`.
+
+### Propose — AI Variant Advisor (`src/lib/experiments/aiAdvisor.ts` + route)
+
+LLM-assisted variant proposal layer for the experiment builder. **Proposals only — nothing applies them to a live DOM yet (the Zybit-149 client-side variant runtime is not built).**
+
+| Component | File | What it does |
+|-----------|------|--------------|
+| API route | `src/app/api/dashboard/experiments/ai-suggest/route.ts` | `POST /api/dashboard/experiments/ai-suggest` — magic-link session, org-scoped. Loads finding + structural snapshot + design snapshot; checks rate limit (denied calls don't bump counter); builds prompt; calls Gemini 2.0 Flash via REST; validates output; returns up to 3 schema-valid `VariantModification[]` options. Returns **503** when `GEMINI_API_KEY` is unset (PMs fall back to manual entry); **429** when the daily limit is reached. (Zybit-144) |
+| Advisor core | `aiAdvisor.ts` | Prompt builder + response parser + validator. Selector allowlist derived from CTAs + forms **+ headings** in the structural snapshot (heading `cssSelector` is now populated by `findHeadings` in `parser.ts` — paired with PR #84's advisor expansion). Supports 6 modification kinds: `css-inject`, `text-replace`, `element-hide`, `element-show`, `attribute-set`, and `element-insert`. `attribute-set` restricted to an attribute allowlist; `css-inject` content checks; `text-replace` sanitisation; `element-insert` runs `sanitizeInsertHtml` and rejects empty-after-sanitize payloads (input capped at 4 KB pre-sanitize). `nav`/`header` landmark CTAs are filtered out of `ctaVocabulary` so the AI's copy register is conversion copy, not IA labels. Finding text is wrapped in delimiters so prompt-injection from prescriptions can't escape into the system prompt. `element-reorder` is deliberately excluded from the AI surface. |
+| Rate limit + cost guard | `aiAdvisorRateLimit.ts` | Per-org daily cap (10 calls/org/UTC day) via atomic upsert on `phase2_ai_advisor_usage` (migration `0018`). Denied calls return 429 and **do not bump the counter**. Token usage logged per call under `service: 'ai-advisor'`. (Zybit-148) |
+
+
+### Public URL-audit lead magnet (`src/app/audit/` + `src/app/api/audit/public/` + `src/lib/audit/` + `src/lib/email/audit*`)
+
+Public Day-0 funnel: any prospect submits URL + work email + role, gets a teaser finding inline and a 4-finding HTML report by email. Spec: `docs/sprints/url-audit-lead-magnet.md`.
+
+| Component | File | What it does |
+|-----------|------|--------------|
+| Form page | `src/app/audit/page.tsx` | Public marketing form, personal-email reject at submit, progress strip during pipeline run |
+| Teaser page | `src/app/audit/[id]/page.tsx` | Polls `/api/audit/public/status` and surfaces one teaser finding + inbox-confirmation copy |
+| Email preview | `src/app/audit/email-preview/page.tsx` | Renders both email templates with mock data (gated to non-prod Vercel deployments) |
+| Submit route | `src/app/api/audit/public/submit/route.ts` | Validates input → SSRF check → multi-dim rate limit → budget gate → runs quick `runStructuralAudit` for the teaser → persists `public_audits` row + token → sends confirmation email (returns 502 if Resend fails) |
+| Confirm route | `src/app/api/audit/public/confirm/route.ts` | Atomic CAS token consumption + status flip to `'running'`, then `after()`-dispatches the run route. Redirects to `/audit/[id]` |
+| Run route | `src/app/api/audit/public/run/route.ts` | Secret-gated (`FORGE_CRON_SECRET`); re-validates URL (closes 24h DNS-rebinding window), re-checks daily budget, calls `runUrlAudit` from Lighthouse, captures screenshot + vision caption, sends report email. `maxDuration = 300` |
+| Status route | `src/app/api/audit/public/status/route.ts` | Read-only poller for the teaser page. Lazy-flips rows stuck in `'running'` past the run-route `maxDuration` to `'failed'` |
+| URL validator | `src/lib/audit/urlValidator.ts` | DNS resolution + IPv4/IPv6 blocklist (RFC 1918, loopback, link-local, CGNAT, multicast, TEST-NET, reserved). Rejects IP literals + localhost + bare hostnames |
+| Rate limiter | `src/lib/audit/publicAuditRateLimit.ts` | Two-phase peek-then-increment sliding window: IP (3/h), email (2/24h), email-domain (10/24h), target-host (5/24h). Daily $25 USD budget cap. Rejecting one dimension does not burn the others |
+| Personal-email reject | `src/lib/audit/personalEmailDomains.ts` | Hardcoded set of consumer domains (gmail, yahoo, icloud, proton, etc.). `.edu` allowed |
+| Vision pass | `src/lib/audit/visionPass.ts` | Best-effort: Browserless screenshot → Vercel Blob → Gemini 2.0 Flash REST caption. Returns null if any step fails; pipeline never waits |
+| Confirmation email | `src/lib/email/auditConfirmationEmail.ts` | Transactional double-opt-in email. All user fields HTML-escaped |
+| Report email | `src/lib/email/auditReportEmail.ts` | 4-finding HTML report, receipt-card pattern matching landing page. All user fields HTML-escaped |
+
+**Schema (migration `0019`):**
+- `public_audits` — one row per request (id, email, domain, url, role, status, ip, teaser_finding, findings, pages_scanned, cost_usd, timestamps). Status: `pending` → `running` → `done` | `failed` | `unreachable`
+- `audit_tokens` — single-use 24h tokens (sha256-hashed) with `consumed_at` for CAS dedup
+- `public_audit_budget` — one row per UTC day (`day_utc`, `cost_usd`)
+- `public_audit_rate_limits` — sliding-window counters keyed by `(key, window_start)`
+
+**Kill-switch:** `PUBLIC_AUDIT_ENABLED=0` returns 503 from the submit route without a redeploy.
+
+**Funnel hardening:** the `zb_audit_confirmed` cookie now enforces a strict hex-format guard before HMAC verify (mutated values rejected before constant-time compare); the HMAC over `email|auditId` normalizes email (lowercase + trim) on both mint and verify so Outlook safelink rewrites survive; `AUDIT_FROM_EMAIL` env precedence is now unambiguous (missing value falls through cleanly); `signupLink` is only minted when `status === 'done'` so forwarding the `/api/audit/public/status` URL gives a hollow ready state with no PII; the email param is dropped from the post-confirm redirect; auto-provision failures (org/`appUsers` insert) log structured errors instead of being silently swallowed.
+
+**Honest gaps vs spec §4a:** Cloudflare Turnstile not integrated (email gate is the primary abuse control); no OWASP SSRF unit-test suite; 90-day TTL cron + privacy policy + opt-out path not built; IP stored plaintext (spec called for hashed); no idempotent-resubmit / suppression list; Axiom + Cronitor wiring not yet attached. Phase C founder approval queue + Phase D marketing surface deferred.
 
 ### Dashboard (`src/app/dashboard/`)
 
@@ -94,7 +229,8 @@ PM-facing product surface. Connected to real APIs and real data.
 |------|--------------|
 | Cockpit | Top 3 findings, integration health, active experiments, data readiness |
 | Findings list | Ranked backlog with status filters (open/approved/dismissed/shipped/measured) |
-| Finding detail | Evidence table, prescription, preview slot, approve/dismiss/measure buttons |
+| Finding detail | Evidence table, prescription, preview slot, approve/dismiss/measure buttons; `flow-funnel` diagram for flow-category findings |
+| Flow advisory (`/app/flow`) | Derived route-transition graph (layered SVG, depth columns, chokepoint highlighted) + ranked open flow findings; reads cached `phase2_flow_graph` row; handles missing table gracefully |
 | Experiments list | All experiments with confidence bars and lift percentages |
 | Experiment detail | Hypothesis, control vs variant rates, confidence meter, result entry |
 | Connect | Guided setup wizard (site URL → PostHog → Segment → GitHub) |
@@ -110,14 +246,18 @@ Single Postgres database (Neon serverless) via Drizzle ORM.
 | `phase2_site_configs` | Per-site cohort/onboarding/CTA/narrative config |
 | `phase2_integrations` | Connector records (PostHog/Segment, status, cursor) |
 | `phase2_page_snapshots` | Page DNA snapshots |
+| `phase2_flow_graph` | Cached derived flow graph per site (one row, upserted each insights run) — migration `0017` |
+| `phase2_ai_advisor_usage` | Per-org daily AI advisor call counter (UTC day-bucket; atomic upsert; denied calls do not bump) — migration `0018` |
 | `zybit_findings` | Persisted audit findings with lifecycle |
 | `zybit_experiments` | Experiment metadata and results |
 | `zybit_site_meta` | Site operational metadata (MRR, AOV, session counts) |
 | `zybit_api_keys` | M2M API keys (hashed) |
+| `app_users` | PM account rows. Columns now include `industry`, `role_title`, `last_audit_at` alongside `source` / `source_audit_id` from the audit funnel — migration `0022` |
+| `app_user_rules_fired` | Per-user per-rule firing log (`user_id`, `org_id`, `site_id`, `finding_id`, `rule_id`, `fired_at`); 4 indexes; writers TBD, scaffolds future onboarding/personalization analytics — migration `0022` |
 
-### Auth
+### Test — Variant Delivery (`src/lib/experiments/`)
 
-Clerk for user auth. M2M API keys for programmatic access. Tenant scoping on `(organizationId, siteId)`.
+Invite-only magic-link auth (email → 15-min token → 30-day session cookie). M2M API keys for programmatic access. Tenant scoping on `(organizationId, siteId)`. No Clerk.
 
 ---
 
@@ -146,11 +286,19 @@ User → Zybit Edge (Vercel Middleware) → Customer Origin
 
 **Variant definition format:**
 ```typescript
-interface VariantModification {
-  type: 'css-inject' | 'text-replace' | 'element-hide' | 'element-reorder' | 'attribute-set';
-  selector: string;        // CSS selector targeting the element
-  value: string;           // New text, CSS rules, or attribute value
-}
+type VariantModification =
+  | { type: 'css-inject'; selector: string; css: string }
+  | { type: 'text-replace'; selector: string; text: string }
+  | { type: 'element-hide'; selector: string }
+  | { type: 'element-show'; selector: string }
+  | { type: 'attribute-set'; selector: string; attr: string; value: string }
+  | { type: 'element-reorder'; parentSelector: string; childOrder: number[] }
+  // `element-insert` splices a new HTML fragment relative to an anchor element
+  // (DOM-standard positions). The fragment is sanitized by
+  // `sanitizeInsertHtml` before it reaches the page: tag+attribute allowlist,
+  // `on*` handlers and `javascript:`/`data:` URLs are dropped, and
+  // `<script>`/`<iframe>`/`<form>` are removed wholesale.
+  | { type: 'element-insert'; selector: string; position: 'before' | 'after' | 'prepend' | 'append'; html: string };
 
 interface ExperimentConfig {
   id: string;
@@ -166,7 +314,7 @@ interface ExperimentConfig {
 
 **Why this approach:**
 - Works without customer code changes (just DNS)
-- Supports the most common CRO modifications (button text, CTA position, form field visibility, color changes)
+- Supports the most common CRO modifications (button text, CTA position, form field visibility, color changes, **and adding new sections via `element-insert`** — e.g. a top-of-page quick-answer block or an anchor nav)
 - Vercel Middleware runs at the edge — low latency
 - Zybit already runs on Vercel, so middleware is native
 
@@ -174,6 +322,7 @@ interface ExperimentConfig {
 - Can't modify server-side logic (pricing, API responses)
 - DOM manipulation via selector is fragile if customer changes their markup
 - Customer must trust Zybit as a proxy
+- `element-insert` markup is restricted to a layout/text tag allowlist — no `<form>`, `<script>`, `<iframe>`, no inline event handlers, no `javascript:`/`data:` URLs. PMs who need server-side rendered controls still ship those through their codebase.
 
 **Implementation scope:**
 - `src/lib/experiments/variantEngine.ts` — Applies modifications to HTML response
@@ -215,6 +364,8 @@ The analysis engine is production-ready. The proxy bucketing and HTML modificati
 **Why it's first:** Without this, experiment results are manually entered numbers. Zybit is a calculator, not a measurement system. Everything downstream — renewal story, rule calibration, dataset moat — depends on measurement being correct.
 
 **Why best-in-class matters:** If lift numbers are wrong, everything is poisoned: the calibration data, the renewal story, the dataset. "Adequate" measurement is not acceptable here.
+
+> **Status:** OBF alpha-spending shipped on `claude/fix-measurement-proxy-reliability`. `stats.ts` has `obfConfidenceThreshold(elapsedDays, durationDays, alpha)` computing per-look thresholds; `isReadyToStop` uses day-number information fraction (t = lookNumber / totalLooks). Simulation: 2,000 null experiments, empirical FP-rate ≤ 6.5% (3-sigma MC tolerance). Cron cadence: daily (`vercel.json`). PostHog visitor-ID bridge shipped — the proxy injects a `zybit_vid` PostHog super-property (`proxy/bridgeScript.ts`, both buckets) and `posthog/mapping.ts` prefers it in `deriveSessionId`, so the conversion join matches PostHog-sourced events with no SQL change. Auto-stop/guardrail PM email shipped (`email/experimentConcludedEmail.ts`, `notifyConcluded` in `computeOutcomes.ts`, best-effort). Remaining: "last computed at" surface.
 
 #### Outcome Storage
 
@@ -295,16 +446,16 @@ Implementation:
 
 ### Priority 2: Preview Before Deploy
 
+> **Status:** Server endpoint shipped in `5951a99` + `b09a212`. CSP `frame-ancestors 'self'` set on response (`route.ts:131`). Side-by-side control/variant iframes added to experiment detail page (`experiments/[id]/page.tsx`). SPA-rendered content note shown under iframe.
+
 **What:** PM sees the modified page in an iframe before activating on real traffic.
 
 **Why:** Removes the single biggest trust blocker in every demo. A PM who cannot see the change before it goes live will not approve it.
 
 **Implementation:**
-`GET /api/preview/[experimentId]` — fetch origin HTML, apply `VariantModification[]` as `<style>` injections and DOM mutations, return modified HTML for iframe embed. No external dependency.
+`GET /api/preview/[experimentId]` — fetch origin HTML, apply `VariantModification[]` as `<style>` injections and DOM mutations, return modified HTML for iframe embed. No external dependency. CSP `frame-ancestors` defaults to `'self'`; the lighthouse synthetic-site harness overrides this via the optional `LIGHTHOUSE_PREVIEW_ORIGIN` env var (validated as `scheme://host[:port]`) so a dev/lighthouse origin can frame the preview without weakening the production default. `stripScripts` (the inbound HTML sanitiser) fails closed and now defeats the `javascript:` HTML-entity bypass, strips `data:` URIs, frame-creating elements (`<iframe>`/`<frame>`/`<frameset>`/`<object>`/`<embed>`), and `<meta http-equiv="refresh">`. The SSRF guard re-runs on every redirect hop and the `phase1Sites` lookup is tenant-scoped. The screenshot route returns 502 (not 200) on render fail.
 
-Dashboard: side-by-side iframe toggle (control | variant) on experiment detail page.
-
-**Timeline:** 2 days. Can be built in parallel with measurement work (different surface).
+Dashboard: side-by-side iframe toggle (control | variant) on experiment detail page. `AnnotatedFindingPreview` overlays a per-rule "why this is highlighted" callout next to each annotation anchor (driven by the 9-rule `proposeAnnotations` output above).
 
 ---
 
@@ -330,6 +481,8 @@ Dashboard: side-by-side iframe toggle (control | variant) on experiment detail p
 ### Priority 4: Proxy Reliability + SPA Support
 
 **Must be in place before any paid pilot routes real production traffic.**
+
+> **Status:** All items shipped on `claude/fix-measurement-proxy-reliability`. `handler.ts` — `fetchOrigin` with 10s `AbortSignal.timeout`; modification errors caught → serve unmodified HTML; `experiment.status === 'running'` kill switch check; `looksLikeSpaShell()` warning log. `browserFetcher.ts` — `runBrowserSnapshot` via playwright-core CDP over Browserless.io. `fetcher.ts` — SPA shell → Browserless fallback with `snapshotMethod` field. `config.ts` — `status` field on `ProxyExperiment`. `route.ts` — `status` selected from DB. **Launch-time SPA guard (Zybit-123)** — `spaGuard.ts` `targetPageIsSpaShell` fetches the target page; `launchExperimentAction` returns a `spa_warning` and `ExperimentBriefCard` shows a warn-and-acknowledge banner, so a PM is told before launching an experiment whose variant would silently render identical to control. Vercel Domains API auto-provisioning (`vercelDomains.ts`) — `addCustomerDomain(customerSubdomain)` called after DNS verify passes, falls back to manual email if env vars absent.
 
 #### Fail-Open Behavior
 
@@ -360,7 +513,7 @@ The audit engine (snapshot fetcher) and the proxy both have SPA gaps.
 
 **Snapshot fetcher (`src/lib/phase2/snapshots/fetcher.ts`):**
 - Detect SPA: if raw HTML `<body>` has <500 characters or contains `<div id="root"></div>` / `<div id="app"></div>` with no content → SPA detected
-- Re-fetch via Browserless.io: `wss://chrome.browserless.io?token=BROWSERLESS_TOKEN`
+- Re-fetch via Browserless.io: `wss://chrome.browserless.io?token=BROWSERLESS_KEY`
 - `page.goto(url, { waitUntil: 'networkidle', timeout: 10_000 })`
 - If Browserless unavailable: return HTTP result with `snapshotMethod: 'http-only'` in the snapshot record, surface a warning in the cockpit
 
@@ -369,7 +522,7 @@ The audit engine (snapshot fetcher) and the proxy both have SPA gaps.
 - For experiments targeting a path that SPA-routes to (not a full-page load), the variant must be applied via the injected initial HTML — CSS injection and the initial DOM state are sufficient for most modifications
 - Record which experiments target SPA-only paths; validate that modifications are HTML-injectable at parse time, not dependent on post-hydration DOM
 
-**Add to Vercel env:** `BROWSERLESS_TOKEN` — gate all Browserless calls behind its presence.
+**Add to Vercel env:** `BROWSERLESS_KEY` — gate all Browserless calls behind its presence.
 
 #### Auto-Rollback on Guardrail Regression
 
@@ -377,38 +530,45 @@ See Priority 1 (Guardrail Metrics). The proxy side: when `experiment.status = 's
 
 ---
 
-### Step 6: Learn — Outcome Feedback Loop (after Priority 1-4)
+### Step 6: Learn — Outcome Feedback Loop
 
-When an experiment completes, its outcome informs future rule runs for the same site.
+**Layer 1 (per-site re-ranking) shipped.** When an experiment completes, its outcome adjusts the `priorityScore` of future findings on the same site via a cascade match + D-with-guardrails formula. Rules stay pure; the reranker is a separate pass.
 
-**New table:** `zybit_experiment_outcomes` — see Priority 1 schema above.
+**Architecture:**
+- `src/lib/phase2/outcomes/repository.ts` — read-only `createOutcomesRepository().listForSite(siteId)` over `zybit_experiment_outcomes`.
+- `src/lib/phase2/rules/learnReranker.ts` — pure fn `applyLearnRerank(findings, outcomes)`. Cascade: Tier 1 `(ruleId, pathRef, modType)` → Tier 2 `(ruleId, pathRef)` → Tier 3 `(ruleId, modType)` → Tier 4 `(ruleId)`. Strongest non-empty tier wins. Per-outcome contribution = `clamp(liftPct, ±20) × confidence × tierStrength × 0.01`; guardrail breach stacks `−0.10 × tierStrength`. Total delta clamped to ±0.30.
+- Inconclusives use no special case — low confidence × small lift naturally drives contribution toward zero.
+- `LearnAdjustment` metadata persisted on `forge_findings.learn_adjustment` (drizzle/0013); written by `src/lib/phase2/jobs/insightsTrigger.ts:upsertFindings`. Visibility threshold `|delta| ≥ 0.05` gates the UI surfaces.
+- UI surfaces: backlog pill (`src/app/app/findings/page.tsx`), "Past tests on your site" panel on finding detail (`src/app/app/findings/[id]/page.tsx`), LEARNED timeline entry on `/app/loop` (`src/app/app/loop/page.tsx`).
+- 16 unit tests in `src/lib/phase2/rules/__tests__/learnReranker.test.ts`.
 
-**Rule integration:** Add `previousOutcomes: ExperimentOutcome[]` to `AuditRuleContext`. Rules:
-- **Boost priority** on findings similar to past wins (same ruleId + same pathRef pattern)
-- **Raise threshold** on findings similar to past nulls (require stronger signal to re-fire)
-- **Surface "already tested"** context in the finding summary if prior outcome exists
+**Layer 2 (per-site rule-threshold calibration) shipped.** Where Layer 1 re-ranks findings *after* the rules run, Layer 2 mutates the rules' detection floors *before* they run, per site, based on accumulated outcomes per `ruleId`. A rule whose experiments repeatedly win on a site has its detection floor loosened (fires on weaker signal); one that repeatedly loses has its floor tightened.
 
-**Implementation scope:**
-- `src/lib/phase2/rules/types.ts` — Add `previousOutcomes` to `AuditRuleContext`
-- `src/lib/experiments/outcomes.ts` — Query outcomes for site, pass to rule context
-- Start with 3 rules: `form-abandonment`, `bounce-on-key-page`, `hero-hierarchy-inversion`
-- New migration: outcome table already defined in Priority 1 — same table, same schema
+**Architecture:**
+- `src/lib/phase2/rules/ruleCalibration.ts` — pure fn `computeRuleCalibrations(outcomes)`. Aggregates **per ruleId** (site-global — a rule's threshold is one module constant shared across pages, so there's nothing per-path to tune). Per-outcome signal reuses Layer 1's shape: `clamp(liftPct, ±20) × confidence × 0.01`, guardrail breach stacks `−0.10`. Net signal clamped to ±0.30 → multiplier `clamp(1 − netSignal, 0.7, 1.3)`. Gated behind `MIN_CONCLUSIVE_OUTCOMES = 3` (neutral 1.0 below that, so one noisy result can't move detection).
+- `calibratedFloor(ctx, ruleId, base)` scales a **lower-bound** detection floor (signal must exceed it — most rules). `calibratedCap(ctx, ruleId, cap)` scales an **upper-bound** cap (signal must stay below it — `form-abandonment` submit rate, `nav-dispersion` Gini) via the complementary-gap transform `1 − (1 − cap) × multiplier`, clamped to [0, 1]. Both default to the base threshold when no calibration is present, so the rules stay pure and the helper is a no-op in unit tests.
+- 11 of the 12 behavioral rules route their detection floor through these helpers (the set is enumerated in `CALIBRATED_RULE_IDS`). The 7 structural rules (Layer E) — `headingHierarchyJump`, `formLabelMissing`, `imageAltTextMissing`, `linkTextGeneric`, `missingMetaDescription`, `missingCanonicalUrl`, `deadClickTarget` — are not calibrated; they are binary snapshot checks with no behavioral signal floor to tune. The 3 AI copy-critique rules (Layer F) — `vagueClaimDetected`, `proofMissing`, `ctaVerbMismatch` — are likewise not calibrated; their detection floor is the structured Gemini output's `specificity` / `proofSignals.length` / `ctaAlignment.matches` boundary, which is already a binary classifier. Statistical sample-size guards (e.g. `MIN_ENTRIES`, `MIN_FORM_VIEWS`) are deliberately **not** calibrated. `hero-hierarchy-inversion` is **exempt**: its only gate is a sample-size minimum (`MIN_CTA_CLICKS`) and the inversion it detects is binary.
+- Wired in `runInsightsPipeline`: past outcomes are fetched once and reused — `computeRuleCalibrations` feeds `AuditRuleContext.calibration` before `runAuditRules`, then `applyLearnRerank` (Layer 1) re-ranks the result. Active calibrations surface in `AuditRuleDiagnostic.calibration` for observability.
+- 24 unit tests in `src/lib/phase2/rules/__tests__/ruleCalibration.test.ts` (gating, direction, bounds, per-rule independence, the hero exemption, helper math, and an end-to-end firing-change check on `rageClickTarget`).
 
-**Cross-site learning:** Deferred. Not until 50+ customers have outcome rows. The global prior means nothing at smaller sample sizes. Do not build this early.
+**Verification status (be honest):** Layer 2 is **unit-verified, not Lighthouse-verified.** The Lighthouse runner (`lighthouse/lib/runner/runScenario.ts`) deletes all outcomes for the site at step 0, runs the insights pipeline once (step 4), then creates the synthetic experiment + outcome (step 4.5) — so a run's single insights pass always sees zero prior outcomes and calibration is always neutral. Exercising Layer 2 end-to-end needs either a second insights pass after an outcome exists, or a seeded outcome history before the first pass. Neither is wired today.
+
+**Not yet built (Layer 3):**
+- **Layer 3** — cross-site priors. Deferred until 50+ customers have outcome rows. The global prior means nothing at smaller sample sizes. Do not build this early.
 
 ---
 
-### GA4 Connector (after Priority 1-4)
+### GA4 Connector (shipped)
 
-GA4 is in the `source` enum. No implementation exists. Required for analytics-agnostic claim to be credible in the field.
+Built at `src/lib/phase2/connectors/ga4/`, same shape as the PostHog pull-sync adapter.
+- GA4 Data API v1beta `runReport`; service-account RS256 JWT signed via Web Crypto (zero extra deps), exchanged for an OAuth2 access token (in-memory cached per service account).
+- `eventName` → canonical `type`; `eventCount` + `sessions` → canonical `metrics`. Each aggregated `(date, hour, minute, pagePath, eventName)` row → one canonical event; the deterministic grain key is the `(siteId, source, sourceEventId)` dedupe id, so re-syncs are idempotent.
+- Cursor: `(synthetic timestamp, grain key)` in `phase2_integrations.cursor`; `runReport` `startDate` derived from it, with strictly-after filtering.
+- `runGA4PullSyncJob` + `/api/phase2/cron/sync-ga4` (every 30m). The session-volume insights trigger is the shared `jobs/insightsTrigger.ts`, also used by the PostHog cron.
 
-**Pattern:** Same as PostHog pull-sync at `src/lib/phase2/connectors/posthog/`. 
-- GA4 Data API (Google Analytics Data API v1beta)
-- Auth: service account JSON or OAuth
-- Map GA4 `eventName` to canonical event `type`; map `eventCount`, `sessions` to canonical `metrics`
-- Cursor: GA4 date-range pagination, store last-synced date in `phase2_integrations.cursor`
+**Caveat (deliberate):** `runReport` is aggregated — GA4 exposes no per-visitor/session id without a BigQuery export. GA4 is therefore an **Identify/Propose** source only; it is NOT joined to proxy assignments for outcome computation (PostHog/Segment are the measurement-grade sources). A future BigQuery-export path could lift this.
 
-**Do not build:** Amplitude or Mixpanel connectors until GA4 ships and proves the pattern. Add them one at a time.
+**Do not build:** Amplitude or Mixpanel connectors yet. Add them one at a time, same pattern.
 
 ---
 
@@ -428,7 +588,7 @@ Customer Site ──→ Zybit Snapshot Fetcher ──→ Page DNA          │
                                      │  + Past Outcomes (Learn)    │
                                      │         │                   │
                                      │         ▼                   │
-                                     │  12 Rules → Findings        │
+                                     │  19 Rules → Findings        │
                                      │  + Prescriptions            │
                                      │  + Impact Estimates         │
                                      └──────────┬──────────────────┘
@@ -507,16 +667,13 @@ Four things. In this order. Everything else is a distraction until these exist.
 - Cross-site global priors (not before 50+ customers with outcomes)
 
 **Never build:**
-Sentiment analysis, GitHub PR generation, own event collection SDK / PostHog replacement, elaborate new audit rules, cross-site priors before sample size justifies it.
+Sentiment analysis, GitHub PR generation, own event collection SDK / PostHog replacement, more behavioral (event-based) rules, cross-site priors before sample size justifies it. New rules must be structural/snapshot-grounded and deterministic.
 
 ---
 
 ## Current Codebase Health
 
-After cleanup (this session):
-
-- **16,240 lines** of domain logic across 79 source files
-- **193 tests**, all passing
+- **72 test files**, all passing (`sanitizeInsertHtml`, `validateBrief`, `describeModification`, `annotationHelpers`, `preview`, `structuralRules`, and friends all added with the structural-rule + element-insert + annotated-preview work)
 - **Single storage backend** (Postgres via Drizzle — blob driver removed)
 - **Zero dead code** (backend shell, duplicate onboarding page, blob repository all deleted)
 - **Clean type system** (TypeScript strict mode, no `any` leaks in domain code)

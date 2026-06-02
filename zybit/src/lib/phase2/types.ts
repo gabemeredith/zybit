@@ -13,6 +13,7 @@ import type {
   NarrativePathAggregate,
   OnboardingStepAggregate,
 } from "@/lib/phase1/insights/types";
+import type { FlowGraph } from "@/lib/phase2/flow/types";
 
 export type ISODateString = string;
 
@@ -279,6 +280,13 @@ export interface RunInsightsResponse {
   /** Whether engine output meets the gate's minimum bar. */
   trustworthy: boolean;
   /**
+   * Derived route-transition flow graph for the window (PRD Milestone 1).
+   * Always present — empty (no nodes/edges) when the window carried no
+   * usable route data. Persisted by `maybeRunInsightsForSite` and read by
+   * the `/app/flow` view.
+   */
+  flowGraph?: FlowGraph;
+  /**
    * Phase 2 design-rule output (Layer B+C). Optional in v1 — empty when
    * no page snapshots are available or when rules find nothing actionable.
    * The shape lives in `@/lib/phase2/rules/types` to avoid a hard
@@ -298,15 +306,34 @@ export interface RunInsightsResponse {
       recommendation: string[];
       evidence: Array<{ label: string; value: string | number; context?: string }>;
       refs?: { snapshotId?: string; ctaRef?: string; elementRef?: string };
+      calibration?: {
+        direction: 'loosen' | 'tighten';
+        multiplier: number;
+        reason: string;
+        conclusiveCount: number;
+      };
     }>;
     diagnostics: Array<{
       ruleId: string;
       emitted: number;
       skippedReason?: string;
       candidatesEvaluated?: number;
+      calibration?: {
+        multiplier: number;
+        direction: 'loosen' | 'tighten' | 'neutral';
+        reason: string;
+      };
     }>;
     groundedInSnapshots: boolean;
   };
+  /**
+   * Layer B (LLM finding prose) telemetry for this run — per-finding outcomes,
+   * both prose versions, tokens/cost/latency, and run aggregates. Present
+   * whenever the pipeline ran the Layer B post-pass (which records
+   * `enabled: false` when the flag is off). Consumed by Lighthouse + the eval
+   * harness. Type-only import; no runtime dependency.
+   */
+  layerB?: import('@/lib/phase2/layerB/orchestrator').LayerBRunTelemetry;
 }
 
 /**

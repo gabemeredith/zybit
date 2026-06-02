@@ -8,8 +8,12 @@
  * (or aren't resolving).
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
+import type { PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { GoalConfig, GoalType, NarrativeConfig } from "@/lib/phase2/types";
 
+import { ANNOTATION_WARN_COLOR } from "./annotationColors";
+import { missingPlaceholder, snapshotHeadingSelector } from "./annotationHelpers";
 import type { SessionTrace } from "./helpers";
 import {
   clamp,
@@ -17,17 +21,20 @@ import {
   groupSessions,
   modeStringProp,
   pct,
+  pickPrimaryCta,
   quote,
   round,
   sanitizeIdSegment,
   topByCount,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const MIN_PATH_SESSIONS = 50;
@@ -49,6 +56,29 @@ export const returnVisitThrash: AuditRule = {
   id: "return-visit-thrash",
   name: "Return-visit thrash",
   category: "thrash",
+  // Behavioral rule: needs multi-session traces from the events stream.
+  publicAuditBehavior: 'empty',
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    // The diagnosis is "visitors keep coming back because the answer they
+    // need isn't on this page" — the prescription is "add a quick-answer
+    // block or anchor nav above the hero." So the annotation shows the
+    // *empty space* where that missing block belongs, not the unrelated
+    // primary CTA. Anchor: first heading; falls back to nothing if the
+    // page has no headings (rare).
+    const anchor = snapshotHeadingSelector(ctx.snapshot.data);
+    if (!anchor) return [];
+    return missingPlaceholder({
+      anchorSelector: anchor,
+      position: 'before',
+      ruleClassName: 'zybit-anno-thrash',
+      label: 'quick-answer section or anchor nav — visitors keep coming back because the answer is hard to find here',
+      color: ANNOTATION_WARN_COLOR,
+    });
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const sessions = groupSessions(ctx.events);
@@ -83,13 +113,14 @@ export const returnVisitThrash: AuditRule = {
     }
 
     const windowDays = windowDaysFromTimeWindow(ctx.window);
+    const minThrashRate = calibratedFloor(ctx, "return-visit-thrash", MIN_THRASH_RATE);
     const findings: AuditFinding[] = [];
     const ordered = [...aggregates.values()].sort((a, b) => a.pathRef.localeCompare(b.pathRef));
     for (const agg of ordered) {
       if (agg.pathSessions < MIN_PATH_SESSIONS) continue;
       const thrashRate = agg.thrashSessions / agg.pathSessions;
-      if (thrashRate <= MIN_THRASH_RATE) continue;
-      findings.push(buildFinding(agg, thrashRate, narrativesBySource.get(agg.pathRef), windowDays, ctx.config.goalType, ctx.config.goalConfig));
+      if (thrashRate <= minThrashRate) continue;
+      findings.push(buildFinding(agg, thrashRate, narrativesBySource.get(agg.pathRef), windowDays, ctx.config.goalType, ctx.config.goalConfig, ctx.pageSnapshotsByPath.get(agg.pathRef)));
     }
     return findings;
   },
@@ -156,8 +187,9 @@ function buildFinding(
   thrashRate: number,
   narrative: NarrativeConfig | undefined,
   windowDays: number,
-  goalType?: GoalType,
-  goalConfig?: GoalConfig,
+  goalType: GoalType | undefined,
+  goalConfig: GoalConfig | undefined,
+  snapshot: PageSnapshot | undefined,
 ): AuditFinding {
   const median = round(medianOf(agg.pathCountsAcrossThrash), 1);
   const deviceMode = topOf(agg.deviceTags);
@@ -238,6 +270,27 @@ function buildFinding(
       `Primary metric: return-visit rate and funnel progression rate from ${agg.pathRef}.`,
   };
 
+  // Anchor for the finding-detail visual: the page's primary CTA. The
+  // diagnostic story isn't "this CTA is broken" — it's "this is what
+  // visitors see when they keep coming back, and the answer they need
+  // isn't here." Same mechanism as `bounce-on-key-page`.
+  const primary = snapshot ? pickPrimaryCta(snapshot.data.ctas) : null;
+
+  const factsJson = {
+    pathRef: agg.pathRef,
+    thrashSessions: agg.thrashSessions,
+    totalSessions: agg.pathSessions,
+    thrashRate,
+    medianVisitsPerThrashSession: median,
+    windowDays,
+    deviceMode,
+    narrative: narrative
+      ? { label: narrative.label, expectedPathRefs: narrative.expectedPathRefs }
+      : null,
+    interimTopPaths: interimTop.map((p) => ({ key: p.key, count: p.count })),
+    primaryCtaText: primary?.text ?? null,
+  };
+
   return {
     id: `return-visit-thrash:${sanitizeIdSegment(agg.pathRef)}`,
     ruleId: "return-visit-thrash",
@@ -252,6 +305,15 @@ function buildFinding(
     impactEstimate,
     recommendation: [docPara, narrativePara],
     evidence,
+    factsJson,
+    ...(snapshot
+      ? {
+          refs: {
+            snapshotId: snapshot.id,
+            ...(primary ? { ctaRef: primary.ref } : {}),
+          },
+        }
+      : {}),
   };
 }
 

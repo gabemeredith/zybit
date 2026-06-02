@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Docs — Northwind Analytics</title>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="/fake-sites/northwind/">Northwind</a>
+        <a href="/fake-sites/northwind/pricing">Pricing</a>
+        <a href="/fake-sites/northwind/customers">Customers</a>
+        <a href="/fake-sites/northwind/docs">Docs</a>
+      </nav>
+    </header>
+
+    <main>
+      <section>
+        <h1>Northwind in 90 seconds</h1>
+        <p>
+          Connect your warehouse with a read-only role. Northwind starts
+          surfacing per-query attribution within the first hour. Slack
+          alerts arrive after we have a baseline (24 hours of data).
+        </p>
+      </section>
+
+      <section>
+        <h2>1. Create the read-only role</h2>
+        <p>
+          In your warehouse, run the included role-creation script (we
+          provide it for Snowflake, BigQuery, and Redshift). The script
+          grants Northwind read access to query history and account usage
+          views. No write access anywhere.
+        </p>
+      </section>
+
+      <section>
+        <h2>2. Connect Slack</h2>
+        <p>
+          One-click Slack OAuth. Northwind posts alerts to a channel of
+          your choice — default is #data-cost-alerts. You can route by
+          team or by warehouse later.
+        </p>
+      </section>
+
+      <section>
+        <h2>3. Set budget thresholds</h2>
+        <p>
+          Optional but recommended. Tell Northwind your monthly budget by
+          team or by warehouse. We page proactively at 50%, 75%, and
+          90% — not after the fact.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p>© Northwind Analytics</p>
+    </footer>
+  </body>
+</html>

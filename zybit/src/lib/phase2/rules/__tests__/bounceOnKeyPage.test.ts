@@ -123,7 +123,7 @@ describe('bounceOnKeyPage rule', () => {
     const findings = bounceOnKeyPage.evaluate(ctx);
     expect(findings.length).toBeGreaterThanOrEqual(1);
     expect(findings[0].impactEstimate).toBeDefined();
-    expect(findings[0].impactEstimate!.unit).toBe('USD');
+    expect(findings[0].impactEstimate!.unit).toBe('conversions');
   });
 
   it('finding id includes ruleId', () => {
@@ -136,5 +136,46 @@ describe('bounceOnKeyPage rule', () => {
     const ctx = makeBounceContext(150, 10);
     const [f] = bounceOnKeyPage.evaluate(ctx);
     expect(f.evidence.length).toBeGreaterThan(0);
+  });
+
+  describe('proposeAnnotations', () => {
+    function makeFinding(refs: { ctaRef?: string }) {
+      return {
+        id: 'bounce-on-key-page:_pricing',
+        ruleId: 'bounce-on-key-page',
+        category: 'bounce' as const,
+        severity: 'warn' as const,
+        confidence: 0.6,
+        priorityScore: 0.6,
+        pathRef: KEY_PATH,
+        title: 't',
+        summary: 's',
+        recommendation: [],
+        evidence: [],
+        refs,
+      };
+    }
+
+    it('outlines the first heading + captions it "Rewrite to answer referrer question" (red)', () => {
+      const cta = { ...makeCta('Get started', 0.9, 'above', 'primary'), cssSelector: 'a.cta' };
+      const out = bounceOnKeyPage.proposeAnnotations!(
+        makeFinding({ ctaRef: 'primary' }),
+        { snapshot: makeSnapshot(KEY_PATH, [cta], [{ level: 1, text: 'Pricing' }]), designTokens: null },
+      );
+      expect(out).toHaveLength(3);
+      expect(out[0]).toMatchObject({ type: 'css-inject', selector: 'h1:nth-of-type(1)' });
+      if (out[0].type === 'css-inject') expect(out[0].css).toContain('#ef4444');
+      expect(out[1]).toMatchObject({ type: 'element-insert', position: 'after', selector: 'h1:nth-of-type(1)' });
+      expect(out[2]).toMatchObject({ type: 'css-inject', selector: '.zybit-anno-bounce' });
+    });
+
+    it('returns [] when the page has no headings (rare — nothing to anchor to)', () => {
+      const cta = { ...makeCta('Get started', 0.9, 'above', 'primary'), cssSelector: 'a.cta' };
+      const out = bounceOnKeyPage.proposeAnnotations!(
+        makeFinding({ ctaRef: 'primary' }),
+        { snapshot: makeSnapshot(KEY_PATH, [cta]), designTokens: null },
+      );
+      expect(out).toEqual([]);
+    });
   });
 });

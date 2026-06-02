@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { and, desc, eq, gte, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/lib/db/client';
+import { incrementUsage } from '@/lib/billing/usage';
 import {
   phase1Events,
   phase1ReadinessSnapshots,
@@ -186,6 +187,8 @@ export function createPostgresPhase1Repository(): Phase1Repository {
         domain: created.domain,
         createdAt: created.createdAt.toISOString(),
         ...(created.analyticsProvider ? { analyticsProvider: created.analyticsProvider } : {}),
+        ...(created.proxySlug ? { proxySlug: created.proxySlug } : {}),
+        ...(created.customerSubdomain ? { customerSubdomain: created.customerSubdomain } : {}),
       };
     },
     async listSites(input: ListPhase1SitesInput): Promise<Phase1SiteRecord[]> {
@@ -204,6 +207,8 @@ export function createPostgresPhase1Repository(): Phase1Repository {
         domain: site.domain,
         createdAt: site.createdAt.toISOString(),
         ...(site.analyticsProvider ? { analyticsProvider: site.analyticsProvider } : {}),
+        ...(site.proxySlug ? { proxySlug: site.proxySlug } : {}),
+        ...(site.customerSubdomain ? { customerSubdomain: site.customerSubdomain } : {}),
       }));
     },
     async getSite(input: GetPhase1SiteInput): Promise<Phase1SiteRecord | null> {
@@ -223,6 +228,8 @@ export function createPostgresPhase1Repository(): Phase1Repository {
         domain: site.domain,
         createdAt: site.createdAt.toISOString(),
         ...(site.analyticsProvider ? { analyticsProvider: site.analyticsProvider } : {}),
+        ...(site.proxySlug ? { proxySlug: site.proxySlug } : {}),
+        ...(site.customerSubdomain ? { customerSubdomain: site.customerSubdomain } : {}),
       };
     },
     async createEvent(input: CreatePhase1EventInput): Promise<Phase1EventRecord> {
@@ -350,6 +357,9 @@ export function createPostgresPhase1Repository(): Phase1Repository {
         .returning();
 
       if (inserted[0]) {
+        // Meter only genuinely-new events (dedupe conflicts don't count).
+        // Best-effort: never block or fail ingestion on a usage write.
+        incrementUsage(input.organizationId, 'eventsIngested', 1).catch(() => {});
         return mapEventRowToCanonicalEvent(inserted[0]);
       }
 
@@ -386,6 +396,22 @@ export function createPostgresPhase1Repository(): Phase1Repository {
         })
         .returning({ id: phase1Events.id });
       const inserted = insertedRows.length;
+      // Meter genuinely-new events per organization. A connector batch is
+      // single-org in practice; group defensively in case it is not.
+      // Best-effort: never block or fail ingestion on a usage write.
+      if (inserted > 0) {
+        const orgIds = [...new Set(inputs.map((i) => i.organizationId))];
+        if (orgIds.length === 1) {
+          incrementUsage(orgIds[0], 'eventsIngested', inserted).catch(() => {});
+        } else {
+          // Mixed-org batch (unexpected): attribute proportionally by share.
+          for (const orgId of orgIds) {
+            const share = inputs.filter((i) => i.organizationId === orgId).length;
+            const attributed = Math.round((share / inputs.length) * inserted);
+            if (attributed > 0) incrementUsage(orgId, 'eventsIngested', attributed).catch(() => {});
+          }
+        }
+      }
       return { inserted, deduped: inputs.length - inserted };
     },
     async listEventsInWindow(input: ListEventsInWindowInput): Promise<CanonicalEvent[]> {
@@ -622,6 +648,8 @@ export function createPostgresPhase1Repository(): Phase1Repository {
         })
         .returning();
 
+      // Best-effort: never block or fail a snapshot on a usage write.
+      incrementUsage(input.organizationId, 'snapshotsTaken', 1).catch(() => {});
       return mapPageSnapshotRow(row);
     },
     async getPageSnapshot(

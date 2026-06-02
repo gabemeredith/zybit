@@ -5,34 +5,22 @@
  *
  * For each active PostHog integration:
  *   1. Pull new events from PostHog into phase1_events.
- *   2. Count current distinct sessions for the site.
- *   3. Compare against `forge_site_meta.session_count_at_last_run`.
- *   4. If delta ≥ threshold (default 100 sessions), run the Phase 2
- *      insights pipeline and upsert fresh findings — then update the meta.
+ *   2. If new-session volume since the last run crosses the per-site
+ *      threshold, re-run the Phase 2 insights pipeline and upsert findings.
  *
- * This means insights refresh automatically when traffic warrants it,
- * not on a fixed schedule. Low-traffic sites are never re-run needlessly;
- * high-traffic sites get fresh insights faster.
+ * The session-threshold logic lives in `jobs/insightsTrigger.ts` and is
+ * shared verbatim with the GA4 cron.
  */
 
-import { createHash } from 'crypto';
 import { NextResponse } from 'next/server';
-import { eq, sql } from 'drizzle-orm';
 import { createPhase1Repository } from '@/lib/phase1';
 import { mapRouteError, unauthorized } from '@/app/api/phase1/_shared';
 import { runPostHogPullSyncJob } from '@/lib/phase2/jobs/runPostHogPullSyncJob';
-import { runPhase2InsightsPipeline } from '@/lib/phase2';
-import { getDb } from '@/lib/db/client';
-import { zybitSiteMeta, zybitFindings } from '@/lib/db/schema';
-import type { AuditFinding } from '@/lib/phase2/rules/types';
-import { logger, cronitorPing, trackSyncResult } from '@/lib/observability';
+import { maybeRunInsightsForSite } from '@/lib/phase2/jobs/insightsTrigger';
+import { logger, cronitorPing, trackSyncResult, withCronAlert } from '@/lib/observability';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
-
-// ---------------------------------------------------------------------------
-// Auth
-// ---------------------------------------------------------------------------
 
 function assertCronAuth(request: Request): NextResponse | null {
   const secret = process.env.FORGE_CRON_SECRET;
@@ -45,7 +33,7 @@ function assertCronAuth(request: Request): NextResponse | null {
           message: 'Set FORGE_CRON_SECRET to enable scheduled PostHog sync.',
         },
       },
-      { status: 503 }
+      { status: 503 },
     );
   }
   if (request.headers.get('authorization') !== `Bearer ${secret}`) {
@@ -53,93 +41,6 @@ function assertCronAuth(request: Request): NextResponse | null {
   }
   return null;
 }
-
-// ---------------------------------------------------------------------------
-// Deterministic finding PK (mirrors /api/dashboard/findings/route.ts)
-// ---------------------------------------------------------------------------
-
-function findingPk(siteId: string, ruleId: string, pathRef: string | null): string {
-  const raw = `${siteId}|${ruleId}|${pathRef ?? '__site__'}`;
-  return createHash('sha256').update(raw).digest('hex').slice(0, 24);
-}
-
-// ---------------------------------------------------------------------------
-// Count current distinct sessions for a site
-// ---------------------------------------------------------------------------
-
-async function countSiteSessions(siteId: string): Promise<number> {
-  const db = getDb();
-  const result = await db.execute(
-    sql`SELECT COUNT(DISTINCT session_id) AS cnt FROM phase1_events WHERE site_id = ${siteId}`
-  );
-  const rows = result.rows as Array<{ cnt: string | number }>;
-  return Number(rows[0]?.cnt ?? 0);
-}
-
-// ---------------------------------------------------------------------------
-// Upsert fresh findings after insights run
-// ---------------------------------------------------------------------------
-
-async function upsertFindings(
-  organizationId: string,
-  siteId: string,
-  auditFindings: AuditFinding[],
-  windowStart: number,
-  windowEnd: number
-): Promise<number> {
-  if (auditFindings.length === 0) return 0;
-  const db = getDb();
-  const now = new Date();
-
-  const values = auditFindings.map((f) => ({
-    id: findingPk(siteId, f.ruleId, f.pathRef),
-    organizationId,
-    siteId,
-    ruleId: f.ruleId,
-    category: f.category,
-    severity: f.severity,
-    confidence: f.confidence,
-    priorityScore: f.priorityScore,
-    pathRef: f.pathRef,
-    title: f.title,
-    summary: f.summary,
-    recommendation: f.recommendation,
-    evidence: f.evidence,
-    refs: f.refs ?? null,
-    status: 'open' as const,
-    lastSeenAt: now,
-    insightWindowStart: new Date(windowStart),
-    insightWindowEnd: new Date(windowEnd),
-  }));
-
-  await db
-    .insert(zybitFindings)
-    .values(values)
-    .onConflictDoUpdate({
-      target: zybitFindings.id,
-      set: {
-        severity: sql`excluded.severity`,
-        confidence: sql`excluded.confidence`,
-        priorityScore: sql`excluded.priority_score`,
-        title: sql`excluded.title`,
-        summary: sql`excluded.summary`,
-        recommendation: sql`excluded.recommendation`,
-        evidence: sql`excluded.evidence`,
-        refs: sql`excluded.refs`,
-        lastSeenAt: sql`excluded.last_seen_at`,
-        insightWindowStart: sql`excluded.insight_window_start`,
-        insightWindowEnd: sql`excluded.insight_window_end`,
-        updatedAt: now,
-        // Note: status / preview fields are preserved on conflict
-      },
-    });
-
-  return auditFindings.length;
-}
-
-// ---------------------------------------------------------------------------
-// Handler
-// ---------------------------------------------------------------------------
 
 async function runHandler(request: Request) {
   const cronService = 'cron-sync' as const;
@@ -160,17 +61,24 @@ async function runHandler(request: Request) {
       await cronitorPing(monitorKey, 'complete', 'skipped — not postgres');
       return NextResponse.json({
         success: true,
-        data: { skipped: true, reason: 'Postgres driver required for scheduled multi-tenant sync.' },
+        data: {
+          skipped: true,
+          reason: 'Postgres driver required for scheduled multi-tenant sync.',
+        },
       });
     }
 
-    const integrations = await repository.listIntegrationsByProvider({
+    const allIntegrations = await repository.listIntegrationsByProvider({
       provider: 'posthog',
       limit: 50,
     });
 
-    const db = getDb();
-    const now = new Date();
+    // Zybit-154 circuit breaker: a 'disconnected' integration has tripped the
+    // consecutive-failure threshold (errorBudget.ts). Skip it — retrying every
+    // 30 minutes forever burns provider quota and never self-heals. A PM must
+    // hit the resume route to clear the breaker.
+    const integrations = allIntegrations.filter((i) => i.status !== 'disconnected');
+    const pausedCount = allIntegrations.length - integrations.length;
 
     type IntegrationResult = {
       id: string;
@@ -186,11 +94,10 @@ async function runHandler(request: Request) {
     };
 
     async function processIntegration(
-      integration: (typeof integrations)[number]
+      integration: (typeof integrations)[number],
     ): Promise<IntegrationResult> {
       const { siteId, organizationId } = integration;
 
-      // ── 1. Pull new events ──────────────────────────────────────────────
       const syncOutcome = await runPostHogPullSyncJob({
         repository,
         integration,
@@ -217,78 +124,7 @@ async function runHandler(request: Request) {
         };
       }
 
-      // ── 2. Count current sessions + load site meta in parallel ──────────
-      const [currentSessions, metaRows] = await Promise.all([
-        countSiteSessions(siteId),
-        db.select().from(zybitSiteMeta).where(eq(zybitSiteMeta.siteId, siteId)).limit(1),
-      ]);
-
-      const meta = metaRows[0] ?? null;
-      const prevSessions = meta?.sessionCountAtLastRun ?? 0;
-      const threshold = meta?.insightThreshold ?? 100;
-      const sessionDelta = currentSessions - prevSessions;
-
-      const shouldRunInsights = sessionDelta >= threshold;
-
-      let insightsSynced = 0;
-
-      if (shouldRunInsights) {
-        // ── 3. Run insights pipeline ─────────────────────────────────────
-        const endMs = Date.now();
-        const startMs = endMs - 7 * 86_400_000;
-        const window = {
-          start: new Date(startMs).toISOString(),
-          end: new Date(endMs).toISOString(),
-        };
-
-        const insightsResult = await runPhase2InsightsPipeline({
-          organizationId,
-          siteId,
-          window,
-          maxFindings: 25,
-        });
-
-        const auditFindings = (insightsResult.auditReport?.findings ?? []) as AuditFinding[];
-        insightsSynced = await upsertFindings(
-          organizationId,
-          siteId,
-          auditFindings,
-          startMs,
-          endMs
-        );
-
-        // ── 4. Update site meta with new session count ───────────────────
-        await db
-          .insert(zybitSiteMeta)
-          .values({
-            siteId,
-            organizationId,
-            sessionCountAtLastRun: currentSessions,
-            insightThreshold: threshold,
-            lastInsightRunAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: zybitSiteMeta.siteId,
-            set: {
-              sessionCountAtLastRun: currentSessions,
-              lastInsightRunAt: now,
-              updatedAt: now,
-            },
-          });
-      } else if (!meta) {
-        // First sync for this site — initialise meta without running insights yet
-        await db
-          .insert(zybitSiteMeta)
-          .values({
-            siteId,
-            organizationId,
-            sessionCountAtLastRun: 0,
-            insightThreshold: threshold,
-            updatedAt: now,
-          })
-          .onConflictDoNothing();
-      }
+      const insights = await maybeRunInsightsForSite({ organizationId, siteId });
 
       return {
         id: integration.id,
@@ -296,14 +132,12 @@ async function runHandler(request: Request) {
         organizationId,
         syncOk: true,
         syncInserted: syncOutcome.report.inserted,
-        insightsTriggered: shouldRunInsights,
-        insightsSynced,
-        sessionDelta,
+        insightsTriggered: insights.insightsTriggered,
+        insightsSynced: insights.insightsSynced,
+        sessionDelta: insights.sessionDelta,
       };
     }
 
-    // Process integrations in parallel batches of 5 to avoid overwhelming
-    // external APIs while staying well within the 300s function timeout.
     const CONCURRENCY = 5;
     const results: IntegrationResult[] = [];
     for (let i = 0; i < integrations.length; i += CONCURRENCY) {
@@ -313,7 +147,6 @@ async function runHandler(request: Request) {
         if (outcome.status === 'fulfilled') {
           results.push(outcome.value);
         } else {
-          // Unexpected rejection — surface it without aborting the whole run
           results.push({
             id: 'unknown',
             siteId: 'unknown',
@@ -321,17 +154,20 @@ async function runHandler(request: Request) {
             syncOk: false,
             insightsTriggered: false,
             code: 'INTERNAL_ERROR',
-            message: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+            message:
+              outcome.reason instanceof Error
+                ? outcome.reason.message
+                : String(outcome.reason),
           });
         }
       }
     }
 
-    return NextResponse.json({ success: true, data: { synced: results.length, results } });
+    return NextResponse.json({ success: true, data: { synced: results.length, pausedCount, results } });
   } catch (error) {
     return mapRouteError(error);
   }
 }
 
-export const GET = runHandler;
-export const POST = runHandler;
+export const GET = withCronAlert('sync-posthog', runHandler);
+export const POST = withCronAlert('sync-posthog', runHandler);

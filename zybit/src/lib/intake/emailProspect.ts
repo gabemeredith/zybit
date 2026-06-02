@@ -22,7 +22,7 @@ function buildProspectText(finding: IntakeFinding, _prospectEmail: string): stri
     '',
     `here's what we found:`,
     '',
-    `— ${finding.title}`,
+    `- ${finding.title}`,
     '',
     `evidence: ${finding.evidence}`,
     '',
@@ -33,7 +33,7 @@ function buildProspectText(finding: IntakeFinding, _prospectEmail: string): stri
     `we'll have the full audit ready for you in a couple of days.`,
     `if you want to talk through it now: ${FOUNDERS_CALENDLY}`,
     '',
-    '— asad & jad',
+    'asad & jad',
     'zybit',
   ].join('\n');
 }
@@ -44,7 +44,7 @@ function buildFallbackText(
   prospectEmail: string,
 ): string {
   return [
-    `intake submission — ${url}`,
+    `intake submission: ${url}`,
     `prospect email: ${prospectEmail}`,
     `audit result: ${reason}`,
     '',
@@ -89,7 +89,7 @@ export async function emailFoundersFallback(
     await resend.emails.send({
       from: FROM,
       to: [FOUNDERS_EMAIL_1, FOUNDERS_EMAIL_2],
-      subject: `[zybit intake] audit failed — ${url}`,
+      subject: `[zybit intake] audit failed: ${url}`,
       text: buildFallbackText(url, reason, prospectEmail),
     });
   } catch (err) {

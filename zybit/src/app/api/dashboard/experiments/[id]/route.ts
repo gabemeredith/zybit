@@ -12,6 +12,7 @@ import { getDb } from '@/lib/db/client';
 import { zybitExperiments, zybitFindings } from '@/lib/db/schema';
 import type { VariantModification } from '@/lib/experiments/types';
 import { validateModifications } from '@/lib/experiments/types';
+import { disableExperimentAtEdge } from '@/lib/experiments/proxy/edgeKillSwitch';
 
 const VALID_STATUSES = ['draft', 'running', 'completed', 'stopped'] as const;
 
@@ -124,6 +125,11 @@ export async function PATCH(
     if (typeof body.resultParticipants === 'number') update.resultParticipants = Math.floor(body.resultParticipants);
 
     await db.update(zybitExperiments).set(update as Partial<typeof zybitExperiments.$inferInsert>).where(eq(zybitExperiments.id, id));
+
+    // Fail closed at the edge the moment an experiment stops (Zybit-116).
+    if (update.status === 'stopped' || update.status === 'completed') {
+      await disableExperimentAtEdge(id);
+    }
 
     const updated = await db
       .select()

@@ -58,7 +58,7 @@ describe('errorExposure rule', () => {
     const ctx = makeContext(events, [], config);
     const [f] = errorExposure.evaluate(ctx);
     expect(f.impactEstimate).toBeDefined();
-    expect(f.impactEstimate!.unit).toBe('USD');
+    expect(f.impactEstimate!.unit).toBe('conversions');
   });
 
   it('finding id includes ruleId', () => {

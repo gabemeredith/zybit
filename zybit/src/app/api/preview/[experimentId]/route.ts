@@ -29,8 +29,23 @@ import { eq, and } from 'drizzle-orm';
 import { getServerAuth } from '@/lib/auth/serverAuth';
 import { getDb } from '@/lib/db/client';
 import { zybitExperiments, phase1Sites } from '@/lib/db/schema';
-import { applyModifications } from '@/lib/experiments/htmlModifier';
+import { applyModifications, stripScripts } from '@/lib/experiments/htmlModifier';
+import { fetchWithSsrfGuard } from '@/lib/phase2/findings/preview';
 import type { VariantModification } from '@/lib/experiments/types';
+
+/**
+ * Resolve relative asset URLs (CSS/fonts/images) against the real origin so the
+ * preview renders fully styled instead of as bare HTML, and escape the value so
+ * it can't break out of the attribute.
+ */
+function injectBaseHref(html: string, originUrl: string): string {
+  if (/<base\s/i.test(html)) return html;
+  const safe = originUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const baseTag = `<base href="${safe}">`;
+  const headOpen = html.match(/<head[^>]*>/i);
+  if (headOpen) return html.replace(headOpen[0], `${headOpen[0]}${baseTag}`);
+  return `${baseTag}${html}`;
+}
 
 export const runtime = 'nodejs';
 
@@ -80,26 +95,36 @@ export async function GET(
   }
 
   const targetPath = experiment.targetPath ?? '/';
-  const originUrl = `https://${domain}${targetPath}`;
+  // Lighthouse synthetic sites are served by the lighthouse server itself at
+  // `http://localhost:3001/fake-sites/<slug>/<path>`. The seeded `domain` is
+  // just the host, and there's no TLS — so the standard `https://${domain}`
+  // path won't resolve. Detect via the `lighthouse_site_<slug>` id convention
+  // (from `lighthouse/lib/seeder/orgSite.ts`) and rewrite the origin URL.
+  // `urlaudit-*` sites are real-domain audits (the public `/audit` funnel and
+  // `/demo`) that reuse the `lighthouse_site_*` id scheme — their pages live at
+  // the real domain, not at the Lighthouse dev server's `/fake-sites/<slug>/`
+  // path. Only genuine fake-site scenarios (manifest slugs) use that path.
+  const rawSlug = experiment.siteId.startsWith('lighthouse_site_')
+    ? experiment.siteId.slice('lighthouse_site_'.length)
+    : null;
+  const lighthouseSlug =
+    rawSlug !== null && !rawSlug.startsWith('urlaudit-') ? rawSlug : null;
+  const originUrl = lighthouseSlug
+    ? `http://${domain}/fake-sites/${lighthouseSlug}${targetPath}`
+    : `https://${domain}${targetPath}`;
 
-  // TODO: fetch origin HTML with timeout
-  let html: string;
-  try {
-    const originRes = await fetch(originUrl, {
-      headers: { 'User-Agent': 'Zybit-Preview/1.0' },
-      signal: AbortSignal.timeout(8_000),
-      redirect: 'follow',
-    });
-    if (!originRes.ok) {
-      return new NextResponse(`Origin returned ${originRes.status}`, { status: 502 });
-    }
-    html = await originRes.text();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Fetch failed';
-    return new NextResponse(`Could not reach origin: ${message}`, { status: 504 });
+  // Fetch the origin HTML with the SSRF guard on for real-domain sites
+  // (`domain` comes from the tenant-controlled `phase1Sites` row, so an
+  // unguarded `redirect: 'follow'` fetch could be pointed at 127.0.0.1 or
+  // cloud metadata). The lighthouse-slug path legitimately needs localhost,
+  // so the guard is skipped there — mirrors the `screenshots` sub-route.
+  const fetched = await fetchWithSsrfGuard(originUrl, lighthouseSlug === null);
+  if (!fetched.ok) {
+    return new NextResponse(fetched.message, { status: fetched.status });
   }
+  const html = fetched.html;
 
-  // TODO: apply modifications only for variant bucket; control gets unmodified HTML
+  // Apply modifications only for variant bucket; control gets unmodified HTML.
   let outputHtml = html;
   if (bucket === 'variant') {
     const modifications = experiment.modifications as VariantModification[] | null;
@@ -107,6 +132,13 @@ export async function GET(
       outputHtml = applyModifications(html, modifications);
     }
   }
+
+  // Strip the origin's own scripts so a client-rendered (SPA) page can't
+  // hydrate over and wipe the injected variant — the preview is a static,
+  // fully-styled snapshot of the page. Then point relative asset URLs at the
+  // real origin so its CSS/fonts/images actually load (otherwise they resolve
+  // against the Zybit origin and the page renders unstyled).
+  outputHtml = injectBaseHref(stripScripts(outputHtml), originUrl);
 
   // TODO: inject a visible banner so the PM knows this is a preview
   const banner = `
@@ -121,10 +153,35 @@ export async function GET(
   `;
   outputHtml = outputHtml.replace(/(<body[^>]*>)/i, `$1${banner}`);
 
-  // TODO: strip X-Frame-Options so the iframe can render inside the dashboard
+  // Origin headers are NOT forwarded here — we build fresh headers from scratch.
+  // X-Frame-Options from the origin is therefore already stripped.
+  // Explicitly set frame-ancestors 'self' so the dashboard iframe can embed this response
+  // even if the browser defaults change in the future. For Lighthouse synthetic
+  // sites, the experiment detail page is itself embedded inside the Lighthouse
+  // UI (port 3001 by default; override with LIGHTHOUSE_FRAME_ANCESTORS for
+  // multi-port local-dev setups where Lighthouse is on e.g. :3003). The
+  // browser's frame-ancestors check walks the whole chain and fails on
+  // `'self'` alone, so allow the Lighthouse origin too in that case.
+  const lighthouseAncestors =
+    process.env.LIGHTHOUSE_FRAME_ANCESTORS ?? 'http://localhost:3001';
+  const frameAncestors = lighthouseSlug
+    ? `'self' ${lighthouseAncestors}`
+    : "'self'";
+  // Block scripts (we already stripped them) but allow the origin's styles,
+  // fonts, and images from any host so the preview renders fully styled.
+  const csp =
+    "default-src 'none'; " +
+    "script-src 'none'; " +
+    "style-src 'unsafe-inline' *; " +
+    'img-src * data: blob:; ' +
+    'font-src * data:; ' +
+    // No `base-uri` restriction — we inject a <base> so relative assets resolve
+    // to the real origin; locking base-uri would null that out and unstyle it.
+    `frame-ancestors ${frameAncestors}`;
   const headers = new Headers({
     'content-type': 'text/html; charset=utf-8',
     'x-robots-tag': 'noindex',
+    'content-security-policy': csp,
   });
 
   return new NextResponse(outputHtml, { status: 200, headers });

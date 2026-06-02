@@ -2,10 +2,14 @@
   "crons": [
     {
       "path": "/api/phase2/cron/compute-outcomes",
-      "schedule": "0 * * * *"
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/phase2/cron/sync-posthog",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/phase2/cron/sync-ga4",
       "schedule": "*/30 * * * *"
     },
     {
@@ -15,6 +19,14 @@
     {
       "path": "/api/phase2/cron/refresh-captures",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/phase2/cron/refresh-snapshots",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/phase2/cron/check-selectors",
+      "schedule": "0 4 * * *"
     }
   ]
 }

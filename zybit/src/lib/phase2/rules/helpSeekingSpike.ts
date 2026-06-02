@@ -8,11 +8,16 @@
  * looking for help instead of letting them act — emit a finding.
  */
 
+import type { VariantModification } from "@/lib/experiments/types";
+import type { PageSnapshot } from "@/lib/phase2/snapshots/types";
 import type { CanonicalEvent, GoalConfig, GoalType } from "@/lib/phase2/types";
 
+import { ANNOTATION_WARN_COLOR } from "./annotationColors";
+import { missingPlaceholder } from "./annotationHelpers";
 import {
   clamp,
   formatCount,
+  matchCtaToEvent,
   pct,
   quote,
   readStringProp,
@@ -22,12 +27,14 @@ import {
   siteBaselineRate,
   topByCount,
 } from "./helpers";
+import { calibratedFloor } from "./ruleCalibration";
 import { computeImpactEstimate, windowDaysFromTimeWindow } from "./impactEstimate";
 import type {
   AuditFinding,
   AuditFindingEvidence,
   AuditRule,
   AuditRuleContext,
+  ProposeModificationsContext,
 } from "./types";
 
 const HELP_TEXT_REGEX = /(\bhelp\b|\bsupport\b|\bcontact\b|\bfaq\b|chat|talk to (sales|us))/i;
@@ -56,6 +63,29 @@ export const helpSeekingSpike: AuditRule = {
   id: "help-seeking-spike",
   name: "Help-seeking spike",
   category: "help",
+  // Behavioral rule: counts help/contact clicks vs page views.
+  publicAuditBehavior: 'empty',
+
+  proposeAnnotations(
+    finding: AuditFinding,
+    ctx: ProposeModificationsContext,
+  ): VariantModification[] {
+    // The prescription is "add a 2-3 question FAQ immediately above the
+    // primary CTA, with questions taken from the actual help-CTA labels
+    // visitors clicked." So the annotation places the *missing FAQ block*
+    // exactly where the prescription says it should go.
+    const ref = finding.refs?.ctaRef;
+    if (!ref) return [];
+    const cta = ctx.snapshot.data.ctas.find((c) => c.ref === ref);
+    if (!cta?.cssSelector) return [];
+    return missingPlaceholder({
+      anchorSelector: cta.cssSelector,
+      position: 'before',
+      ruleClassName: 'zybit-anno-help',
+      label: 'FAQ answering the questions visitors clicked help for — place immediately above the primary CTA',
+      color: ANNOTATION_WARN_COLOR,
+    });
+  },
 
   evaluate(ctx: AuditRuleContext): AuditFinding[] {
     const baselineRate = siteBaselineRate(
@@ -91,6 +121,7 @@ export const helpSeekingSpike: AuditRule = {
     }
     if (siteCtaClicks < MIN_SITE_CTA_CLICKS) return [];
 
+    const minLocalRate = calibratedFloor(ctx, "help-seeking-spike", MIN_LOCAL_RATE);
     const findings: AuditFinding[] = [];
     for (const [pathRef, ctaEvents] of ctaByPath) {
       const pageCtaClicks = ctaEvents.length;
@@ -98,7 +129,7 @@ export const helpSeekingSpike: AuditRule = {
       const helpEvents = helpByPath.get(pathRef) ?? [];
       const pageHelpClicks = helpEvents.length;
       const localRate = share(pageHelpClicks, pageCtaClicks) ?? 0;
-      if (localRate < MIN_LOCAL_RATE) continue;
+      if (localRate < minLocalRate) continue;
       if (localRate < baselineRate * MULTIPLIER) continue;
 
       findings.push(
@@ -112,6 +143,7 @@ export const helpSeekingSpike: AuditRule = {
           baselineRate,
           multiple: localRate / baselineRate,
           helpEvents,
+          snapshot: ctx.pageSnapshotsByPath.get(pathRef),
           windowDays: windowDaysFromTimeWindow(ctx.window),
           goalType: ctx.config.goalType,
           goalConfig: ctx.config.goalConfig,
@@ -132,6 +164,7 @@ interface FindingInputs {
   baselineRate: number;
   multiple: number;
   helpEvents: CanonicalEvent[];
+  snapshot: PageSnapshot | undefined;
   windowDays: number;
   goalType?: GoalType;
   goalConfig?: GoalConfig;
@@ -148,6 +181,7 @@ function buildFinding(inputs: FindingInputs): AuditFinding {
     baselineRate,
     multiple,
     helpEvents,
+    snapshot,
     windowDays,
     goalType,
     goalConfig,
@@ -156,6 +190,21 @@ function buildFinding(inputs: FindingInputs): AuditFinding {
   const topGroups = topByCount(helpEvents, (e) => readStringProp(e.properties, "cta_text") ?? "")
     .filter((g) => g.key.length > 0)
     .slice(0, 3);
+
+  // Walk the frequency-ranked groups so the outline lands on the
+  // dominant help CTA, not the first one chronologically.
+  let matchedCtaRef: string | null = null;
+  if (snapshot) {
+    outer: for (const group of topGroups) {
+      for (const event of group.items) {
+        const matched = matchCtaToEvent(snapshot, event);
+        if (matched) {
+          matchedCtaRef = matched.ref;
+          break outer;
+        }
+      }
+    }
+  }
   const topQuoted = topGroups.map((g) => quote(g.key));
   const topClause =
     topQuoted.length >= 2
@@ -234,5 +283,13 @@ function buildFinding(inputs: FindingInputs): AuditFinding {
     impactEstimate,
     recommendation,
     evidence,
+    ...(matchedCtaRef !== null || snapshot
+      ? {
+          refs: {
+            ...(snapshot ? { snapshotId: snapshot.id } : {}),
+            ...(matchedCtaRef !== null ? { ctaRef: matchedCtaRef } : {}),
+          },
+        }
+      : {}),
   };
 }

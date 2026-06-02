@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createMagicLink } from '@/lib/auth/session';
+import { checkAuthRateLimit } from '@/lib/auth/rateLimit';
 
 function getBaseUrl(): string {
-  return (process.env.APP_BASE_URL ?? '').replace(/\/$/, '');
+  return (process.env.NEXT_PUBLIC_APP_URL ?? 'https://getzybit.com').replace(/\/$/, '');
+}
+
+function extractIp(request: Request): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return request.headers.get('x-real-ip') ?? 'unknown';
 }
 
 const GENERIC_OK = { message: "If that email is approved, a sign-in link is on its way." };
@@ -20,6 +27,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
 
+  const ip = extractIp(request);
+  const rateLimit = await checkAuthRateLimit(email, ip);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait before trying again.' },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) },
+      }
+    );
+  }
+
   const token = await createMagicLink(email);
 
   // Always return the same response regardless of whether the email exists,
@@ -32,7 +51,7 @@ export async function POST(request: Request) {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     await resend.emails.send({
-      from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@getzybit.com>',
+      from: process.env.AUTH_FROM_EMAIL ?? 'Zybit <noreply@mail.getzybit.com>',
       to: email,
       subject: 'Your Zybit sign-in link',
       html: `

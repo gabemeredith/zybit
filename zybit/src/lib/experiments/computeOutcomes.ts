@@ -31,7 +31,11 @@ const randomUUID = () => globalThis.crypto.randomUUID();
 import { eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '@/lib/db/schema';
-import { zybitExperiments, zybitFindings, zybitExperimentOutcomes, phase1Events } from '@/lib/db/schema';
+import { zybitExperiments, zybitFindings, zybitExperimentOutcomes, phase1Sites, appUsers, phase2Integrations } from '@/lib/db/schema';
+import { sendExperimentConcludedEmail } from '@/lib/email/experimentConcludedEmail';
+import { disableExperimentAtEdge } from '@/lib/experiments/proxy/edgeKillSwitch';
+import { isGa4OnlyMeasurementGap } from '@/lib/phase2/connectors/measurementGrain';
+import { logger } from '@/lib/observability/logger';
 import {
   chiSquaredTwoProportions,
   guardrailOneSidedPValue,
@@ -86,7 +90,7 @@ async function queryBucketCounts(
   startedAt: Date,
   endAt: Date,
 ): Promise<ExperimentCounts> {
-  const rows = await db.execute<{
+  const result = await db.execute<{
     bucket: string;
     participants: string;
     conversions: string;
@@ -121,6 +125,10 @@ async function queryBucketCounts(
     LEFT JOIN converters c ON c.session_id = a.visitor_id
     GROUP BY a.bucket
   `);
+
+  // neon-http returns a result object ({ rows, rowCount, ... }); guard in case
+  // a future driver returns the row array directly.
+  const rows = Array.isArray(result) ? result : result.rows;
 
   const counts: ExperimentCounts = {
     control: { participants: 0, conversions: 0 },
@@ -205,8 +213,21 @@ async function concludeExperiment(
     modificationType = (mods[0] as { type: string }).type ?? null;
   }
 
-  await db.transaction(async (tx: DB) => {
-    await tx.insert(zybitExperimentOutcomes).values({
+  // Idempotency guard: if the status update from a previous run failed,
+  // the experiment is still 'running' and will be processed again. Skip the
+  // insert to avoid a duplicate outcome row; just re-apply the status update.
+  const [existing] = await db
+    .select({ id: zybitExperimentOutcomes.id })
+    .from(zybitExperimentOutcomes)
+    .where(eq(zybitExperimentOutcomes.experimentId, experiment.id))
+    .limit(1);
+
+  if (!existing) {
+    // Sequential writes: the app runs on the neon-http driver, which has no
+    // interactive transaction support. Insert the outcome first (the durable
+    // record), then flip experiment status — if the second write fails the
+    // outcome row still exists and the next cron pass reconciles status.
+    await db.insert(zybitExperimentOutcomes).values({
       id: randomUUID(),
       organizationId: experiment.organizationId,
       siteId: experiment.siteId,
@@ -225,26 +246,87 @@ async function concludeExperiment(
       guardrailBreached,
       concludedAt,
     });
+  }
 
-    await tx
-      .update(zybitExperiments)
-      .set({
-        status: newStatus,
-        resultControlRate:
-          counts.control.participants > 0
-            ? counts.control.conversions / counts.control.participants
-            : null,
-        resultVariantRate:
-          counts.variant.participants > 0
-            ? counts.variant.conversions / counts.variant.participants
-            : null,
-        resultConfidence: confidence,
-        resultParticipants: counts.control.participants + counts.variant.participants,
-        completedAt: concludedAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(zybitExperiments.id, experiment.id));
-  });
+  await db
+    .update(zybitExperiments)
+    .set({
+      status: newStatus,
+      resultControlRate:
+        counts.control.participants > 0
+          ? counts.control.conversions / counts.control.participants
+          : null,
+      resultVariantRate:
+        counts.variant.participants > 0
+          ? counts.variant.conversions / counts.variant.participants
+          : null,
+      resultConfidence: confidence,
+      resultParticipants: counts.control.participants + counts.variant.participants,
+      completedAt: concludedAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(zybitExperiments.id, experiment.id));
+
+  // Fail closed at the edge as soon as the cron concludes an experiment (Zybit-116).
+  await disableExperimentAtEdge(experiment.id);
+}
+
+// ---------------------------------------------------------------------------
+// PM notification (Zybit-084) — best-effort, never blocks the cron
+// ---------------------------------------------------------------------------
+
+async function notifyConcluded(
+  db: DB,
+  experiment: typeof zybitExperiments.$inferSelect,
+  counts: ExperimentCounts,
+  result: ExperimentResult,
+  confidence: number,
+  liftPct: number,
+  guardrailBreached: string | null,
+): Promise<void> {
+  try {
+    if (!process.env.RESEND_API_KEY) return;
+
+    const sites = await db
+      .select({ domain: phase1Sites.domain })
+      .from(phase1Sites)
+      .where(eq(phase1Sites.id, experiment.siteId))
+      .limit(1);
+    const domain = sites[0]?.domain ?? experiment.siteId;
+
+    const recipients = await db
+      .select({ email: appUsers.email })
+      .from(appUsers)
+      .where(eq(appUsers.organizationId, experiment.organizationId));
+
+    const approved = recipients.map((r) => r.email).filter((e): e is string => Boolean(e));
+    if (approved.length === 0) return;
+
+    const controlRate =
+      counts.control.participants > 0
+        ? counts.control.conversions / counts.control.participants
+        : null;
+    const variantRate =
+      counts.variant.participants > 0
+        ? counts.variant.conversions / counts.variant.participants
+        : null;
+
+    for (const to of approved) {
+      await sendExperimentConcludedEmail({
+        to,
+        hypothesis: experiment.hypothesis,
+        domain,
+        result,
+        controlRate,
+        variantRate,
+        liftPct,
+        confidence,
+        guardrailBreached,
+      });
+    }
+  } catch (err) {
+    console.error('[compute-outcomes] PM notification failed (non-fatal):', err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +404,7 @@ export async function processExperiment(
     await concludeExperiment(
       db, experiment, counts, concludedResult, confidence, liftPct, guardrailBreached, now,
     );
+    await notifyConcluded(db, experiment, counts, concludedResult, confidence, liftPct, guardrailBreached);
     return {
       experimentId: experiment.id,
       action: 'stopped',
@@ -333,12 +416,13 @@ export async function processExperiment(
     };
   }
 
-  // Step 5: Sequential testing guard — check per-arm minimums to handle unbalanced traffic
+  // Step 5: Sequential testing guard — OBF boundary keyed to elapsed day / total duration.
   const readyToStop = isReadyToStop({
     confidence,
     participants: Math.min(counts.control.participants, counts.variant.participants),
     elapsedDays,
     minimumParticipants: minPerArm,
+    durationDays: experiment.durationDays ?? 14,
   });
 
   if (readyToStop || durationExpired) {
@@ -346,6 +430,7 @@ export async function processExperiment(
     await concludeExperiment(
       db, experiment, counts, concludedResult, confidence, liftPct, null, now,
     );
+    await notifyConcluded(db, experiment, counts, concludedResult, confidence, liftPct, null);
     return {
       experimentId: experiment.id,
       action: 'stopped',
@@ -411,7 +496,37 @@ export async function computeAllOutcomes(db: DB): Promise<ComputeOutcomesSummary
     results: [],
   };
 
+  // Zybit-157: a site whose only connected integration is GA4 has no
+  // visitor-grain data to join to assignment events. Computing outcomes for
+  // such a site always yields 0 participants — skip it and log a structured
+  // warning instead of producing 0-confidence noise.
+  const measurementBlockedSites = new Set<string>();
+  for (const siteId of new Set(running.map((e) => e.siteId))) {
+    const integrations = await db
+      .select({ provider: phase2Integrations.provider, status: phase2Integrations.status })
+      .from(phase2Integrations)
+      .where(eq(phase2Integrations.siteId, siteId));
+    if (isGa4OnlyMeasurementGap(integrations)) {
+      measurementBlockedSites.add(siteId);
+    }
+  }
+
   for (const experiment of running) {
+    if (measurementBlockedSites.has(experiment.siteId)) {
+      logger.warn('Skipped compute — site has only GA4 connected (aggregate-grain, no visitor join)', {
+        service: 'compute-outcomes',
+        organizationId: experiment.organizationId,
+        siteId: experiment.siteId,
+        experimentId: experiment.id,
+      });
+      summary.results.push({
+        experimentId: experiment.id,
+        action: 'skipped',
+        reason: 'Site has only GA4 connected — GA4 is aggregate-grain and cannot be joined to A/B assignments. Connect PostHog or Segment to measure outcomes.',
+      });
+      summary.skipped++;
+      continue;
+    }
     try {
       const result = await processExperiment(db, experiment);
       summary.results.push(result);

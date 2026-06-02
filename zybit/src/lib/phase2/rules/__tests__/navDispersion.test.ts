@@ -104,12 +104,17 @@ describe('navDispersion rule', () => {
     expect(f.evidence.length).toBeGreaterThan(0);
   });
 
-  it('pathRef is null (site-wide finding)', () => {
+  it('pathRef is always / (site-wide finding anchored to the symbolic root)', () => {
+    // Nav is site-wide; anchor to `/` unconditionally so the cascade's
+    // submitted-page boost applies and evidence framing ("your homepage")
+    // lines up. Not whichever page was first in the crawl — that
+    // misleads the PM into thinking nav is wrong only on a specific
+    // subpage.
     const ctx = makeNavDispersionContext(
       ['Home', 'Pricing', 'About', 'Blog', 'Contact', 'Docs', 'API', 'Status'],
       10,
     );
     const [f] = navDispersion.evaluate(ctx);
-    expect(f.pathRef).toBeNull();
+    expect(f.pathRef).toBe('/');
   });
 });

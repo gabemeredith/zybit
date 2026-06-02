@@ -39,7 +39,12 @@ export interface MapOptions {
 
 type SkipReason = NonNullable<MapResult["skippedReason"]>;
 
-const SESSION_PROPERTY_KEYS = ["$session_id", "$window_id", "session_id"] as const;
+// `zybit_vid` is the Zybit proxy visitor ID, registered as a PostHog
+// super-property by the bridge script. Preferring it makes conversion
+// events key off the same stable ID as proxy assignment events, so the
+// outcome-computation join matches across providers. Falls back to
+// PostHog's own session keys when the bridge is not present.
+const SESSION_PROPERTY_KEYS = ["zybit_vid", "$session_id", "$window_id", "session_id"] as const;
 
 const PROPERTY_PASSTHROUGH_KEYS = [
   "utm_source",

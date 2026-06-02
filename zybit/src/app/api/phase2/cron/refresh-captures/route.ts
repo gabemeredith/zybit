@@ -24,7 +24,9 @@ import { unauthorized, mapRouteError } from '@/app/api/phase1/_shared';
 import { createPhase1Repository } from '@/lib/phase1';
 import { capturePageAllBreakpoints, checkBudget, isCaptureV2Enabled, recordCaptureSpend } from '@/lib/phase2/capture';
 import { createCaptureRepository } from '@/lib/phase2/capture/repository';
-import { logger, cronitorPing } from '@/lib/observability';
+import { buildFullDesignSnapshot } from '@/lib/phase2/snapshots/designCapture';
+import { createDesignSnapshotRepository } from '@/lib/phase2/snapshots/designSnapshotRepository';
+import { logger, cronitorPing, withCronAlert } from '@/lib/observability';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -65,6 +67,7 @@ async function refreshSite(
 ): Promise<Omit<SiteResult, 'siteId'>> {
   const repository = createPhase1Repository();
   const captureRepo = createCaptureRepository();
+  const designRepo = createDesignSnapshotRepository();
 
   const snapshots = await repository.listPageSnapshots({
     organizationId,
@@ -131,6 +134,34 @@ async function refreshSite(
           pathRef: capture.pathRef,
           capture,
         });
+      }
+
+      // Zybit-142: write `full` design snapshot from the desktop capture.
+      // Non-fatal: a write failure logs and continues so the capture run is
+      // not lost. Falls through gracefully when there is no desktop capture,
+      // OR when the screenshot upload failed (null screenshotBlobUrl) — in
+      // that case we leave the row absent and let the next refresh-snapshots
+      // tick write a structural fallback. Writing a `full` row without a
+      // screenshot would permanently block the structural path because
+      // `shouldUpsertStructural` refuses to downgrade.
+      const desktopCapture = summary.captures.find(c => c.breakpoint === 'desktop');
+      if (desktopCapture?.assets.screenshotBlobUrl) {
+        try {
+          await designRepo.upsert(
+            buildFullDesignSnapshot({
+              organizationId,
+              capture: desktopCapture,
+              cssSystem: snapshot.data.cssSystem ?? null,
+            }),
+          );
+        } catch (designErr) {
+          logger.warn('capture.refresh.design_write_failed', {
+            service: 'capture-cron',
+            siteId,
+            pathRef: snapshot.pathRef,
+            error: designErr instanceof Error ? designErr.message : String(designErr),
+          });
+        }
       }
 
       if (summary.totalCostUsd > 0) {
@@ -269,5 +300,5 @@ async function runHandler(request: Request) {
   }
 }
 
-export const GET = runHandler;
-export const POST = runHandler;
+export const GET = withCronAlert('refresh-captures', runHandler);
+export const POST = withCronAlert('refresh-captures', runHandler);
